@@ -1,0 +1,1 @@
+export const MONTO_VISITA_DEFAULT = 35000;

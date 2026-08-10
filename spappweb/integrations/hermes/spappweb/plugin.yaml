@@ -1,0 +1,8 @@
+name: spappweb
+version: "1.0"
+description: >
+  Conecta Hermes Agent con el panel administrativo SPapp (spappweb): gestión de
+  créditos, visitas, pagos, entregas, mora, catálogo, inventario, garaje y taller.
+  Descubre dinámicamente todas las herramientas expuestas por /api/agent/tools.
+# SPAPP_BASE_URL es opcional (default http://localhost:3000).
+# SPAPP_AGENT_API_KEY solo si el servidor define AGENT_API_KEY.

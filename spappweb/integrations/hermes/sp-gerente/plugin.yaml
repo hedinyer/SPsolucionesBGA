@@ -1,0 +1,6 @@
+name: sp-gerente
+version: "1.0"
+description: >
+  Lectura del PDV SolucionesBGA (sede bga) vía Supabase.
+  Pensado para la gerente: inventarios, ventas, caja, clientes/mora e informe diario.
+  Solo lectura. Sin mutaciones.

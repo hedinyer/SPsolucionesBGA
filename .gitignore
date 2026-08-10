@@ -1,0 +1,19 @@
+# Archives (too large for GitHub)
+*.zip
+spbogota.zip
+
+# Python
+__pycache__/
+*.py[cod]
+*.log
+
+# Env / secrets
+.env
+.env.*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+
+.vercel
+.env*
