@@ -4,14 +4,14 @@
  * Cada captador (Olga, Neisalinas, …) solo ve clientes de su ?ref= hasta entrega.
  * Todos ellos además ven y gestionan solicitudes/clientes Guillen.
  * Después de entregada/saldada ya no los ve (mora/recoger queda para admin pleno).
- * Inventario/tienda/garaje siguen completos. adminBogota ve todo de principio a fin.
+ * Inventario/tienda/garaje siguen completos. adminBucaramanga ve todo de principio a fin.
  */
 const ADMIN_CLIENT_REFERRAL_SCOPE: Record<number, string> = {
-  174: "olga", // Opinilla
-  184: "neisalinas",
-  185: "sebastianbateca",
-  186: "amormio",
-  187: "mauricio",
+  2: "olga", // Opinilla
+  3: "neisalinas",
+  4: "sebastianbateca",
+  5: "amormio",
+  6: "mauricio",
 };
 
 const ADMIN_CLIENT_REFERRAL_SCOPE_BY_USER: Record<string, string> = {
