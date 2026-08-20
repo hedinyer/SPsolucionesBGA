@@ -869,12 +869,14 @@ export async function getInboxListItems(
 
   switch (queueId) {
     case "creditos": {
+      // La UI filtra Pendiente / Aprobado / Rechazado; hay que cargar los tres.
+      // El badge de la cola sigue contando solo pendientes (clientUserIdsWithoutVisita).
       let docsQuery = supabase
         .from("users_documents")
         .select(
           "user_id, estado_solicitud, created_at, selfie_url, referral_source, users(id, user), digital_contracts(hoja_vida_data)",
         )
-        .eq("estado_solicitud", "pendiente")
+        .in("estado_solicitud", ["pendiente", "aceptada", "rechazada"])
         .order("created_at", { ascending: false });
       if (clientScope) {
         docsQuery = docsQuery.eq("referral_source", clientScope);
