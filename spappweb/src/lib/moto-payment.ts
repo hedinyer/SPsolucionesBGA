@@ -1,7 +1,7 @@
 import type { BikeRow, FrecuenciaPago } from "@/lib/pipeline/types";
 
-/** Piso negociable de cuota inicial (COP). Motos usadas: 700k. */
-export const MIN_CUOTA_INICIAL = 700_000;
+/** Piso negociable de cuota inicial (COP). Motos usadas: 350k. */
+export const MIN_CUOTA_INICIAL = 350_000;
 
 export function montoCuotaPeriodo(
   cuotaDiaria: number,
