@@ -14,6 +14,7 @@ import type {
   InboxQueue,
   InboxQueueId,
   InventarioCategoriaRow,
+  InventarioProductoNovedadRow,
   InventarioProductoRow,
   CompraProductoCreditoRow,
   ProductoCreditoRow,
@@ -349,7 +350,7 @@ export async function getClientPipeline(
     ? await supabase
         .from("pagos")
         .select(
-          "id, user_moto_compra_id, user_id, monto, referencia, comprobante_url, contexto_pago, fecha_comprobante, confirmado_at, tarifa_objetivo_id, estado, medio_pago_admin",
+          "id, user_moto_compra_id, user_id, monto, referencia, comprobante_url, contexto_pago, fecha_comprobante, confirmado_at, tarifa_objetivo_id, compra_producto_credito_id, estado, medio_pago_admin",
         )
         .eq("user_moto_compra_id", compra.id)
         .eq("estado", "confirmado")
@@ -368,10 +369,24 @@ export async function getClientPipeline(
 
   const pagoRows = (pagos as PagoRow[]) ?? [];
 
+  const { data: compraProductosCredito } = compra
+    ? await supabase
+        .from("compra_productos_credito")
+        .select(
+          "id, user_moto_compra_id, user_id, producto_credito_id, nombre, cuota_inicial_monto, cuota_diaria_monto, plazo_dias, cantidad, notas, created_at",
+        )
+        .eq("user_moto_compra_id", compra.id)
+        .order("created_at")
+    : { data: [] };
+
+  const productosCreditoRows =
+    (compraProductosCredito as CompraProductoCreditoRow[]) ?? [];
+
   const pagosHistorial = buildPagosHistorial(
     compra as UserMotoCompraRow | null,
     pagoRows,
     tarifaRows,
+    productosCreditoRows,
   );
 
   const pagoIds = pagoRows.map((p) => p.id);
@@ -387,16 +402,6 @@ export async function getClientPipeline(
     pagoRows,
     (aplicaciones as { pago_id: string; tarifa_id: string }[]) ?? [],
   );
-
-  const { data: compraProductosCredito } = compra
-    ? await supabase
-        .from("compra_productos_credito")
-        .select(
-          "id, user_moto_compra_id, user_id, producto_credito_id, nombre, cuota_inicial_monto, cuota_diaria_monto, cantidad, notas, created_at",
-        )
-        .eq("user_moto_compra_id", compra.id)
-        .order("created_at")
-    : { data: [] };
 
   return buildClientPipeline({
     user: user as UserRow,
@@ -414,8 +419,7 @@ export async function getClientPipeline(
     pagosHistorial,
     pagos: pagoRows,
     comprobanteByTarifaId,
-    compraProductosCredito:
-      (compraProductosCredito as CompraProductoCreditoRow[]) ?? [],
+    compraProductosCredito: productosCreditoRows,
   });
 }
 
@@ -522,21 +526,37 @@ function buildPagosHistorial(
   compra: UserMotoCompraRow | null,
   pagos: PagoRow[],
   tarifas: TarifaPagadaRow[],
+  productosCredito: CompraProductoCreditoRow[] = [],
 ): PagoHistorialRow[] {
   if (!compra) return [];
 
   const tarifaById = new Map(tarifas.map((t) => [t.id, t]));
+  const productoById = new Map(productosCredito.map((p) => [p.id, p]));
 
   return pagos.map((pago) => {
     const tarifa = pago.tarifa_objetivo_id
       ? tarifaById.get(pago.tarifa_objetivo_id)
       : undefined;
+    const producto = pago.compra_producto_credito_id
+      ? productoById.get(pago.compra_producto_credito_id)
+      : undefined;
 
     let montoEsperado: number | null = null;
+    let contextoDetalle: string | null = null;
     if (pago.contexto_pago === "inicial") {
       montoEsperado = compra.cuota_inicial_monto;
     } else if (pago.contexto_pago === "cuota_adelantada") {
       montoEsperado = compra.monto_cuota_periodo;
+    } else if (pago.contexto_pago === "visita") {
+      montoEsperado = compra.monto_visita_monto;
+    } else if (pago.contexto_pago === "producto_inicial" && producto) {
+      montoEsperado = producto.cuota_inicial_monto * producto.cantidad;
+      contextoDetalle = producto.nombre;
+    } else if (pago.contexto_pago === "producto_cuota" && producto) {
+      const dias = producto.plazo_dias ?? 0;
+      montoEsperado =
+        producto.cuota_diaria_monto * producto.cantidad * Math.max(dias, 0);
+      contextoDetalle = producto.nombre;
     } else if (tarifa) {
       montoEsperado = tarifa.monto_esperado;
     } else if (pago.contexto_pago === "tarifa") {
@@ -544,14 +564,25 @@ function buildPagosHistorial(
     }
 
     const cuotasCubiertas =
-      pago.contexto_pago === "inicial"
+      pago.contexto_pago === "inicial" ||
+      pago.contexto_pago === "visita" ||
+      pago.contexto_pago === "producto_inicial"
         ? 0
-        : cuotasFromMonto(pago.monto, compra.monto_cuota_periodo);
+        : pago.contexto_pago === "producto_cuota" && producto
+          ? cuotasFromMonto(
+              pago.monto,
+              producto.cuota_diaria_monto * producto.cantidad,
+            )
+          : cuotasFromMonto(pago.monto, compra.monto_cuota_periodo);
 
     const variacion =
-      montoEsperado != null
-        ? describeMontoVariacion(pago.monto, montoEsperado)
-        : { label: "—", diff: 0, tone: "exacto" as const };
+      montoEsperado != null &&
+      (pago.contexto_pago === "producto_inicial" ||
+        pago.contexto_pago === "producto_cuota")
+        ? { label: "—", diff: 0, tone: "exacto" as const }
+        : montoEsperado != null
+          ? describeMontoVariacion(pago.monto, montoEsperado)
+          : { label: "—", diff: 0, tone: "exacto" as const };
 
     return {
       id: pago.id,
@@ -560,6 +591,7 @@ function buildPagosHistorial(
       montoEsperado,
       referencia: pago.referencia,
       contexto_pago: pago.contexto_pago,
+      contextoDetalle,
       numeroPeriodo: tarifa?.numero_periodo ?? null,
       cuotasCubiertas,
       variacionLabel: variacion.label,
@@ -1315,12 +1347,25 @@ export async function getAllProductos(): Promise<InventarioProductoRow[]> {
   return ((data ?? []) as unknown as InventarioProductoRow[]);
 }
 
+export async function getProductoNovedades(
+  productoId: number,
+): Promise<InventarioProductoNovedadRow[]> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("inventario_producto_novedades")
+    .select("id, producto_id, tipo, autor, contenido, detalle, created_at")
+    .eq("producto_id", productoId)
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  return (data as InventarioProductoNovedadRow[]) ?? [];
+}
+
 export async function getAllProductosCredito(): Promise<ProductoCreditoRow[]> {
   const supabase = createAdminClient();
   const { data } = await supabase
     .from("productos_credito")
     .select(
-      "id, nombre, descripcion, cuota_inicial, cuota_diaria, imagen_url, activo, orden",
+      "id, nombre, descripcion, cuota_inicial, cuota_diaria, plazo_dias, imagen_url, activo, orden",
     )
     .order("orden")
     .order("nombre");

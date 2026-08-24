@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
-import { requireAdminSession } from "@/lib/auth/session";
+import { getSession, requireAdminSession } from "@/lib/auth/session";
 import { approveCreditOp, rejectCreditOp } from "@/lib/admin/credit-ops";
 import { assignMotoByAdminOp } from "@/lib/admin/moto-contract-ops";
 import {
@@ -891,6 +891,55 @@ export async function deleteCategoria(id: number) {
   return adminDelete(supabase, "inventario_categorias", id, "/inventario");
 }
 
+type InventarioNovedadTipo = "anotacion" | "edicion" | "eliminacion" | "creacion";
+
+async function logInventarioProductoNovedad(
+  supabase: SupabaseClient,
+  input: {
+    productoId: number;
+    tipo: InventarioNovedadTipo;
+    autor: string;
+    contenido: string;
+    detalle?: { cambios?: string[] } | null;
+  },
+) {
+  const { error } = await supabase.from("inventario_producto_novedades").insert({
+    producto_id: input.productoId,
+    tipo: input.tipo,
+    autor: input.autor.trim(),
+    contenido: input.contenido.trim(),
+    detalle: input.detalle ?? null,
+  });
+  if (error) throw new Error(error.message);
+}
+
+const addProductoNovedadSchema = z.object({
+  productoId: z.number().int().positive(),
+  autor: z.string().trim().min(1, "Indica quién escribe la anotación."),
+  contenido: z.string().trim().min(1, "Escribe la anotación."),
+});
+
+export async function addProductoNovedad(
+  input: z.infer<typeof addProductoNovedadSchema>,
+) {
+  const parsed = addProductoNovedadSchema.parse(input);
+  const supabase = await assertAdmin();
+  await logInventarioProductoNovedad(supabase, {
+    productoId: parsed.productoId,
+    tipo: "anotacion",
+    autor: parsed.autor,
+    contenido: parsed.contenido,
+  });
+  revalidatePath("/inventario");
+  return { ok: true as const };
+}
+
+export async function fetchProductoNovedades(productoId: number) {
+  await requireAdminSession();
+  const { getProductoNovedades } = await import("@/lib/pipeline/queries");
+  return getProductoNovedades(productoId);
+}
+
 const productoSchema = z
   .object({
     id: z.number().optional(),
@@ -936,6 +985,50 @@ const productoSchema = z
     }
   });
 
+function buildProductoEditDetalle(
+  prev: {
+    nombre: string;
+    sku: string;
+    precio: number;
+    costo: number;
+    stock: number;
+    stock_minimo: number;
+    ubicacion: string | null;
+    gaveta: string | null;
+    descripcion: string | null;
+    activo: boolean;
+    categoria_id: number;
+    imagen_url: string | null;
+  },
+  parsed: z.infer<typeof productoSchema>,
+): { cambios: string[] } {
+  const cambios: string[] = [];
+  const add = (label: string, from: unknown, to: unknown) => {
+    const a = from == null || from === "" ? "—" : String(from);
+    const b = to == null || to === "" ? "—" : String(to);
+    if (a !== b) cambios.push(`${label}: ${a} → ${b}`);
+  };
+  add("Nombre", prev.nombre, parsed.nombre.trim());
+  add("SKU", prev.sku, parsed.sku.trim().toUpperCase());
+  add("Precio", prev.precio, parsed.precio);
+  add("Costo", prev.costo, parsed.costo);
+  add("Cantidad", prev.stock, parsed.stock);
+  add("Stock mínimo", prev.stock_minimo, parsed.stockMinimo);
+  add("Ubicación", prev.ubicacion, parsed.ubicacion);
+  add(
+    "Gaveta",
+    prev.gaveta,
+    parsed.ubicacion === "Bodega" ? parsed.gaveta?.trim() || null : null,
+  );
+  add("Descripción", prev.descripcion, parsed.descripcion?.trim() || null);
+  add("Activo", prev.activo ? "Sí" : "No", parsed.activo ? "Sí" : "No");
+  add("Categoría", prev.categoria_id, parsed.categoriaId);
+  const prevImg = prev.imagen_url ? "Con foto" : "Sin foto";
+  const nextImg = parsed.imagenUrl?.trim() ? "Con foto" : "Sin foto";
+  if (prevImg !== nextImg) cambios.push(`Foto: ${prevImg} → ${nextImg}`);
+  return { cambios };
+}
+
 export async function saveProducto(input: z.infer<typeof productoSchema>) {
   const parsed = productoSchema.parse(input);
   const supabase = await assertAdmin();
@@ -961,16 +1054,40 @@ export async function saveProducto(input: z.infer<typeof productoSchema>) {
     payload.editado_por = parsed.editadoPor?.trim() || null;
     payload.motivo_edicion = parsed.motivoEdicion?.trim() || null;
     payload.editado_at = new Date().toISOString();
+    const { data: prev, error: prevError } = await supabase
+      .from("inventario_productos")
+      .select(
+        "nombre, sku, precio, costo, stock, stock_minimo, ubicacion, gaveta, descripcion, activo, categoria_id, imagen_url",
+      )
+      .eq("id", parsed.id)
+      .single();
+    if (prevError) throw new Error(prevError.message);
     const { error } = await supabase
       .from("inventario_productos")
       .update(payload)
       .eq("id", parsed.id);
     if (error) throw new Error(error.message);
+    await logInventarioProductoNovedad(supabase, {
+      productoId: parsed.id,
+      tipo: "edicion",
+      autor: parsed.editadoPor!.trim(),
+      contenido: parsed.motivoEdicion!.trim(),
+      detalle: buildProductoEditDetalle(prev, parsed),
+    });
   } else {
-    const { error } = await supabase
+    const session = await getSession();
+    const { data: created, error } = await supabase
       .from("inventario_productos")
-      .insert(payload);
+      .insert(payload)
+      .select("id")
+      .single();
     if (error) throw new Error(error.message);
+    await logInventarioProductoNovedad(supabase, {
+      productoId: created.id as number,
+      tipo: "creacion",
+      autor: session.username?.trim() || "Administración",
+      contenido: `Producto creado: ${parsed.nombre.trim()} (${parsed.sku.trim().toUpperCase()}).`,
+    });
   }
   revalidatePath("/inventario");
   return { ok: true };
@@ -1005,6 +1122,12 @@ export async function deleteProducto(
   if (!data?.length) {
     throw new Error("No se eliminó nada (ya estaba eliminado o sin permisos).");
   }
+  await logInventarioProductoNovedad(supabase, {
+    productoId: parsed.id,
+    tipo: "eliminacion",
+    autor: parsed.eliminadoPor,
+    contenido: parsed.motivoEliminacion,
+  });
   revalidatePath("/inventario");
   return { ok: true };
 }
@@ -1731,6 +1854,7 @@ const productoCreditoSchema = z.object({
   descripcion: z.string().optional(),
   cuotaInicial: z.number().int().min(0),
   cuotaDiaria: z.number().int().positive(),
+  plazoDias: z.number().int().positive(),
   imagenUrl: z.string().optional(),
   activo: z.boolean(),
   orden: z.number().int().min(0),
@@ -1746,6 +1870,7 @@ export async function saveProductoCredito(
     descripcion: parsed.descripcion?.trim() || null,
     cuota_inicial: parsed.cuotaInicial,
     cuota_diaria: parsed.cuotaDiaria,
+    plazo_dias: parsed.plazoDias,
     imagen_url: parsed.imagenUrl?.trim() || null,
     activo: parsed.activo,
     orden: parsed.orden,
@@ -1776,6 +1901,7 @@ const addCompraProductoCreditoSchema = z.object({
   nombre: z.string().trim().min(1).optional(),
   cuotaInicial: z.number().int().min(0).optional(),
   cuotaDiaria: z.number().int().positive().optional(),
+  plazoDias: z.number().int().positive().optional(),
   cantidad: z.number().int().positive().default(1),
   notas: z.string().trim().optional(),
 });
@@ -1800,12 +1926,13 @@ export async function addCompraProductoCredito(
   let nombre = parsed.nombre?.trim() ?? "";
   let cuotaInicial = parsed.cuotaInicial ?? 0;
   let cuotaDiaria = parsed.cuotaDiaria ?? 0;
+  let plazoDias = parsed.plazoDias ?? 0;
   let productoCreditoId: number | null = parsed.productoCreditoId ?? null;
 
   if (parsed.productoCreditoId) {
     const { data: catalogo, error: catError } = await supabase
       .from("productos_credito")
-      .select("id, nombre, cuota_inicial, cuota_diaria, activo")
+      .select("id, nombre, cuota_inicial, cuota_diaria, plazo_dias, activo")
       .eq("id", parsed.productoCreditoId)
       .maybeSingle();
 
@@ -1817,11 +1944,17 @@ export async function addCompraProductoCredito(
     nombre = nombre || (catalogo.nombre as string);
     cuotaInicial = parsed.cuotaInicial ?? (catalogo.cuota_inicial as number);
     cuotaDiaria = parsed.cuotaDiaria ?? (catalogo.cuota_diaria as number);
+    plazoDias =
+      parsed.plazoDias ??
+      (catalogo.plazo_dias != null ? Number(catalogo.plazo_dias) : 0);
     productoCreditoId = catalogo.id as number;
   }
 
   if (!nombre) throw new Error("Indica el nombre del producto.");
   if (cuotaDiaria <= 0) throw new Error("La cuota diaria debe ser mayor a cero.");
+  if (plazoDias <= 0) {
+    throw new Error("Indica por cuántos días se paga la cuota diaria.");
+  }
 
   const { error: insertError } = await supabase
     .from("compra_productos_credito")
@@ -1832,6 +1965,7 @@ export async function addCompraProductoCredito(
       nombre,
       cuota_inicial_monto: cuotaInicial,
       cuota_diaria_monto: cuotaDiaria,
+      plazo_dias: plazoDias,
       cantidad: parsed.cantidad,
       notas: parsed.notas?.trim() || null,
     });
@@ -1873,6 +2007,26 @@ export async function removeCompraProductoCredito(
   if (error) throw new Error(error.message);
   revalidateClient(userId);
   return { ok: true };
+}
+
+const setCompraProductoCreditoPlazoSchema = z.object({
+  itemId: z.string().uuid(),
+  userId: z.number().int().positive(),
+  plazoDias: z.number().int().positive(),
+});
+
+export async function setCompraProductoCreditoPlazo(
+  input: z.infer<typeof setCompraProductoCreditoPlazoSchema>,
+) {
+  const parsed = setCompraProductoCreditoPlazoSchema.parse(input);
+  const supabase = await assertAdmin();
+  const { error } = await supabase
+    .from("compra_productos_credito")
+    .update({ plazo_dias: parsed.plazoDias })
+    .eq("id", parsed.itemId);
+  if (error) throw new Error(error.message);
+  revalidateClient(parsed.userId);
+  return { ok: true as const };
 }
 
 export type MotoDocumentoTipo = "tarjeta" | "soat" | "tecno";

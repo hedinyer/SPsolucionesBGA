@@ -45,6 +45,8 @@ interface PaymentComprobanteDialogProps {
   userId: number;
   compraId: string;
   tarifaId?: string;
+  compraProductoCreditoId?: string;
+  contextoTitulo?: string;
   montoEsperado?: number;
   montoFaltante?: number;
   referenciasUsadas?: string[];
@@ -93,6 +95,8 @@ export function PaymentComprobanteDialog({
   userId,
   compraId,
   tarifaId,
+  compraProductoCreditoId,
+  contextoTitulo,
   montoEsperado,
   montoFaltante,
   referenciasUsadas = [],
@@ -286,6 +290,9 @@ export function PaymentComprobanteDialog({
         formData.set("compraId", compraId);
         formData.set("contexto", contexto);
         if (tarifaId) formData.set("tarifaId", tarifaId);
+        if (compraProductoCreditoId) {
+          formData.set("compraProductoCreditoId", compraProductoCreditoId);
+        }
         if (referencia.trim()) formData.set("referencia", referencia.trim());
         formData.set("monto", String(montoNum));
         if (fecha) formData.set("fechaComprobante", datetimeLocalToIso(fecha));
@@ -338,6 +345,7 @@ export function PaymentComprobanteDialog({
           <DialogTitle>Registrar abono</DialogTitle>
           <DialogDescription>
             {CONTEXTO_PAGO_LABELS[contexto]}
+            {contextoTitulo ? ` · ${contextoTitulo}` : ""}
             {sugeridoMonto != null && sugeridoMonto > 0
               ? ` · Faltan ${formatCop(sugeridoMonto)}`
               : ""}

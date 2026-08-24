@@ -361,8 +361,16 @@ export const AGENT_TOOLS = {
     input: z.object({
       userId: z.number().int().positive(),
       compraId: z.string().uuid(),
-      contexto: z.enum(["tarifa", "inicial", "cuota_adelantada"]),
+      contexto: z.enum([
+        "tarifa",
+        "inicial",
+        "cuota_adelantada",
+        "visita",
+        "producto_inicial",
+        "producto_cuota",
+      ]),
       tarifaId: z.string().uuid().optional(),
+      compraProductoCreditoId: z.string().uuid().optional(),
       referencia: z.string().optional(),
       monto: z.number().int().positive(),
       fechaComprobante: z.string().optional().describe("ISO 8601"),
@@ -389,6 +397,9 @@ export const AGENT_TOOLS = {
       fd.set("compraId", args.compraId);
       fd.set("contexto", args.contexto);
       if (args.tarifaId) fd.set("tarifaId", args.tarifaId);
+      if (args.compraProductoCreditoId) {
+        fd.set("compraProductoCreditoId", args.compraProductoCreditoId);
+      }
       if (args.referencia) fd.set("referencia", args.referencia);
       fd.set("monto", String(args.monto));
       if (args.fechaComprobante) fd.set("fechaComprobante", args.fechaComprobante);

@@ -386,6 +386,7 @@ export interface PagoHistorialRow {
   montoEsperado: number | null;
   referencia: string | null;
   contexto_pago: ContextoPago | null;
+  contextoDetalle: string | null;
   numeroPeriodo: number | null;
   cuotasCubiertas: number;
   variacionLabel: string;
@@ -528,7 +529,9 @@ export type ContextoPago =
   | "inicial"
   | "cuota_adelantada"
   | "visita"
-  | "liquidacion";
+  | "liquidacion"
+  | "producto_inicial"
+  | "producto_cuota";
 export type MedioPagoAdmin =
   | "nequi_nicolas"
   | "davivienda"
@@ -573,6 +576,7 @@ export interface PagoRow {
   confirmado_por: string | null;
   fecha_comprobante: string | null;
   tarifa_objetivo_id: string | null;
+  compra_producto_credito_id?: string | null;
   contexto_pago: ContextoPago | null;
   notas_admin: string | null;
   created_at: string;
@@ -585,6 +589,8 @@ export const CONTEXTO_PAGO_LABELS: Record<ContextoPago, string> = {
   cuota_adelantada: "Cuota adelantada",
   visita: "Visita domiciliaria",
   liquidacion: "Liquidación de crédito",
+  producto_inicial: "Inicial producto a crédito",
+  producto_cuota: "Cuota producto a crédito",
 };
 
 export const MEDIO_PAGO_ADMIN_LABELS: Record<MedioPagoAdminStored, string> = {
@@ -629,6 +635,22 @@ export const INVENTARIO_UBICACIONES: InventarioUbicacion[] = [
   "Bodega",
 ];
 
+export type InventarioProductoNovedadTipo =
+  | "anotacion"
+  | "edicion"
+  | "eliminacion"
+  | "creacion";
+
+export interface InventarioProductoNovedadRow {
+  id: string;
+  producto_id: number;
+  tipo: InventarioProductoNovedadTipo;
+  autor: string;
+  contenido: string;
+  detalle: { cambios?: string[] } | null;
+  created_at: string;
+}
+
 export interface InventarioProductoRow {
   id: number;
   categoria_id: number;
@@ -659,6 +681,7 @@ export interface ProductoCreditoRow {
   descripcion: string | null;
   cuota_inicial: number;
   cuota_diaria: number;
+  plazo_dias: number | null;
   imagen_url: string | null;
   activo: boolean;
   orden: number;
@@ -672,6 +695,7 @@ export interface CompraProductoCreditoRow {
   nombre: string;
   cuota_inicial_monto: number;
   cuota_diaria_monto: number;
+  plazo_dias: number | null;
   cantidad: number;
   notas: string | null;
   created_at: string;

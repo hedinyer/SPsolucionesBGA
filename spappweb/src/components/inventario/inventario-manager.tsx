@@ -67,6 +67,10 @@ import { STORAGE_BUCKETS } from "@/lib/supabase/storage-buckets";
 import { Textarea } from "@/components/ui/textarea";
 import { TouchSelect } from "@/components/ui/touch-select";
 import { PrintPriceLabelButton } from "@/components/inventario/print-price-label-button";
+import {
+  ProductoNovedadesButton,
+  ProductoNovedadesDialog,
+} from "@/components/inventario/producto-novedades-dialog";
 
 function skuFromNombre(nombre: string): string {
   return nombre
@@ -126,12 +130,19 @@ export function InventarioManager({
   } | null>(null);
   const [deletingProd, setDeletingProd] =
     useState<InventarioProductoRow | null>(null);
+  const [novedadesProd, setNovedadesProd] =
+    useState<InventarioProductoRow | null>(null);
   const [pending, startTransition] = useTransition();
 
   const { secondsAgo } = usePollingRefresh({
     intervalMs: 30_000,
     enabled:
-      !catOpen && !prodOpen && !photoPreview && !deletingProd && !pending,
+      !catOpen &&
+      !prodOpen &&
+      !photoPreview &&
+      !deletingProd &&
+      !novedadesProd &&
+      !pending,
   });
 
   function openPhoto(p: InventarioProductoRow) {
@@ -191,7 +202,7 @@ export function InventarioManager({
                       <TableHead>Precio venta</TableHead>
                       <TableHead>Foto</TableHead>
                       <TableHead>Ubicación</TableHead>
-                      <TableHead className="min-w-[22rem]">Acciones</TableHead>
+                      <TableHead className="min-w-[28rem]">Acciones</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -255,6 +266,10 @@ export function InventarioManager({
                                 <Pencil className="h-4 w-4" />
                                 Editar
                               </Button>
+                              <ProductoNovedadesButton
+                                product={p}
+                                onClick={() => setNovedadesProd(p)}
+                              />
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -372,6 +387,12 @@ export function InventarioManager({
                           <Pencil className="mr-1 h-4 w-4" />
                           Editar
                         </Button>
+                        <ProductoNovedadesButton
+                          product={p}
+                          variant="outline"
+                          className="flex-1"
+                          onClick={() => setNovedadesProd(p)}
+                        />
                         <Button
                           variant="outline"
                           size="sm"
@@ -681,6 +702,14 @@ export function InventarioManager({
               }
             })
           }
+        />
+
+        <ProductoNovedadesDialog
+          product={novedadesProd}
+          open={!!novedadesProd}
+          onOpenChange={(open) => {
+            if (!open) setNovedadesProd(null);
+          }}
         />
       </Tabs>
     </div>

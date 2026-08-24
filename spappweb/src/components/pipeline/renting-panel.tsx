@@ -39,6 +39,18 @@ import {
 } from "@/components/ui/table";
 import { PaymentComprobanteDialog } from "@/components/pipeline/payment-comprobante-dialog";
 
+function historialContextoLabel(pago: {
+  contexto_pago: keyof typeof CONTEXTO_PAGO_LABELS | null;
+  contextoDetalle?: string | null;
+  numeroPeriodo: number | null;
+}): string {
+  if (!pago.contexto_pago) return "—";
+  const base = CONTEXTO_PAGO_LABELS[pago.contexto_pago];
+  if (pago.contextoDetalle) return `${base} · ${pago.contextoDetalle}`;
+  if (pago.numeroPeriodo) return `${base} #${pago.numeroPeriodo}`;
+  return base;
+}
+
 interface RentingPanelProps {
   pipeline: ClientPipeline;
   userId: number;
@@ -548,11 +560,7 @@ export function RentingPanel({ pipeline, userId }: RentingPanelProps) {
                       <TableRow key={pago.id}>
                         <TableCell>{formatDate(pago.fecha)}</TableCell>
                         <TableCell>
-                          {pago.contexto_pago
-                            ? pago.numeroPeriodo
-                              ? `${CONTEXTO_PAGO_LABELS[pago.contexto_pago]} #${pago.numeroPeriodo}`
-                              : CONTEXTO_PAGO_LABELS[pago.contexto_pago]
-                            : "—"}
+                          {historialContextoLabel(pago)}
                         </TableCell>
                         <TableCell>{formatCop(pago.monto)}</TableCell>
                         <TableCell>
@@ -587,11 +595,7 @@ export function RentingPanel({ pipeline, userId }: RentingPanelProps) {
                   >
                     <p className="font-medium">{formatDate(pago.fecha)}</p>
                     <p className="mt-1 text-muted-foreground">
-                      {pago.contexto_pago
-                        ? pago.numeroPeriodo
-                          ? `${CONTEXTO_PAGO_LABELS[pago.contexto_pago]} #${pago.numeroPeriodo}`
-                          : CONTEXTO_PAGO_LABELS[pago.contexto_pago]
-                        : "—"}
+                      {historialContextoLabel(pago)}
                     </p>
                     <dl className="mt-3 flex flex-col gap-1.5">
                       <div className="flex justify-between gap-2">

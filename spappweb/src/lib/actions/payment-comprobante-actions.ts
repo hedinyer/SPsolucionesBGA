@@ -208,8 +208,16 @@ export async function checkReferenciaPagoUsada(input: {
 const confirmPagoSchema = z.object({
   userId: z.number(),
   compraId: z.string().uuid(),
-  contexto: z.enum(["tarifa", "inicial", "cuota_adelantada", "visita"]),
+  contexto: z.enum([
+    "tarifa",
+    "inicial",
+    "cuota_adelantada",
+    "visita",
+    "producto_inicial",
+    "producto_cuota",
+  ]),
   tarifaId: z.string().uuid().optional(),
+  compraProductoCreditoId: z.string().uuid().optional(),
   referencia: z.string().optional(),
   monto: z.number().int().positive("El monto debe ser mayor a 0"),
   fechaComprobante: z.string().optional(),
@@ -238,6 +246,9 @@ export async function confirmPagoConComprobante(
     tarifaId: formData.get("tarifaId")
       ? String(formData.get("tarifaId"))
       : undefined,
+    compraProductoCreditoId: formData.get("compraProductoCreditoId")
+      ? String(formData.get("compraProductoCreditoId"))
+      : undefined,
     referencia: formData.get("referencia")
       ? String(formData.get("referencia")).trim()
       : undefined,
@@ -259,6 +270,9 @@ export async function confirmPagoConComprobante(
     parsed.contexto === "inicial" ||
     parsed.contexto === "cuota_adelantada" ||
     parsed.contexto === "visita";
+  const isProductoCredito =
+    parsed.contexto === "producto_inicial" ||
+    parsed.contexto === "producto_cuota";
   const presencial = isPresencialMedio(parsed.medioPagoAdmin);
   const file = optionalImageFile(formData.get("file"));
 
@@ -266,11 +280,15 @@ export async function confirmPagoConComprobante(
     throw new Error("Falta la tarifa a confirmar.");
   }
 
+  if (isProductoCredito && !parsed.compraProductoCreditoId) {
+    throw new Error("Falta el producto a crédito.");
+  }
+
   if (parsed.contexto === "tarifa" && !file && !presencial) {
     throw new Error("Sube el comprobante de pago.");
   }
 
-  if (isPrimerPago && !file && !presencial) {
+  if ((isPrimerPago || isProductoCredito) && !file && !presencial) {
     throw new Error("Sube el comprobante de pago.");
   }
 
@@ -280,6 +298,54 @@ export async function confirmPagoConComprobante(
       parsed.compraId,
       parsed.contexto as PrimerPagoConcepto,
     );
+  }
+
+  if (isProductoCredito) {
+    const { data: item, error: itemError } = await supabase
+      .from("compra_productos_credito")
+      .select(
+        "id, user_moto_compra_id, nombre, cuota_inicial_monto, cuota_diaria_monto, plazo_dias, cantidad",
+      )
+      .eq("id", parsed.compraProductoCreditoId!)
+      .maybeSingle();
+    if (itemError) throw new Error(itemError.message);
+    if (!item) throw new Error("Producto a crédito no encontrado.");
+    if (item.user_moto_compra_id !== parsed.compraId) {
+      throw new Error("El producto no pertenece a esta compra.");
+    }
+
+    const { data: abonosPrev, error: abonosError } = await supabase
+      .from("pagos")
+      .select("monto")
+      .eq("compra_producto_credito_id", item.id)
+      .eq("contexto_pago", parsed.contexto)
+      .eq("estado", "confirmado");
+    if (abonosError) throw new Error(abonosError.message);
+
+    const recibido = (abonosPrev ?? []).reduce(
+      (sum, row) => sum + Number(row.monto),
+      0,
+    );
+    const esperado =
+      parsed.contexto === "producto_inicial"
+        ? Number(item.cuota_inicial_monto) * Number(item.cantidad)
+        : Number(item.cuota_diaria_monto) *
+          Number(item.cantidad) *
+          Math.max(Number(item.plazo_dias ?? 0), 0);
+    if (esperado <= 0) {
+      throw new Error(
+        parsed.contexto === "producto_cuota"
+          ? "Define el plazo en días del producto antes de registrar cuotas."
+          : "Este producto no tiene cuota inicial.",
+      );
+    }
+    if (recibido >= esperado) {
+      throw new Error(
+        parsed.contexto === "producto_inicial"
+          ? "La inicial de este producto ya está cubierta."
+          : "Las cuotas de este producto ya están cubiertas.",
+      );
+    }
   }
 
   if (parsed.contexto === "tarifa") {
@@ -377,6 +443,9 @@ export async function confirmPagoConComprobante(
       fecha_comprobante: fechaComprobante,
       tarifa_objetivo_id:
         parsed.contexto === "tarifa" ? parsed.tarifaId! : null,
+      compra_producto_credito_id: isProductoCredito
+        ? parsed.compraProductoCreditoId!
+        : null,
       contexto_pago: parsed.contexto,
       notas_admin: notasAdmin,
     })
@@ -423,9 +492,11 @@ export async function removePagoAbono(
   if (
     pago.contexto_pago !== "inicial" &&
     pago.contexto_pago !== "cuota_adelantada" &&
-    pago.contexto_pago !== "visita"
+    pago.contexto_pago !== "visita" &&
+    pago.contexto_pago !== "producto_inicial" &&
+    pago.contexto_pago !== "producto_cuota"
   ) {
-    throw new Error("Solo se pueden eliminar abonos del primer pago.");
+    throw new Error("Solo se pueden eliminar abonos del primer pago o de productos a crédito.");
   }
 
   const { data: compra, error: compraError } = await supabase
@@ -437,7 +508,18 @@ export async function removePagoAbono(
   if (compraError) throw new Error(compraError.message);
   if (!compra) throw new Error("Compra no encontrada.");
 
-  if (compra.estado === "entregada" || compra.estado === "cancelada") {
+  const isProducto =
+    pago.contexto_pago === "producto_inicial" ||
+    pago.contexto_pago === "producto_cuota";
+
+  if (
+    !isProducto &&
+    (compra.estado === "entregada" || compra.estado === "cancelada")
+  ) {
+    throw new Error("No se pueden eliminar abonos en este estado.");
+  }
+
+  if (compra.estado === "cancelada") {
     throw new Error("No se pueden eliminar abonos en este estado.");
   }
 

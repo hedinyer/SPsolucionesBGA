@@ -74,6 +74,7 @@ export function ProductosCreditoManager({
               <TableHead>Producto</TableHead>
               <TableHead>Cuota inicial</TableHead>
               <TableHead>Cuota diaria</TableHead>
+              <TableHead>Días</TableHead>
               <TableHead>Estado</TableHead>
               <TableHead className="w-24" />
             </TableRow>
@@ -89,6 +90,9 @@ export function ProductosCreditoManager({
                 </TableCell>
                 <TableCell>{formatCop(p.cuota_inicial)}</TableCell>
                 <TableCell>{formatCop(p.cuota_diaria)}</TableCell>
+                <TableCell>
+                  {p.plazo_dias != null ? `${p.plazo_dias} días` : "—"}
+                </TableCell>
                 <TableCell>
                   <Badge variant={p.activo ? "outline" : "secondary"}>
                     {p.activo ? "Activo" : "Inactivo"}
@@ -147,7 +151,7 @@ export function ProductosCreditoManager({
             ))}
             {productos.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
+                <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
                   No hay productos a crédito. Crea el primero (ej. forro de moto).
                 </TableCell>
               </TableRow>
@@ -181,6 +185,10 @@ export function ProductosCreditoManager({
               <div>
                 <dt className="text-muted-foreground">Cuota diaria</dt>
                 <dd>{formatCop(p.cuota_diaria)}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Días</dt>
+                <dd>{p.plazo_dias != null ? `${p.plazo_dias} días` : "—"}</dd>
               </div>
             </dl>
             <div className="mt-3 flex gap-2">
@@ -238,6 +246,7 @@ function ProductoCreditoDialog({
     descripcion?: string;
     cuotaInicial: number;
     cuotaDiaria: number;
+    plazoDias: number;
     activo: boolean;
     orden: number;
   }) => void;
@@ -246,6 +255,7 @@ function ProductoCreditoDialog({
   const [descripcion, setDescripcion] = useState("");
   const [cuotaInicial, setCuotaInicial] = useState("50000");
   const [cuotaDiaria, setCuotaDiaria] = useState("5000");
+  const [plazoDias, setPlazoDias] = useState("20");
   const [activo, setActivo] = useState(true);
   const [orden, setOrden] = useState("0");
 
@@ -254,9 +264,13 @@ function ProductoCreditoDialog({
     setDescripcion(editing?.descripcion ?? "");
     setCuotaInicial(String(editing?.cuota_inicial ?? 50000));
     setCuotaDiaria(String(editing?.cuota_diaria ?? 5000));
+    setPlazoDias(String(editing?.plazo_dias ?? 20));
     setActivo(editing?.activo ?? true);
     setOrden(String(editing?.orden ?? 0));
   }, [editing, open]);
+
+  const parsedPlazo = Number(plazoDias);
+  const parsedDiaria = Number(cuotaDiaria);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -306,6 +320,25 @@ function ProductoCreditoDialog({
               />
             </div>
           </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="pc-plazo">Días de cuota diaria</Label>
+            <Input
+              id="pc-plazo"
+              type="number"
+              min={1}
+              value={plazoDias}
+              onChange={(e) => setPlazoDias(e.target.value)}
+            />
+            {Number.isFinite(parsedDiaria) &&
+            parsedDiaria > 0 &&
+            Number.isFinite(parsedPlazo) &&
+            parsedPlazo > 0 ? (
+              <p className="text-xs text-muted-foreground">
+                {formatCop(parsedDiaria)}/día × {parsedPlazo} días ={" "}
+                {formatCop(parsedDiaria * parsedPlazo)}
+              </p>
+            ) : null}
+          </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col gap-2">
               <Label htmlFor="pc-orden">Orden</Label>
@@ -327,7 +360,12 @@ function ProductoCreditoDialog({
           <Button
             type="button"
             className="bg-primary text-primary-foreground hover:bg-primary/80"
-            disabled={pending || !nombre.trim()}
+            disabled={
+              pending ||
+              !nombre.trim() ||
+              !Number.isFinite(parsedPlazo) ||
+              parsedPlazo <= 0
+            }
             onClick={() =>
               onSave({
                 id: editing?.id,
@@ -335,6 +373,7 @@ function ProductoCreditoDialog({
                 descripcion: descripcion || undefined,
                 cuotaInicial: Number(cuotaInicial),
                 cuotaDiaria: Number(cuotaDiaria),
+                plazoDias: parsedPlazo,
                 activo,
                 orden: Number(orden),
               })

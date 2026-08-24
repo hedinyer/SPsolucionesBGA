@@ -101,7 +101,11 @@ export function ClientPipelineView({
                 compra={pipeline.compra}
                 items={pipeline.compraProductosCredito}
                 catalogo={productosCredito}
+                pagos={pipeline.pagos}
                 userId={userId}
+                referenciasUsadas={referenciasUsadas}
+                clienteNombre={pipeline.displayName}
+                clienteCedula={pipeline.user.user}
               />
               <PaymentConfirmPanel
                 compra={pipeline.compra}
@@ -116,12 +120,28 @@ export function ClientPipelineView({
           {(adminStep === "entrega" ||
             pipeline.compra?.estado === "entregada" ||
             pipeline.compra?.estado === "saldada") && (
-            <DeliveryPanel
-              compra={pipeline.compra}
-              userId={userId}
-              clienteCelular={clienteCelular}
-              clienteNombre={pipeline.displayName}
-            />
+            <>
+              {(pipeline.compra?.estado === "entregada" ||
+                pipeline.compra?.estado === "saldada") &&
+                pipeline.compraProductosCredito.length > 0 && (
+                  <CreditProductsPanel
+                    compra={pipeline.compra}
+                    items={pipeline.compraProductosCredito}
+                    catalogo={productosCredito}
+                    pagos={pipeline.pagos}
+                    userId={userId}
+                    referenciasUsadas={referenciasUsadas}
+                    clienteNombre={pipeline.displayName}
+                    clienteCedula={pipeline.user.user}
+                  />
+                )}
+              <DeliveryPanel
+                compra={pipeline.compra}
+                userId={userId}
+                clienteCelular={clienteCelular}
+                clienteNombre={pipeline.displayName}
+              />
+            </>
           )}
           {adminStep === "visita" && (
             <VisitActionPanel
@@ -175,7 +195,11 @@ export function ClientPipelineView({
                     compra={pipeline.compra}
                     items={pipeline.compraProductosCredito}
                     catalogo={productosCredito}
+                    pagos={pipeline.pagos}
                     userId={userId}
+                    referenciasUsadas={referenciasUsadas}
+                    clienteNombre={pipeline.displayName}
+                    clienteCedula={pipeline.user.user}
                   />
                   <PaymentConfirmPanel
                     compra={pipeline.compra}
