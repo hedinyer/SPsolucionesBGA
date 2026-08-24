@@ -653,6 +653,9 @@ export const AGENT_TOOLS = {
         .enum(["Soluciones", "Bera", "Bodega"])
         .optional()
         .default("Soluciones"),
+      gaveta: z.string().optional(),
+      editadoPor: z.string().optional(),
+      motivoEdicion: z.string().optional(),
       imagenUrl: z.string().optional(),
       compatibleModelos: z.array(z.string()).optional(),
       activo: z.boolean(),

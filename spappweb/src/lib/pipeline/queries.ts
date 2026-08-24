@@ -1307,7 +1307,7 @@ export async function getAllProductos(): Promise<InventarioProductoRow[]> {
   const { data } = await supabase
     .from("inventario_productos")
     .select(
-      "id, categoria_id, sku, nombre, descripcion, precio, costo, stock, stock_minimo, ubicacion, imagen_url, compatible_modelos, activo, inventario_categorias(id, nombre, slug, descripcion, activo, orden)",
+      "id, categoria_id, sku, nombre, descripcion, precio, costo, stock, stock_minimo, ubicacion, gaveta, editado_por, motivo_edicion, editado_at, imagen_url, compatible_modelos, activo, inventario_categorias(id, nombre, slug, descripcion, activo, orden)",
     )
     .order("stock", { ascending: true })
     .order("nombre");
@@ -1327,7 +1327,7 @@ export async function getAllProductosCredito(): Promise<ProductoCreditoRow[]> {
 }
 
 const productoSelect =
-  "id, categoria_id, sku, nombre, descripcion, precio, costo, stock, stock_minimo, ubicacion, imagen_url, compatible_modelos, activo, inventario_categorias(id, nombre, slug, descripcion, activo, orden)";
+  "id, categoria_id, sku, nombre, descripcion, precio, costo, stock, stock_minimo, ubicacion, gaveta, editado_por, motivo_edicion, editado_at, imagen_url, compatible_modelos, activo, inventario_categorias(id, nombre, slug, descripcion, activo, orden)";
 
 export async function getProductoBySku(
   sku: string,

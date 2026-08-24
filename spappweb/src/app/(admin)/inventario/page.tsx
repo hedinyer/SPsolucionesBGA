@@ -13,7 +13,7 @@ export default async function InventarioPage() {
     <div className="flex flex-col gap-6">
       <AdminHubSubnav hubId="tienda" />
       <PageHeader
-        title="Stock"
+        title="Inventario"
         description="Repuestos, lubricantes y accesorios de la tienda."
       />
       <InventarioManager categorias={categorias} productos={productos} />

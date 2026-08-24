@@ -93,6 +93,17 @@ function formatMilesFromNumber(n: number): string {
   return n.toLocaleString("es-CO");
 }
 
+function formatUbicacionProducto(
+  ubicacion: InventarioUbicacion | undefined,
+  gaveta?: string | null,
+): string {
+  const base = ubicacion ?? "Soluciones";
+  if (base === "Bodega" && gaveta?.trim()) {
+    return `Bodega · Gaveta ${gaveta.trim()}`;
+  }
+  return base;
+}
+
 export function InventarioManager({
   categorias,
   productos,
@@ -135,7 +146,7 @@ export function InventarioManager({
   return (
     <div className="flex flex-col gap-2">
       <p className="text-xs text-muted-foreground">
-        Stock actualizado hace {secondsAgo}s
+        Inventario actualizado hace {secondsAgo}s
       </p>
       <Tabs defaultValue="productos">
         <TabsList className="w-full max-w-full overflow-x-auto">
@@ -158,7 +169,7 @@ export function InventarioManager({
           {productos.length === 0 ? (
             <Empty className="border border-dashed border-border">
               <EmptyHeader>
-                <EmptyTitle>Stock vacío</EmptyTitle>
+                <EmptyTitle>Inventario vacío</EmptyTitle>
                 <EmptyDescription>
                   Aún no hay productos. Crea el primero con Nuevo producto.
                 </EmptyDescription>
@@ -187,7 +198,10 @@ export function InventarioManager({
                         p.imagen_url,
                       );
                       const lowStock = p.stock <= p.stock_minimo;
-                      const ubicacion = p.ubicacion ?? "Soluciones";
+                      const ubicacionLabel = formatUbicacionProducto(
+                        p.ubicacion,
+                        p.gaveta,
+                      );
                       return (
                         <TableRow key={p.id}>
                           <TableCell className="text-muted-foreground">
@@ -222,7 +236,7 @@ export function InventarioManager({
                               <span className="text-muted-foreground">—</span>
                             )}
                           </TableCell>
-                          <TableCell>{ubicacion}</TableCell>
+                          <TableCell>{ubicacionLabel}</TableCell>
                           <TableCell>
                             <div className="flex flex-nowrap items-center gap-1 whitespace-nowrap">
                               <PrintPriceLabelButton product={p} />
@@ -312,7 +326,10 @@ export function InventarioManager({
                     p.imagen_url,
                   );
                   const lowStock = p.stock <= p.stock_minimo;
-                  const ubicacion = p.ubicacion ?? "Soluciones";
+                  const ubicacionLabel = formatUbicacionProducto(
+                    p.ubicacion,
+                    p.gaveta,
+                  );
                   return (
                     <div
                       key={p.id}
@@ -365,7 +382,7 @@ export function InventarioManager({
                         </div>
                         <div className="flex justify-between gap-2">
                           <dt className="text-muted-foreground">Ubicación</dt>
-                          <dd>{ubicacion}</dd>
+                          <dd>{ubicacionLabel}</dd>
                         </div>
                       </dl>
                       <div className="mt-3 flex flex-wrap gap-2">
@@ -900,8 +917,11 @@ type ProductoFormErrors = {
   costo?: string;
   precio?: string;
   ubicacion?: string;
+  gaveta?: string;
   categoriaId?: string;
   sku?: string;
+  editadoPor?: string;
+  motivoEdicion?: string;
 };
 
 function ProductoDialog({
@@ -928,6 +948,9 @@ function ProductoDialog({
     stock: number;
     stockMinimo: number;
     ubicacion: InventarioUbicacion;
+    gaveta?: string;
+    editadoPor?: string;
+    motivoEdicion?: string;
     imagenUrl: string;
     imageFile: File | null;
     compatibleModelos: string[];
@@ -935,6 +958,7 @@ function ProductoDialog({
   }) => void;
 }) {
   const formId = useId();
+  const isEditing = editing != null;
 
   const [categoriaId, setCategoriaId] = useState("");
   const [sku, setSku] = useState("");
@@ -946,6 +970,9 @@ function ProductoDialog({
   const [stock, setStock] = useState("");
   const [stockMinimo, setStockMinimo] = useState("0");
   const [ubicacion, setUbicacion] = useState<InventarioUbicacion>("Soluciones");
+  const [gaveta, setGaveta] = useState("");
+  const [editadoPor, setEditadoPor] = useState("");
+  const [motivoEdicion, setMotivoEdicion] = useState("");
   const [imagenUrl, setImagenUrl] = useState("");
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [modelos, setModelos] = useState("");
@@ -959,7 +986,10 @@ function ProductoDialog({
   const precioId = `${formId}-precio`;
   const skuId = `${formId}-sku`;
   const ubicacionId = `${formId}-ubicacion`;
+  const gavetaId = `${formId}-gaveta`;
   const categoriaFieldId = `${formId}-categoria`;
+  const editadoPorId = `${formId}-editado-por`;
+  const motivoEdicionId = `${formId}-motivo-edicion`;
 
   function focusField(id: string) {
     document.getElementById(id)?.focus();
@@ -976,6 +1006,9 @@ function ProductoDialog({
     setStock(editing ? String(editing.stock) : "");
     setStockMinimo(String(editing?.stock_minimo ?? 0));
     setUbicacion(editing?.ubicacion ?? "Soluciones");
+    setGaveta(editing?.gaveta ?? "");
+    setEditadoPor("");
+    setMotivoEdicion("");
     setImagenUrl(editing?.imagen_url ?? "");
     setImageFile(null);
     setModelos((editing?.compatible_modelos ?? []).join(", "));
@@ -1011,7 +1044,18 @@ function ProductoDialog({
       next.precio = "Indica a cuánto lo vendes (0 o más).";
     }
     if (!ubicacion) next.ubicacion = "Elige dónde está el producto.";
+    if (ubicacion === "Bodega" && !gaveta.trim()) {
+      next.gaveta = "Indica el número de gaveta.";
+    }
     if (!categoriaId) next.categoriaId = "Elige una categoría.";
+    if (isEditing) {
+      if (!editadoPor.trim()) {
+        next.editadoPor = "Escribe quién hace la edición.";
+      }
+      if (!motivoEdicion.trim()) {
+        next.motivoEdicion = "Explica por qué editas este producto.";
+      }
+    }
     const resolvedSku = sku.trim() || skuFromNombre(nombre);
     if (!resolvedSku) next.sku = "El SKU se genera del nombre; revísalo en Más opciones.";
     return next;
@@ -1021,10 +1065,13 @@ function ProductoDialog({
     const next = validate();
     setErrors(next);
     if (Object.keys(next).length > 0) {
-      if (next.nombre) focusField(nombreId);
+      if (next.editadoPor) focusField(editadoPorId);
+      else if (next.motivoEdicion) focusField(motivoEdicionId);
+      else if (next.nombre) focusField(nombreId);
       else if (next.stock) focusField(stockId);
       else if (next.costo) focusField(costoId);
       else if (next.precio) focusField(precioId);
+      else if (next.gaveta) focusField(gavetaId);
       else if (next.ubicacion) focusField(ubicacionId);
       else if (next.categoriaId) focusField(categoriaFieldId);
       else if (next.sku) {
@@ -1046,6 +1093,9 @@ function ProductoDialog({
       stock: Number(stock.replace(/\D/g, "")),
       stockMinimo: Number(stockMinimo) || 0,
       ubicacion,
+      gaveta: ubicacion === "Bodega" ? gaveta.trim() : undefined,
+      editadoPor: isEditing ? editadoPor.trim() : undefined,
+      motivoEdicion: isEditing ? motivoEdicion.trim() : undefined,
       imagenUrl,
       imageFile,
       compatibleModelos: modelos
@@ -1062,96 +1112,193 @@ function ProductoDialog({
     costo.trim() !== "" &&
     precio.trim() !== "" &&
     Boolean(categoriaId) &&
-    Boolean(ubicacion);
+    Boolean(ubicacion) &&
+    (ubicacion !== "Bodega" || gaveta.trim().length > 0) &&
+    (!isEditing ||
+      (editadoPor.trim().length > 0 && motivoEdicion.trim().length > 0));
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto bg-background">
+      <DialogContent className="max-h-[90dvh] overflow-y-auto bg-background sm:max-w-2xl md:max-w-3xl">
         <DialogHeader>
           <DialogTitle>
             {editing ? "Editar producto" : "Nuevo producto"}
           </DialogTitle>
           <DialogDescription>
-            Escribe el nombre, cuántas hay, cuánto costó y a cuánto se vende.
+            {isEditing
+              ? "Indica quién edita, por qué y los datos del producto."
+              : "Escribe el nombre, cuántas hay, cuánto costó y a cuánto se vende."}
           </DialogDescription>
         </DialogHeader>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field
-            id={nombreId}
-            label="Nombre"
-            value={nombre}
-            onChange={handleNombreChange}
-            error={errors.nombre}
-            className="sm:col-span-2"
-          />
-          <Field
-            id={stockId}
-            label="Cuántas hay"
-            value={stock}
-            onChange={(v) => setStock(v.replace(/\D/g, ""))}
-            inputMode="numeric"
-            placeholder="Ej. 5"
-            error={errors.stock}
-          />
-          <Field
-            id={costoId}
-            label="Cuánto te costó"
-            value={costo}
-            onChange={(v) => setCosto(formatMilesInput(v))}
-            inputMode="numeric"
-            placeholder="Ej. 50.000"
-            error={errors.costo}
-          />
-          <Field
-            id={precioId}
-            label="A cuánto lo vendes"
-            value={precio}
-            onChange={(v) => setPrecio(formatMilesInput(v))}
-            inputMode="numeric"
-            placeholder="Ej. 80.000"
-            error={errors.precio}
-          />
-          <div className="flex flex-col gap-2">
-            <Label htmlFor={ubicacionId}>Ubicación</Label>
-            <TouchSelect
-              id={ubicacionId}
-              aria-label="Ubicación"
-              aria-invalid={!!errors.ubicacion}
-              value={ubicacion}
-              onChange={(v) => setUbicacion(v as InventarioUbicacion)}
-              options={INVENTARIO_UBICACIONES.map((u) => ({
-                value: u,
-                label: u,
-              }))}
+
+        <div className="flex flex-col gap-6">
+          {isEditing ? (
+            <section
+              aria-labelledby={`${formId}-sec-edicion`}
+              className="grid gap-3 sm:grid-cols-2"
+            >
+              <h3
+                id={`${formId}-sec-edicion`}
+                className="text-sm font-medium text-foreground sm:col-span-2"
+              >
+                Motivo de la edición
+              </h3>
+              <Field
+                id={editadoPorId}
+                label="Quién lo edita"
+                value={editadoPor}
+                onChange={setEditadoPor}
+                error={errors.editadoPor}
+                autoComplete="name"
+              />
+              <div className="flex flex-col gap-2">
+                <Label htmlFor={motivoEdicionId}>Por qué lo editas</Label>
+                <Textarea
+                  id={motivoEdicionId}
+                  value={motivoEdicion}
+                  onChange={(e) => setMotivoEdicion(e.target.value)}
+                  aria-invalid={!!errors.motivoEdicion}
+                  aria-describedby={
+                    errors.motivoEdicion
+                      ? `${motivoEdicionId}-error`
+                      : undefined
+                  }
+                  className="min-h-11 touch-manipulation text-base md:text-sm"
+                />
+                {errors.motivoEdicion ? (
+                  <p
+                    id={`${motivoEdicionId}-error`}
+                    className="text-sm text-destructive"
+                    role="alert"
+                  >
+                    {errors.motivoEdicion}
+                  </p>
+                ) : null}
+              </div>
+            </section>
+          ) : null}
+
+          <section
+            aria-labelledby={`${formId}-sec-datos`}
+            className="grid gap-3 sm:grid-cols-2 md:grid-cols-3"
+          >
+            <h3
+              id={`${formId}-sec-datos`}
+              className="text-sm font-medium text-foreground sm:col-span-2 md:col-span-3"
+            >
+              Datos del producto
+            </h3>
+            <Field
+              id={nombreId}
+              label="Nombre"
+              value={nombre}
+              onChange={handleNombreChange}
+              error={errors.nombre}
+              className="sm:col-span-2 md:col-span-3"
             />
-            {errors.ubicacion ? (
-              <p className="text-sm text-destructive" role="alert">
-                {errors.ubicacion}
-              </p>
-            ) : null}
-          </div>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor={categoriaFieldId}>Categoría</Label>
-            <TouchSelect
-              id={categoriaFieldId}
-              aria-label="Categoría"
-              aria-invalid={!!errors.categoriaId}
-              value={categoriaId}
-              onChange={setCategoriaId}
-              options={categorias.map((c) => ({
-                value: String(c.id),
-                label: c.nombre,
-              }))}
+            <Field
+              id={stockId}
+              label="Cuántas hay"
+              value={stock}
+              onChange={(v) => setStock(v.replace(/\D/g, ""))}
+              inputMode="numeric"
+              placeholder="Ej. 5"
+              error={errors.stock}
             />
-            {errors.categoriaId ? (
-              <p className="text-sm text-destructive" role="alert">
-                {errors.categoriaId}
-              </p>
+            <Field
+              id={costoId}
+              label="Cuánto te costó"
+              value={costo}
+              onChange={(v) => setCosto(formatMilesInput(v))}
+              inputMode="numeric"
+              placeholder="Ej. 50.000"
+              error={errors.costo}
+            />
+            <Field
+              id={precioId}
+              label="A cuánto lo vendes"
+              value={precio}
+              onChange={(v) => setPrecio(formatMilesInput(v))}
+              inputMode="numeric"
+              placeholder="Ej. 80.000"
+              error={errors.precio}
+            />
+          </section>
+
+          <section
+            aria-labelledby={`${formId}-sec-lugar`}
+            className="grid gap-3 sm:grid-cols-2 md:grid-cols-3"
+          >
+            <h3
+              id={`${formId}-sec-lugar`}
+              className="text-sm font-medium text-foreground sm:col-span-2 md:col-span-3"
+            >
+              Dónde está
+            </h3>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor={ubicacionId}>Ubicación</Label>
+              <TouchSelect
+                id={ubicacionId}
+                aria-label="Ubicación"
+                aria-invalid={!!errors.ubicacion}
+                value={ubicacion}
+                onChange={(v) => {
+                  const next = v as InventarioUbicacion;
+                  setUbicacion(next);
+                  if (next !== "Bodega") setGaveta("");
+                }}
+                options={INVENTARIO_UBICACIONES.map((u) => ({
+                  value: u,
+                  label: u,
+                }))}
+              />
+              {errors.ubicacion ? (
+                <p className="text-sm text-destructive" role="alert">
+                  {errors.ubicacion}
+                </p>
+              ) : null}
+            </div>
+            {ubicacion === "Bodega" ? (
+              <Field
+                id={gavetaId}
+                label="Gaveta número"
+                value={gaveta}
+                onChange={(v) => setGaveta(v.replace(/\D/g, ""))}
+                inputMode="numeric"
+                placeholder="Ej. 12"
+                error={errors.gaveta}
+              />
             ) : null}
-          </div>
-          <div className="sm:col-span-2">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor={categoriaFieldId}>Categoría</Label>
+              <TouchSelect
+                id={categoriaFieldId}
+                aria-label="Categoría"
+                aria-invalid={!!errors.categoriaId}
+                value={categoriaId}
+                onChange={setCategoriaId}
+                options={categorias.map((c) => ({
+                  value: String(c.id),
+                  label: c.nombre,
+                }))}
+              />
+              {errors.categoriaId ? (
+                <p className="text-sm text-destructive" role="alert">
+                  {errors.categoriaId}
+                </p>
+              ) : null}
+            </div>
+          </section>
+
+          <section aria-labelledby={`${formId}-sec-foto`} className="grid gap-3">
+            <h3
+              id={`${formId}-sec-foto`}
+              className="text-sm font-medium text-foreground"
+            >
+              Foto
+            </h3>
             <ImageFileField
-              label="Foto"
+              label="Foto del producto"
               existingUrl={imagenUrl}
               file={imageFile}
               onFileChange={setImageFile}
@@ -1160,9 +1307,9 @@ function ProductoDialog({
               fileInputId="inventario-producto-file"
               cameraInputId="inventario-producto-camera"
             />
-          </div>
+          </section>
 
-          <div className="sm:col-span-2">
+          <section className="grid gap-2">
             <Button
               type="button"
               variant="ghost"
@@ -1173,10 +1320,11 @@ function ProductoDialog({
               Más opciones
               <ChevronDown
                 className={`h-4 w-4 transition-transform ${moreOpen ? "rotate-180" : ""}`}
+                aria-hidden
               />
             </Button>
             {moreOpen ? (
-              <div className="mt-2 grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-3 sm:grid-cols-2">
                 <Field
                   id={skuId}
                   label="SKU"
@@ -1221,8 +1369,9 @@ function ProductoDialog({
                 </div>
               </div>
             ) : null}
-          </div>
+          </section>
         </div>
+
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancelar
@@ -1233,11 +1382,11 @@ function ProductoDialog({
             title={
               basicosCompletos
                 ? undefined
-                : "Completa nombre, cantidad, costo, precio, ubicación y categoría"
+                : "Completa los campos obligatorios del formulario"
             }
             onClick={handleSubmit}
           >
-            Guardar producto
+            {isEditing ? "Guardar cambios" : "Guardar producto"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1253,6 +1402,7 @@ function Field({
   type = "text",
   inputMode,
   placeholder,
+  autoComplete,
   error,
   className,
 }: {
@@ -1263,6 +1413,7 @@ function Field({
   type?: string;
   inputMode?: "numeric" | "text" | "decimal" | "tel";
   placeholder?: string;
+  autoComplete?: string;
   error?: string;
   className?: string;
 }) {
@@ -1275,6 +1426,7 @@ function Field({
         type={type}
         inputMode={inputMode}
         placeholder={placeholder}
+        autoComplete={autoComplete}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         aria-invalid={!!error}

@@ -640,6 +640,10 @@ export interface InventarioProductoRow {
   stock: number;
   stock_minimo: number;
   ubicacion?: InventarioUbicacion;
+  gaveta?: string | null;
+  editado_por?: string | null;
+  motivo_edicion?: string | null;
+  editado_at?: string | null;
   imagen_url: string | null;
   compatible_modelos: string[];
   activo: boolean;

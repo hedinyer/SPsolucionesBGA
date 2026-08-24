@@ -891,26 +891,55 @@ export async function deleteCategoria(id: number) {
   return adminDelete(supabase, "inventario_categorias", id, "/inventario");
 }
 
-const productoSchema = z.object({
-  id: z.number().optional(),
-  categoriaId: z.number().int().positive(),
-  sku: z.string().min(1),
-  nombre: z.string().min(1),
-  descripcion: z.string().optional(),
-  precio: z.number().int().min(0),
-  costo: z.number().int().min(0),
-  stock: z.number().int().min(0),
-  stockMinimo: z.number().int().min(0),
-  ubicacion: z.enum(["Soluciones", "Bera", "Bodega"]),
-  imagenUrl: z.string().optional(),
-  compatibleModelos: z.array(z.string()).optional(),
-  activo: z.boolean(),
-});
+const productoSchema = z
+  .object({
+    id: z.number().optional(),
+    categoriaId: z.number().int().positive(),
+    sku: z.string().min(1),
+    nombre: z.string().min(1),
+    descripcion: z.string().optional(),
+    precio: z.number().int().min(0),
+    costo: z.number().int().min(0),
+    stock: z.number().int().min(0),
+    stockMinimo: z.number().int().min(0),
+    ubicacion: z.enum(["Soluciones", "Bera", "Bodega"]),
+    gaveta: z.string().optional(),
+    editadoPor: z.string().optional(),
+    motivoEdicion: z.string().optional(),
+    imagenUrl: z.string().optional(),
+    compatibleModelos: z.array(z.string()).optional(),
+    activo: z.boolean(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.ubicacion === "Bodega" && !data.gaveta?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Indica el número de gaveta.",
+        path: ["gaveta"],
+      });
+    }
+    if (data.id != null) {
+      if (!data.editadoPor?.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Indica quién edita el producto.",
+          path: ["editadoPor"],
+        });
+      }
+      if (!data.motivoEdicion?.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Indica por qué lo editas.",
+          path: ["motivoEdicion"],
+        });
+      }
+    }
+  });
 
 export async function saveProducto(input: z.infer<typeof productoSchema>) {
   const parsed = productoSchema.parse(input);
   const supabase = await assertAdmin();
-  const payload = {
+  const payload: Record<string, unknown> = {
     categoria_id: parsed.categoriaId,
     sku: parsed.sku.trim().toUpperCase(),
     nombre: parsed.nombre.trim(),
@@ -920,11 +949,18 @@ export async function saveProducto(input: z.infer<typeof productoSchema>) {
     stock: parsed.stock,
     stock_minimo: parsed.stockMinimo,
     ubicacion: parsed.ubicacion,
+    gaveta:
+      parsed.ubicacion === "Bodega"
+        ? parsed.gaveta?.trim() || null
+        : null,
     imagen_url: parsed.imagenUrl?.trim() || null,
     compatible_modelos: parsed.compatibleModelos ?? [],
     activo: parsed.activo,
   };
   if (parsed.id) {
+    payload.editado_por = parsed.editadoPor?.trim() || null;
+    payload.motivo_edicion = parsed.motivoEdicion?.trim() || null;
+    payload.editado_at = new Date().toISOString();
     const { error } = await supabase
       .from("inventario_productos")
       .update(payload)

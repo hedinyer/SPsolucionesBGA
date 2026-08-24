@@ -70,7 +70,7 @@ export const adminNavGroups: AdminNavGroup[] = [
     children: [
       { href: "/venta", label: "Repuestos y accesorios", icon: ShoppingCart },
       { href: "/caja", label: "Caja", icon: Store },
-      { href: "/inventario", label: "Stock", icon: Package },
+      { href: "/inventario", label: "Inventario", icon: Package },
       { href: "/productos-credito", label: "Extras a crédito", icon: CreditCard },
       { href: "/historial-ventas", label: "Historial", icon: History },
     ],
