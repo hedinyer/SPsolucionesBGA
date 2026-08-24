@@ -644,6 +644,9 @@ export interface InventarioProductoRow {
   editado_por?: string | null;
   motivo_edicion?: string | null;
   editado_at?: string | null;
+  eliminado_por?: string | null;
+  motivo_eliminacion?: string | null;
+  eliminado_at?: string | null;
   imagen_url: string | null;
   compatible_modelos: string[];
   activo: boolean;

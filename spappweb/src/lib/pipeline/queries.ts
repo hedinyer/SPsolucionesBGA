@@ -1307,8 +1307,9 @@ export async function getAllProductos(): Promise<InventarioProductoRow[]> {
   const { data } = await supabase
     .from("inventario_productos")
     .select(
-      "id, categoria_id, sku, nombre, descripcion, precio, costo, stock, stock_minimo, ubicacion, gaveta, editado_por, motivo_edicion, editado_at, imagen_url, compatible_modelos, activo, inventario_categorias(id, nombre, slug, descripcion, activo, orden)",
+      "id, categoria_id, sku, nombre, descripcion, precio, costo, stock, stock_minimo, ubicacion, gaveta, editado_por, motivo_edicion, editado_at, eliminado_por, motivo_eliminacion, eliminado_at, imagen_url, compatible_modelos, activo, inventario_categorias(id, nombre, slug, descripcion, activo, orden)",
     )
+    .is("eliminado_at", null)
     .order("stock", { ascending: true })
     .order("nombre");
   return ((data ?? []) as unknown as InventarioProductoRow[]);
@@ -1327,7 +1328,7 @@ export async function getAllProductosCredito(): Promise<ProductoCreditoRow[]> {
 }
 
 const productoSelect =
-  "id, categoria_id, sku, nombre, descripcion, precio, costo, stock, stock_minimo, ubicacion, gaveta, editado_por, motivo_edicion, editado_at, imagen_url, compatible_modelos, activo, inventario_categorias(id, nombre, slug, descripcion, activo, orden)";
+  "id, categoria_id, sku, nombre, descripcion, precio, costo, stock, stock_minimo, ubicacion, gaveta, editado_por, motivo_edicion, editado_at, eliminado_por, motivo_eliminacion, eliminado_at, imagen_url, compatible_modelos, activo, inventario_categorias(id, nombre, slug, descripcion, activo, orden)";
 
 export async function getProductoBySku(
   sku: string,
@@ -1341,6 +1342,7 @@ export async function getProductoBySku(
     .select(productoSelect)
     .eq("sku", normalized)
     .eq("activo", true)
+    .is("eliminado_at", null)
     .maybeSingle();
   return (data as InventarioProductoRow | null) ?? null;
 }
@@ -1361,6 +1363,7 @@ export async function searchProductos(
     .from("inventario_productos")
     .select(productoSelect)
     .eq("activo", true)
+    .is("eliminado_at", null)
     .or(`nombre.ilike."${pattern}",sku.ilike."${pattern}"`)
     .order("nombre")
     .limit(limit);

@@ -664,9 +664,14 @@ export const AGENT_TOOLS = {
   }),
   delete_producto: tool({
     category: "inventario",
-    description: "Elimina un producto de inventario.",
-    input: z.object({ id: z.number().int().positive() }),
-    handler: async ({ id }) => (await loadAdminActions()).deleteProducto(id),
+    description:
+      "Elimina (archiva) un producto de inventario. Requiere quién elimina y el motivo.",
+    input: z.object({
+      id: z.number().int().positive(),
+      eliminadoPor: z.string().min(1),
+      motivoEliminacion: z.string().min(1),
+    }),
+    handler: async (args) => (await loadAdminActions()).deleteProducto(args),
   }),
 
   // ---------------------------------------------------------------- TALLER

@@ -976,9 +976,37 @@ export async function saveProducto(input: z.infer<typeof productoSchema>) {
   return { ok: true };
 }
 
-export async function deleteProducto(id: number) {
+const deleteProductoSchema = z.object({
+  id: z.number().int().positive(),
+  eliminadoPor: z.string().trim().min(1, "Indica quién elimina el producto."),
+  motivoEliminacion: z
+    .string()
+    .trim()
+    .min(1, "Indica por qué eliminas el producto."),
+});
+
+export async function deleteProducto(
+  input: z.infer<typeof deleteProductoSchema>,
+) {
+  const parsed = deleteProductoSchema.parse(input);
   const supabase = await assertAdmin();
-  return adminDelete(supabase, "inventario_productos", id, "/inventario");
+  const { data, error } = await supabase
+    .from("inventario_productos")
+    .update({
+      activo: false,
+      eliminado_por: parsed.eliminadoPor,
+      motivo_eliminacion: parsed.motivoEliminacion,
+      eliminado_at: new Date().toISOString(),
+    })
+    .eq("id", parsed.id)
+    .is("eliminado_at", null)
+    .select("id");
+  if (error) throw new Error(mapDbError(error.message));
+  if (!data?.length) {
+    throw new Error("No se eliminó nada (ya estaba eliminado o sin permisos).");
+  }
+  revalidatePath("/inventario");
+  return { ok: true };
 }
 
 const updateSolicitudSchema = z.object({

@@ -124,11 +124,14 @@ export function InventarioManager({
     url: string;
     nombre: string;
   } | null>(null);
+  const [deletingProd, setDeletingProd] =
+    useState<InventarioProductoRow | null>(null);
   const [pending, startTransition] = useTransition();
 
   const { secondsAgo } = usePollingRefresh({
     intervalMs: 30_000,
-    enabled: !catOpen && !prodOpen && !photoPreview && !pending,
+    enabled:
+      !catOpen && !prodOpen && !photoPreview && !deletingProd && !pending,
   });
 
   function openPhoto(p: InventarioProductoRow) {
@@ -266,50 +269,15 @@ export function InventarioManager({
                                 <Eye className="h-4 w-4" />
                                 Ver foto
                               </Button>
-                              <AlertDialog>
-                                <AlertDialogTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    aria-label={`Eliminar ${p.nombre}`}
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                    Eliminar
-                                  </Button>
-                                </AlertDialogTrigger>
-                                <AlertDialogContent className="bg-background">
-                                  <AlertDialogHeader>
-                                    <AlertDialogTitle>
-                                      ¿Eliminar producto?
-                                    </AlertDialogTitle>
-                                    <AlertDialogDescription>
-                                      {p.nombre}
-                                    </AlertDialogDescription>
-                                  </AlertDialogHeader>
-                                  <AlertDialogFooter>
-                                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                                    <AlertDialogAction
-                                      onClick={() =>
-                                        startTransition(async () => {
-                                          try {
-                                            await deleteProducto(p.id);
-                                            toast.success("Producto eliminado.");
-                                            router.refresh();
-                                          } catch (e) {
-                                            toast.error(
-                                              e instanceof Error
-                                                ? e.message
-                                                : "No se pudo eliminar.",
-                                            );
-                                          }
-                                        })
-                                      }
-                                    >
-                                      Eliminar
-                                    </AlertDialogAction>
-                                  </AlertDialogFooter>
-                                </AlertDialogContent>
-                              </AlertDialog>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                aria-label={`Eliminar ${p.nombre}`}
+                                onClick={() => setDeletingProd(p)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                                Eliminar
+                              </Button>
                             </div>
                           </TableCell>
                         </TableRow>
@@ -419,51 +387,16 @@ export function InventarioManager({
                           <Eye className="mr-1 h-4 w-4" />
                           Ver foto
                         </Button>
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="flex-1"
-                              aria-label={`Eliminar ${p.nombre}`}
-                            >
-                              <Trash2 className="mr-1 h-4 w-4" />
-                              Eliminar
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent className="bg-background">
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>
-                                ¿Eliminar producto?
-                              </AlertDialogTitle>
-                              <AlertDialogDescription>
-                                {p.nombre}
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={() =>
-                                  startTransition(async () => {
-                                    try {
-                                      await deleteProducto(p.id);
-                                      toast.success("Producto eliminado.");
-                                      router.refresh();
-                                    } catch (e) {
-                                      toast.error(
-                                        e instanceof Error
-                                          ? e.message
-                                          : "No se pudo eliminar.",
-                                      );
-                                    }
-                                  })
-                                }
-                              >
-                                Eliminar
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex-1"
+                          aria-label={`Eliminar ${p.nombre}`}
+                          onClick={() => setDeletingProd(p)}
+                        >
+                          <Trash2 className="mr-1 h-4 w-4" />
+                          Eliminar
+                        </Button>
                       </div>
                     </div>
                   );
@@ -726,6 +659,29 @@ export function InventarioManager({
             ) : null}
           </DialogContent>
         </Dialog>
+
+        <DeleteProductoDialog
+          product={deletingProd}
+          open={!!deletingProd}
+          pending={pending}
+          onOpenChange={(open) => {
+            if (!open) setDeletingProd(null);
+          }}
+          onConfirm={(form) =>
+            startTransition(async () => {
+              try {
+                await deleteProducto(form);
+                toast.success("Producto eliminado.");
+                setDeletingProd(null);
+                router.refresh();
+              } catch (e) {
+                toast.error(
+                  e instanceof Error ? e.message : "No se pudo eliminar.",
+                );
+              }
+            })
+          }
+        />
       </Tabs>
     </div>
   );
@@ -738,6 +694,123 @@ function slugFromNombre(nombre: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
+}
+
+function DeleteProductoDialog({
+  product,
+  open,
+  pending,
+  onOpenChange,
+  onConfirm,
+}: {
+  product: InventarioProductoRow | null;
+  open: boolean;
+  pending: boolean;
+  onOpenChange: (v: boolean) => void;
+  onConfirm: (form: {
+    id: number;
+    eliminadoPor: string;
+    motivoEliminacion: string;
+  }) => void;
+}) {
+  const formId = useId();
+  const porId = `${formId}-eliminado-por`;
+  const motivoId = `${formId}-motivo`;
+  const [eliminadoPor, setEliminadoPor] = useState("");
+  const [motivo, setMotivo] = useState("");
+  const [errors, setErrors] = useState<{
+    eliminadoPor?: string;
+    motivo?: string;
+  }>({});
+
+  useEffect(() => {
+    if (open) {
+      setEliminadoPor("");
+      setMotivo("");
+      setErrors({});
+    }
+  }, [open, product?.id]);
+
+  function handleSubmit() {
+    if (!product) return;
+    const next: { eliminadoPor?: string; motivo?: string } = {};
+    if (!eliminadoPor.trim()) {
+      next.eliminadoPor = "Escribe quién elimina el producto.";
+    }
+    if (!motivo.trim()) {
+      next.motivo = "Explica por qué lo eliminas.";
+    }
+    setErrors(next);
+    if (Object.keys(next).length > 0) {
+      if (next.eliminadoPor) document.getElementById(porId)?.focus();
+      else document.getElementById(motivoId)?.focus();
+      return;
+    }
+    onConfirm({
+      id: product.id,
+      eliminadoPor: eliminadoPor.trim(),
+      motivoEliminacion: motivo.trim(),
+    });
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="bg-background sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Eliminar producto</DialogTitle>
+          <DialogDescription>
+            {product
+              ? `Vas a eliminar “${product.nombre}”. Indica quién lo elimina y por qué.`
+              : "Indica quién elimina y por qué."}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4">
+          <Field
+            id={porId}
+            label="Quién lo elimina"
+            value={eliminadoPor}
+            onChange={setEliminadoPor}
+            error={errors.eliminadoPor}
+            autoComplete="name"
+          />
+          <div className="flex flex-col gap-2">
+            <Label htmlFor={motivoId}>Por qué lo eliminas</Label>
+            <Textarea
+              id={motivoId}
+              value={motivo}
+              onChange={(e) => setMotivo(e.target.value)}
+              aria-invalid={!!errors.motivo}
+              aria-describedby={
+                errors.motivo ? `${motivoId}-error` : undefined
+              }
+              className="min-h-20 touch-manipulation text-base md:text-sm"
+            />
+            {errors.motivo ? (
+              <p
+                id={`${motivoId}-error`}
+                className="text-sm text-destructive"
+                role="alert"
+              >
+                {errors.motivo}
+              </p>
+            ) : null}
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancelar
+          </Button>
+          <Button
+            variant="destructive"
+            disabled={pending}
+            onClick={handleSubmit}
+          >
+            Eliminar producto
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 function CategoriaDialog({
