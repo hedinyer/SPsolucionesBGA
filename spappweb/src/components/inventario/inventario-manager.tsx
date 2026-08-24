@@ -177,7 +177,7 @@ export function InventarioManager({
                       <TableHead>Precio venta</TableHead>
                       <TableHead>Foto</TableHead>
                       <TableHead>Ubicación</TableHead>
-                      <TableHead className="w-56">Acciones</TableHead>
+                      <TableHead className="min-w-[22rem]">Acciones</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -224,7 +224,7 @@ export function InventarioManager({
                           </TableCell>
                           <TableCell>{ubicacion}</TableCell>
                           <TableCell>
-                            <div className="flex flex-wrap gap-1">
+                            <div className="flex flex-nowrap items-center gap-1 whitespace-nowrap">
                               <PrintPriceLabelButton product={p} />
                               <Button
                                 variant="ghost"
