@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { assignMotoByAdmin } from "@/lib/actions/admin-actions";
 import {
   calcMotoPayment,
+  cobraCuotaAdelantada,
   cuotaDiariaFromPeriodo,
   MIN_CUOTA_INICIAL,
 } from "@/lib/moto-payment";
@@ -15,6 +16,7 @@ import { formatCop } from "@/lib/utils/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { TouchSelect } from "@/components/ui/touch-select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -48,6 +50,9 @@ export function AdminMotoAssignPanel({
   const [cuotaInicial, setCuotaInicial] = useState("");
   const [cuotaDiaria, setCuotaDiaria] = useState("");
   const [montoVisita, setMontoVisita] = useState("");
+  const [cobraAdelantada, setCobraAdelantada] = useState(
+    cobraCuotaAdelantada(compra),
+  );
 
   const activeBikes = bikes.filter((b) => b.activo);
   const selectedBike = activeBikes.find((b) => String(b.id) === bikeId);
@@ -65,6 +70,7 @@ export function AdminMotoAssignPanel({
         ),
       );
       setMontoVisita(String(compra.monto_visita_monto));
+      setCobraAdelantada(cobraCuotaAdelantada(compra));
       return;
     }
     setCuotaInicial(String(selectedBike.cuota_inicial));
@@ -86,6 +92,7 @@ export function AdminMotoAssignPanel({
           cuotaInicial: parsedInicial,
           cuotaDiaria: parsedDiaria,
           montoVisita: parsedVisita,
+          cobraCuotaAdelantada: cobraAdelantada,
         })
       : null;
 
@@ -95,7 +102,8 @@ export function AdminMotoAssignPanel({
         <CardTitle>Asignar moto y placa</CardTitle>
         <p className="text-sm text-muted-foreground">
           Elige la moto, negocia cuotas si el cliente paga más inicial o acordaron
-          otra cuota diaria, y registra el chasis.
+          otra cuota diaria, y registra el chasis. Algunos clientes no pagan la
+          cuota adelantada: desactívala en ese caso.
         </p>
       </CardHeader>
       <CardContent>
@@ -136,6 +144,7 @@ export function AdminMotoAssignPanel({
                   cuotaInicial: parsedInicial,
                   cuotaDiaria: parsedDiaria,
                   montoVisita: parsedVisita,
+                  cobraCuotaAdelantada: cobraAdelantada,
                 });
                 toast.success("Moto asignada. Envía el link de contrato al cliente.");
               } catch (err) {
@@ -203,9 +212,29 @@ export function AdminMotoAssignPanel({
                     placeholder={String(selectedBike.cuota_diaria)}
                   />
                   <p className="text-xs text-muted-foreground">
-                    Base diaria acordada en persona (afecta la cuota adelantada
-                    según frecuencia).
+                    Base diaria acordada en persona. Define la cuota periódica
+                    {cobraAdelantada
+                      ? " y la adelantada del primer pago."
+                      : "; la periódica empieza después de la entrega."}
                   </p>
+                </div>
+                <div className="sm:col-span-2 flex items-start gap-3 rounded-lg border border-border px-3 py-3">
+                  <Switch
+                    id="cobra-adelantada"
+                    checked={cobraAdelantada}
+                    onCheckedChange={setCobraAdelantada}
+                  />
+                  <div className="min-w-0">
+                    <Label htmlFor="cobra-adelantada" className="font-medium">
+                      Incluir cuota adelantada en el primer pago
+                    </Label>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Si el cliente no da la cuota por adelantado, apaga esta
+                      opción. El primer pago queda en inicial
+                      {parsedVisita > 0 ? " + visita" : ""}; la cuota periódica
+                      sigue vigente desde la entrega.
+                    </p>
+                  </div>
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="monto-visita">Monto visita domiciliaria</Label>
@@ -226,16 +255,26 @@ export function AdminMotoAssignPanel({
                       Primer pago acordado
                     </p>
                     <p className="mt-1 text-emerald-800">
-                      Inicial {formatCop(paymentPreview.cuota_inicial_monto)} +{" "}
-                      adelantada {formatCop(paymentPreview.monto_cuota_periodo)}
+                      Inicial {formatCop(paymentPreview.cuota_inicial_monto)}
+                      {cobraAdelantada && (
+                        <>
+                          {" "}
+                          + adelantada{" "}
+                          {formatCop(paymentPreview.monto_cuota_periodo)}
+                        </>
+                      )}
                       {paymentPreview.monto_visita_monto > 0 && (
                         <> + visita {formatCop(paymentPreview.monto_visita_monto)}</>
                       )}{" "}
-                      ({formatCop(parsedDiaria)}/día ×{" "}
-                      {FRECUENCIA_LABELS[frecuencia].toLowerCase()}) ={" "}
+                      ={" "}
                       <span className="font-semibold">
                         {formatCop(paymentPreview.monto_total_primer_pago)}
                       </span>
+                    </p>
+                    <p className="mt-1 text-xs text-emerald-800/80">
+                      {cobraAdelantada
+                        ? `Incluye ${formatCop(parsedDiaria)}/día × ${FRECUENCIA_LABELS[frecuencia].toLowerCase()} adelantada.`
+                        : `Sin adelantada. Cuota periódica ${formatCop(paymentPreview.monto_cuota_periodo)} (${FRECUENCIA_LABELS[frecuencia].toLowerCase()}) desde la entrega.`}
                     </p>
                   </div>
                 )}

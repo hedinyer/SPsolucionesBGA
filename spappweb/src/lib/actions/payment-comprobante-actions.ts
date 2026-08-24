@@ -7,6 +7,7 @@ import { requireAdminSession } from "@/lib/auth/session";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { STORAGE_BUCKETS } from "@/lib/supabase/storage-buckets";
 import {
+  cobraCuotaAdelantada,
   cuotaDiariaFromPeriodo,
   montoCuotaPeriodo,
 } from "@/lib/moto-payment";
@@ -139,7 +140,7 @@ async function assertConceptoNoCubierto(
   const { data: compra, error: compraError } = await supabase
     .from("user_moto_compra")
     .select(
-      "id, cuota_inicial_monto, monto_cuota_periodo, monto_visita_monto, estado, pago_inicial_confirmado, pago_cuota_confirmado, pago_visita_confirmado",
+      "id, cuota_inicial_monto, monto_cuota_periodo, monto_visita_monto, estado, pago_inicial_confirmado, pago_cuota_confirmado, pago_visita_confirmado, admin_data",
     )
     .eq("id", compraId)
     .maybeSingle();
@@ -562,7 +563,7 @@ export async function updateMontosPrimerPagoCompra(input: {
   const { data: compra, error: compraError } = await supabase
     .from("user_moto_compra")
     .select(
-      "id, digital_contract_id, estado, cuota_inicial_monto, monto_cuota_periodo, monto_visita_monto",
+      "id, digital_contract_id, estado, cuota_inicial_monto, monto_cuota_periodo, monto_visita_monto, admin_data",
     )
     .eq("id", parsed.compraId)
     .eq("user_id", parsed.userId)
@@ -595,7 +596,10 @@ export async function updateMontosPrimerPagoCompra(input: {
       `Ya se recibieron ${recibidoInicial.toLocaleString("es-CO")} de cuota inicial; el monto no puede ser menor.`,
     );
   }
-  if (parsed.montoCuotaPeriodo < recibidoCuota) {
+  const cobraAdelantada = cobraCuotaAdelantada(
+    compra as { admin_data?: { cobra_cuota_adelantada?: boolean } },
+  );
+  if (cobraAdelantada && parsed.montoCuotaPeriodo < recibidoCuota) {
     throw new Error(
       `Ya se recibieron ${recibidoCuota.toLocaleString("es-CO")} de cuota adelantada; el monto no puede ser menor.`,
     );
@@ -603,7 +607,7 @@ export async function updateMontosPrimerPagoCompra(input: {
 
   const montoTotal =
     parsed.cuotaInicial +
-    parsed.montoCuotaPeriodo +
+    (cobraAdelantada ? parsed.montoCuotaPeriodo : 0) +
     Number(compra.monto_visita_monto);
 
   const { error: updateError } = await supabase
@@ -670,7 +674,7 @@ export async function updateMontoVisitaCompra(input: {
   const { data: compra, error: compraError } = await supabase
     .from("user_moto_compra")
     .select(
-      "id, estado, cuota_inicial_monto, monto_cuota_periodo, monto_visita_monto",
+      "id, estado, cuota_inicial_monto, monto_cuota_periodo, monto_visita_monto, admin_data",
     )
     .eq("id", parsed.compraId)
     .eq("user_id", parsed.userId)
@@ -698,9 +702,12 @@ export async function updateMontoVisitaCompra(input: {
     );
   }
 
+  const cobraAdelantada = cobraCuotaAdelantada(
+    compra as { admin_data?: { cobra_cuota_adelantada?: boolean } },
+  );
   const montoTotal =
     Number(compra.cuota_inicial_monto) +
-    Number(compra.monto_cuota_periodo) +
+    (cobraAdelantada ? Number(compra.monto_cuota_periodo) : 0) +
     parsed.montoVisita;
 
   const { error: updateError } = await supabase
@@ -735,7 +742,7 @@ export async function updateFrecuenciaPagoCompra(input: {
   const { data: compra, error: compraError } = await supabase
     .from("user_moto_compra")
     .select(
-      "id, user_id, digital_contract_id, estado, frecuencia_pago, cuota_inicial_monto, monto_cuota_periodo, monto_visita_monto, pago_cuota_confirmado",
+      "id, user_id, digital_contract_id, estado, frecuencia_pago, cuota_inicial_monto, monto_cuota_periodo, monto_visita_monto, pago_cuota_confirmado, admin_data",
     )
     .eq("id", parsed.compraId)
     .eq("user_id", parsed.userId)
@@ -746,7 +753,10 @@ export async function updateFrecuenciaPagoCompra(input: {
   if (compra.estado !== "pendiente_pago") {
     throw new Error("Solo se puede cambiar la frecuencia antes de confirmar pagos.");
   }
-  if (compra.pago_cuota_confirmado) {
+  const cobraAdelantada = cobraCuotaAdelantada(
+    compra as { admin_data?: { cobra_cuota_adelantada?: boolean } },
+  );
+  if (cobraAdelantada && compra.pago_cuota_confirmado) {
     throw new Error("La cuota adelantada ya está confirmada.");
   }
   if (compra.frecuencia_pago === parsed.frecuencia) {
@@ -780,7 +790,7 @@ export async function updateFrecuenciaPagoCompra(input: {
 
   const montoTotal =
     Number(compra.cuota_inicial_monto) +
-    montoCuotaPeriodoNuevo +
+    (cobraAdelantada ? montoCuotaPeriodoNuevo : 0) +
     Number(compra.monto_visita_monto);
 
   const { error: updateError } = await supabase

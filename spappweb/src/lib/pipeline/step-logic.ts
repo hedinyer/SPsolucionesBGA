@@ -90,9 +90,12 @@ function visitError(visita: VisitaRow | null): boolean {
 
 function paymentDone(compra: UserMotoCompraRow | null): boolean {
   if (!compra) return false;
+  const cuotaOk =
+    compra.pago_cuota_confirmado ||
+    compra.admin_data?.cobra_cuota_adelantada === false;
   return (
     compra.pago_inicial_confirmado &&
-    compra.pago_cuota_confirmado &&
+    cuotaOk &&
     (compra.estado === "lista_retiro" || compra.estado === "entregada")
   );
 }
@@ -194,7 +197,9 @@ export function detectAdminActionStep(
     compra &&
     contractDone(contract) &&
     compra.estado === "pendiente_pago" &&
-    (!compra.pago_inicial_confirmado || !compra.pago_cuota_confirmado)
+    (!compra.pago_inicial_confirmado ||
+      (compra.admin_data?.cobra_cuota_adelantada !== false &&
+        !compra.pago_cuota_confirmado))
   ) {
     return "pago";
   }

@@ -16,6 +16,7 @@ type TouchSelectProps = {
   required?: boolean;
   placeholder?: string;
   "aria-label"?: string;
+  "aria-invalid"?: boolean;
 };
 
 export function TouchSelect({
@@ -29,6 +30,7 @@ export function TouchSelect({
   required,
   placeholder,
   "aria-label": ariaLabel,
+  "aria-invalid": ariaInvalid,
 }: TouchSelectProps) {
   return (
     <select
@@ -38,6 +40,7 @@ export function TouchSelect({
       disabled={disabled}
       required={required}
       aria-label={ariaLabel}
+      aria-invalid={ariaInvalid}
       onChange={(e) => onChange(e.target.value)}
       className={cn(
         "min-h-11 w-full touch-manipulation rounded-lg border border-input bg-background px-3 text-base outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",

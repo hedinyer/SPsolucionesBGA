@@ -626,7 +626,7 @@ export const AGENT_TOOLS = {
       slug: z.string().min(1),
       descripcion: z.string().optional(),
       activo: z.boolean(),
-      orden: z.number().int().min(0),
+      orden: z.number().int().min(0).optional(),
     }),
     handler: async (args) => (await loadAdminActions()).saveCategoria(args),
   }),
@@ -649,6 +649,10 @@ export const AGENT_TOOLS = {
       costo: z.number().int().min(0),
       stock: z.number().int().min(0),
       stockMinimo: z.number().int().min(0),
+      ubicacion: z
+        .enum(["Soluciones", "Bera", "Bodega"])
+        .optional()
+        .default("Soluciones"),
       imagenUrl: z.string().optional(),
       compatibleModelos: z.array(z.string()).optional(),
       activo: z.boolean(),

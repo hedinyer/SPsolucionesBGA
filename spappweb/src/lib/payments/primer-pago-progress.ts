@@ -2,12 +2,18 @@ import type { PagoRow, UserMotoCompraRow } from "@/lib/pipeline/types";
 
 export type PrimerPagoConcepto = "inicial" | "cuota_adelantada" | "visita";
 
+function cobraAdelantadaEnPrimerPago(compra: UserMotoCompraRow): boolean {
+  return compra.admin_data?.cobra_cuota_adelantada !== false;
+}
+
 export function montoEsperadoConcepto(
   compra: UserMotoCompraRow,
   contexto: PrimerPagoConcepto,
 ): number {
   if (contexto === "inicial") return compra.cuota_inicial_monto;
-  if (contexto === "cuota_adelantada") return compra.monto_cuota_periodo;
+  if (contexto === "cuota_adelantada") {
+    return cobraAdelantadaEnPrimerPago(compra) ? compra.monto_cuota_periodo : 0;
+  }
   return compra.monto_visita_monto ?? 0;
 }
 
@@ -69,8 +75,10 @@ export function puedeEditarFrecuenciaPago(
     return false;
   }
   if (compra.estado !== "pendiente_pago") return false;
-  if (compra.pago_cuota_confirmado) return false;
-  if (conceptoCompleto(compra, pagos, "cuota_adelantada")) return false;
+  if (cobraAdelantadaEnPrimerPago(compra)) {
+    if (compra.pago_cuota_confirmado) return false;
+    if (conceptoCompleto(compra, pagos, "cuota_adelantada")) return false;
+  }
   return true;
 }
 

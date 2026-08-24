@@ -177,7 +177,10 @@ export interface UserMotoCompraRow {
   doc_soat_path: string | null;
   doc_tecno_path: string | null;
   seleccionado_at: string;
-  admin_data?: { entrega_antes_visita?: boolean };
+  admin_data?: {
+    entrega_antes_visita?: boolean;
+    cobra_cuota_adelantada?: boolean;
+  };
 }
 
 export interface VendidaMotoRow extends UserMotoCompraRow {
@@ -618,6 +621,14 @@ export interface InventarioCategoriaRow {
   orden: number;
 }
 
+export type InventarioUbicacion = "Soluciones" | "Bera" | "Bodega";
+
+export const INVENTARIO_UBICACIONES: InventarioUbicacion[] = [
+  "Soluciones",
+  "Bera",
+  "Bodega",
+];
+
 export interface InventarioProductoRow {
   id: number;
   categoria_id: number;
@@ -628,6 +639,7 @@ export interface InventarioProductoRow {
   costo: number;
   stock: number;
   stock_minimo: number;
+  ubicacion?: InventarioUbicacion;
   imagen_url: string | null;
   compatible_modelos: string[];
   activo: boolean;

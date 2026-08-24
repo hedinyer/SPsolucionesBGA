@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { updateFrecuenciaPagoCompra } from "@/lib/actions/payment-comprobante-actions";
 import {
   calcMotoPayment,
+  cobraCuotaAdelantada,
   cuotaDiariaFromPeriodo,
   FRECUENCIA_PERIOD,
 } from "@/lib/moto-payment";
@@ -72,6 +73,7 @@ export function FrecuenciaPagoEditor({
             monto_visita: compra.monto_visita_monto,
           },
           frecuencia,
+          { cobraCuotaAdelantada: cobraCuotaAdelantada(compra) },
         )
       : null;
 
@@ -107,8 +109,9 @@ export function FrecuenciaPagoEditor({
         />
         {preview && (
           <p className="text-xs text-muted-foreground">
-            Nueva cuota adelantada: {formatCop(preview.monto_cuota_periodo)} ·
-            total primer pago: {formatCop(preview.monto_total_primer_pago)}
+            {cobraCuotaAdelantada(compra)
+              ? `Nueva cuota adelantada: ${formatCop(preview.monto_cuota_periodo)} · total primer pago: ${formatCop(preview.monto_total_primer_pago)}`
+              : `Nueva cuota periódica: ${formatCop(preview.monto_cuota_periodo)} · primer pago (sin adelantada): ${formatCop(preview.monto_total_primer_pago)}`}
           </p>
         )}
         <Button

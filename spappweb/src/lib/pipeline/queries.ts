@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createAdminClient } from "@/lib/supabase/admin";
+import { cobraCuotaAdelantada } from "@/lib/moto-payment";
 import { buildClientPipeline } from "@/lib/pipeline/step-logic";
 import type {
   BikeRow,
@@ -1306,8 +1307,9 @@ export async function getAllProductos(): Promise<InventarioProductoRow[]> {
   const { data } = await supabase
     .from("inventario_productos")
     .select(
-      "id, categoria_id, sku, nombre, descripcion, precio, costo, stock, stock_minimo, imagen_url, compatible_modelos, activo, inventario_categorias(id, nombre, slug, descripcion, activo, orden)",
+      "id, categoria_id, sku, nombre, descripcion, precio, costo, stock, stock_minimo, ubicacion, imagen_url, compatible_modelos, activo, inventario_categorias(id, nombre, slug, descripcion, activo, orden)",
     )
+    .order("stock", { ascending: true })
     .order("nombre");
   return ((data ?? []) as unknown as InventarioProductoRow[]);
 }
@@ -1325,7 +1327,7 @@ export async function getAllProductosCredito(): Promise<ProductoCreditoRow[]> {
 }
 
 const productoSelect =
-  "id, categoria_id, sku, nombre, descripcion, precio, costo, stock, stock_minimo, imagen_url, compatible_modelos, activo, inventario_categorias(id, nombre, slug, descripcion, activo, orden)";
+  "id, categoria_id, sku, nombre, descripcion, precio, costo, stock, stock_minimo, ubicacion, imagen_url, compatible_modelos, activo, inventario_categorias(id, nombre, slug, descripcion, activo, orden)";
 
 export async function getProductoBySku(
   sku: string,
@@ -2417,7 +2419,7 @@ export async function getClienteFacturacion(
   const { data: user, error: userError } = await supabase
     .from("users")
     .select(
-      "id, user, visitas(cliente_nombre), digital_contracts(hoja_vida_data, contrato_data, created_at), user_moto_compra(id, modelo, color, cuota_inicial_monto, monto_cuota_periodo, monto_visita_monto, monto_total_primer_pago)",
+      "id, user, visitas(cliente_nombre), digital_contracts(hoja_vida_data, contrato_data, created_at), user_moto_compra(id, modelo, color, cuota_inicial_monto, monto_cuota_periodo, monto_visita_monto, monto_total_primer_pago, admin_data)",
     )
     .eq("id", userId)
     .maybeSingle();
@@ -2457,7 +2459,11 @@ export async function getClienteFacturacion(
     motoModelo: (compra?.modelo as string | undefined) ?? null,
     motoColor: (compra?.color as string | undefined) ?? null,
     cuotaInicial: (compra?.cuota_inicial_monto as number | undefined) ?? null,
-    cuotaAdelantada: (compra?.monto_cuota_periodo as number | undefined) ?? null,
+    cuotaAdelantada: cobraCuotaAdelantada(
+      compra as { admin_data?: { cobra_cuota_adelantada?: boolean } } | null,
+    )
+      ? ((compra?.monto_cuota_periodo as number | undefined) ?? null)
+      : 0,
     montoVisita: (compra?.monto_visita_monto as number | undefined) ?? null,
     totalPrimerPago: (compra?.monto_total_primer_pago as number | undefined) ?? null,
   };

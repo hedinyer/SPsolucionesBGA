@@ -1,7 +1,13 @@
 import type { BikeRow, FrecuenciaPago } from "@/lib/pipeline/types";
 
-/** Piso negociable de cuota inicial (COP). Motos usadas: 350k. */
-export const MIN_CUOTA_INICIAL = 350_000;
+/** Piso negociable de cuota inicial (COP). */
+export const MIN_CUOTA_INICIAL = 300_000;
+
+export function cobraCuotaAdelantada(
+  compra?: { admin_data?: { cobra_cuota_adelantada?: boolean } } | null,
+): boolean {
+  return compra?.admin_data?.cobra_cuota_adelantada !== false;
+}
 
 export function montoCuotaPeriodo(
   cuotaDiaria: number,
@@ -42,18 +48,22 @@ export function calcMotoPayment(
     cuotaInicial?: number;
     cuotaDiaria?: number;
     montoVisita?: number;
+    cobraCuotaAdelantada?: boolean;
   },
 ) {
   const cuota_inicial_monto = overrides?.cuotaInicial ?? bike.cuota_inicial;
   const cuotaDiaria = overrides?.cuotaDiaria ?? bike.cuota_diaria;
   const monto_visita_monto = overrides?.montoVisita ?? bike.monto_visita ?? 0;
   const monto_cuota_periodo = montoCuotaPeriodo(cuotaDiaria, frecuencia);
+  const cobraAdelantada = overrides?.cobraCuotaAdelantada !== false;
   return {
     cuota_inicial_monto,
     monto_cuota_periodo,
     monto_visita_monto,
     monto_total_primer_pago:
-      cuota_inicial_monto + monto_cuota_periodo + monto_visita_monto,
+      cuota_inicial_monto +
+      (cobraAdelantada ? monto_cuota_periodo : 0) +
+      monto_visita_monto,
   };
 }
 

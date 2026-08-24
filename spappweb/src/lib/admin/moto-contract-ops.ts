@@ -139,6 +139,7 @@ const assignMotoSchema = z.object({
   cuotaInicial: z.number().int().min(MIN_CUOTA_INICIAL).optional(),
   cuotaDiaria: z.number().int().positive().optional(),
   montoVisita: z.number().int().min(0).optional(),
+  cobraCuotaAdelantada: z.boolean().optional(),
 });
 
 export async function assignMotoByAdminOp(
@@ -185,10 +186,12 @@ export async function assignMotoByAdminOp(
     throw new Error("El monto de visita no puede ser negativo.");
   }
 
+  const cobraAdelantada = parsed.cobraCuotaAdelantada !== false;
   const payment = calcMotoPayment(bike, parsed.frecuencia, {
     cuotaInicial,
     cuotaDiaria,
     montoVisita,
+    cobraCuotaAdelantada: cobraAdelantada,
   });
 
   const placa = parsed.placa?.trim().toUpperCase() || null;
@@ -197,13 +200,18 @@ export async function assignMotoByAdminOp(
 
   const { data: existing } = await supabase
     .from("user_moto_compra")
-    .select("id, estado")
+    .select("id, estado, admin_data")
     .eq("user_id", parsed.userId)
     .maybeSingle();
 
   if (existing && existing.estado !== "pendiente_pago") {
     throw new Error("La compra ya avanzó; no se puede cambiar la moto.");
   }
+
+  const adminData = {
+    ...((existing?.admin_data as Record<string, unknown> | null) ?? {}),
+    cobra_cuota_adelantada: cobraAdelantada,
+  };
 
   let compraId: string;
 
@@ -219,6 +227,8 @@ export async function assignMotoByAdminOp(
         placa,
         chasis,
         referencia,
+        admin_data: adminData,
+        pago_cuota_confirmado: !cobraAdelantada,
       })
       .eq("id", existing.id)
       .select("id")
@@ -242,6 +252,8 @@ export async function assignMotoByAdminOp(
         chasis,
         referencia,
         estado: "pendiente_pago",
+        admin_data: adminData,
+        pago_cuota_confirmado: !cobraAdelantada,
       })
       .select("id")
       .single();

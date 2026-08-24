@@ -6,6 +6,7 @@ import { Copy, MessageCircle } from "lucide-react";
 import { toast } from "sonner";
 import { updateDelivery } from "@/lib/actions/admin-actions";
 import { updateMontosPrimerPagoCompra } from "@/lib/actions/payment-comprobante-actions";
+import { cobraCuotaAdelantada } from "@/lib/moto-payment";
 import type {
   ContractStatus,
   DigitalContractRow,
@@ -98,9 +99,10 @@ export function MotoSelectionPanel({
   const compraId = compra.id;
   const inicialNum = parseMonto(cuotaInicial);
   const adelantadaNum = parseMonto(cuotaAdelantada);
+  const cobraAdelantada = cobraCuotaAdelantada(compra);
   const totalPreview =
     (inicialNum ?? 0) +
-    (adelantadaNum ?? 0) +
+    (cobraAdelantada ? (adelantadaNum ?? 0) : 0) +
     (compra.monto_visita_monto ?? 0);
 
   function saveForm(e: FormEvent<HTMLFormElement>) {
@@ -230,7 +232,7 @@ export function MotoSelectionPanel({
                 htmlFor="moto-cuota-adelantada"
                 className="text-muted-foreground"
               >
-                Cuota adelantada
+                Cuota {cobraAdelantada ? "adelantada" : "periódica"}
               </Label>
               {canEditMontos ? (
                 <Input

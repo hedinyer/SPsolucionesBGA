@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useTransition, useEffect } from "react";
+import { useState, useTransition, useEffect, useId } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { usePollingRefresh } from "@/hooks/use-polling-refresh";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, Eye, Pencil, Plus, Trash2 } from "lucide-react";
 import {
   deleteCategoria,
   deleteProducto,
@@ -14,7 +14,9 @@ import {
 import type {
   InventarioCategoriaRow,
   InventarioProductoRow,
+  InventarioUbicacion,
 } from "@/lib/pipeline/types";
+import { INVENTARIO_UBICACIONES } from "@/lib/pipeline/types";
 import { formatCop } from "@/lib/utils/format";
 import { getStoragePublicUrl } from "@/lib/utils/storage-urls";
 import { Button } from "@/components/ui/button";
@@ -25,6 +27,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -65,6 +68,31 @@ import { Textarea } from "@/components/ui/textarea";
 import { TouchSelect } from "@/components/ui/touch-select";
 import { PrintPriceLabelButton } from "@/components/inventario/print-price-label-button";
 
+function skuFromNombre(nombre: string): string {
+  return nombre
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 40);
+}
+
+function formatMilesInput(raw: string): string {
+  const digits = raw.replace(/\D/g, "");
+  if (!digits) return "";
+  return Number(digits).toLocaleString("es-CO");
+}
+
+function parseMilesInput(raw: string): number {
+  return Number(raw.replace(/\D/g, ""));
+}
+
+function formatMilesFromNumber(n: number): string {
+  if (!Number.isFinite(n)) return "";
+  return n.toLocaleString("es-CO");
+}
+
 export function InventarioManager({
   categorias,
   productos,
@@ -81,12 +109,28 @@ export function InventarioManager({
   const [editingProd, setEditingProd] = useState<InventarioProductoRow | null>(
     null,
   );
+  const [photoPreview, setPhotoPreview] = useState<{
+    url: string;
+    nombre: string;
+  } | null>(null);
   const [pending, startTransition] = useTransition();
 
   const { secondsAgo } = usePollingRefresh({
     intervalMs: 30_000,
-    enabled: !catOpen && !prodOpen && !pending,
+    enabled: !catOpen && !prodOpen && !photoPreview && !pending,
   });
+
+  function openPhoto(p: InventarioProductoRow) {
+    const img = getStoragePublicUrl(
+      STORAGE_BUCKETS.inventarioImagenes,
+      p.imagen_url,
+    );
+    if (!img) {
+      toast.message("Este producto no tiene foto.");
+      return;
+    }
+    setPhotoPreview({ url: img, nombre: p.nombre });
+  }
 
   return (
     <div className="flex flex-col gap-2">
@@ -94,116 +138,290 @@ export function InventarioManager({
         Stock actualizado hace {secondsAgo}s
       </p>
       <Tabs defaultValue="productos">
-      <TabsList className="w-full max-w-full overflow-x-auto">
-        <TabsTrigger value="productos">Productos</TabsTrigger>
-        <TabsTrigger value="categorias">Categorías</TabsTrigger>
-      </TabsList>
+        <TabsList className="w-full max-w-full overflow-x-auto">
+          <TabsTrigger value="productos">Productos</TabsTrigger>
+          <TabsTrigger value="categorias">Categorías</TabsTrigger>
+        </TabsList>
 
-      <TabsContent value="productos" className="flex flex-col gap-4">
-        <div className="flex justify-end">
-          <Button
-            onClick={() => {
-              setEditingProd(null);
-              setProdOpen(true);
-            }}
-          >
-            <Plus data-icon="inline-start" />
-            Nuevo producto
-          </Button>
-        </div>
-        {productos.length === 0 ? (
-          <Empty className="border border-dashed border-border">
-            <EmptyHeader>
-              <EmptyTitle>Stock vacío</EmptyTitle>
-              <EmptyDescription>
-                Aún no hay productos. Crea el primero con Nuevo producto.
-              </EmptyDescription>
-            </EmptyHeader>
-          </Empty>
-        ) : (
-          <>
-        <div className="hidden overflow-x-auto rounded-lg border border-border lg:block">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Producto</TableHead>
-                <TableHead>SKU</TableHead>
-                <TableHead>Categoría</TableHead>
-                <TableHead>Costo</TableHead>
-                <TableHead>Precio</TableHead>
-                <TableHead>Stock</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead className="w-32" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {productos.map((p) => {
-                const img = getStoragePublicUrl(
-                  STORAGE_BUCKETS.inventarioImagenes,
-                  p.imagen_url,
-                );
-                const lowStock = p.stock <= p.stock_minimo;
-                return (
-                  <TableRow key={p.id}>
-                    <TableCell>
-                      <div className="flex items-center gap-3">
+        <TabsContent value="productos" className="flex flex-col gap-4">
+          <div className="flex justify-end">
+            <Button
+              onClick={() => {
+                setEditingProd(null);
+                setProdOpen(true);
+              }}
+            >
+              <Plus data-icon="inline-start" />
+              Nuevo producto
+            </Button>
+          </div>
+          {productos.length === 0 ? (
+            <Empty className="border border-dashed border-border">
+              <EmptyHeader>
+                <EmptyTitle>Stock vacío</EmptyTitle>
+                <EmptyDescription>
+                  Aún no hay productos. Crea el primero con Nuevo producto.
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          ) : (
+            <>
+              <div className="hidden overflow-x-auto rounded-lg border border-border lg:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>ID</TableHead>
+                      <TableHead>Nombre</TableHead>
+                      <TableHead>Cantidad</TableHead>
+                      <TableHead>Costo</TableHead>
+                      <TableHead>Precio venta</TableHead>
+                      <TableHead>Foto</TableHead>
+                      <TableHead>Ubicación</TableHead>
+                      <TableHead className="w-56">Acciones</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {productos.map((p) => {
+                      const img = getStoragePublicUrl(
+                        STORAGE_BUCKETS.inventarioImagenes,
+                        p.imagen_url,
+                      );
+                      const lowStock = p.stock <= p.stock_minimo;
+                      const ubicacion = p.ubicacion ?? "Soluciones";
+                      return (
+                        <TableRow key={p.id}>
+                          <TableCell className="text-muted-foreground">
+                            {p.id}
+                          </TableCell>
+                          <TableCell className="font-medium">{p.nombre}</TableCell>
+                          <TableCell>
+                            <span
+                              className={
+                                lowStock ? "font-medium text-red-700" : ""
+                              }
+                            >
+                              {p.stock}
+                            </span>
+                            {lowStock && (
+                              <Badge variant="destructive" className="ml-2">
+                                Bajo
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell>{formatCop(p.costo ?? 0)}</TableCell>
+                          <TableCell>{formatCop(p.precio)}</TableCell>
+                          <TableCell>
+                            {img ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={img}
+                                alt={`Foto de ${p.nombre}`}
+                                className="h-10 w-10 rounded object-cover"
+                              />
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell>{ubicacion}</TableCell>
+                          <TableCell>
+                            <div className="flex flex-wrap gap-1">
+                              <PrintPriceLabelButton product={p} />
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                aria-label={`Editar ${p.nombre}`}
+                                onClick={() => {
+                                  setEditingProd(p);
+                                  setProdOpen(true);
+                                }}
+                              >
+                                <Pencil className="h-4 w-4" />
+                                Editar
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                aria-label={
+                                  img
+                                    ? `Ver foto de ${p.nombre}`
+                                    : `${p.nombre} no tiene foto`
+                                }
+                                disabled={!img}
+                                onClick={() => openPhoto(p)}
+                              >
+                                <Eye className="h-4 w-4" />
+                                Ver foto
+                              </Button>
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    aria-label={`Eliminar ${p.nombre}`}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                    Eliminar
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent className="bg-background">
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>
+                                      ¿Eliminar producto?
+                                    </AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      {p.nombre}
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                    <AlertDialogAction
+                                      onClick={() =>
+                                        startTransition(async () => {
+                                          try {
+                                            await deleteProducto(p.id);
+                                            toast.success("Producto eliminado.");
+                                            router.refresh();
+                                          } catch (e) {
+                                            toast.error(
+                                              e instanceof Error
+                                                ? e.message
+                                                : "No se pudo eliminar.",
+                                            );
+                                          }
+                                        })
+                                      }
+                                    >
+                                      Eliminar
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+
+              <div className="flex flex-col gap-3 lg:hidden">
+                {productos.map((p) => {
+                  const img = getStoragePublicUrl(
+                    STORAGE_BUCKETS.inventarioImagenes,
+                    p.imagen_url,
+                  );
+                  const lowStock = p.stock <= p.stock_minimo;
+                  const ubicacion = p.ubicacion ?? "Soluciones";
+                  return (
+                    <div
+                      key={p.id}
+                      className="rounded-lg border border-border p-4 text-sm"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-xs text-muted-foreground">
+                            ID {p.id}
+                          </p>
+                          <p className="font-medium">{p.nombre}</p>
+                        </div>
                         {img ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
                             src={img}
-                            alt=""
-                            className="h-10 w-10 rounded object-cover"
+                            alt={`Foto de ${p.nombre}`}
+                            className="h-12 w-12 shrink-0 rounded object-cover"
                           />
                         ) : (
-                          <div className="h-10 w-10 rounded bg-muted" />
+                          <div
+                            className="h-12 w-12 shrink-0 rounded bg-muted"
+                            aria-hidden
+                          />
                         )}
-                        <span className="font-medium">{p.nombre}</span>
                       </div>
-                    </TableCell>
-                    <TableCell>{p.sku}</TableCell>
-                    <TableCell>
-                      {p.inventario_categorias?.nombre ?? "—"}
-                    </TableCell>
-                    <TableCell>{formatCop(p.precio)}</TableCell>
-                    <TableCell>{formatCop(p.costo ?? 0)}</TableCell>
-                    <TableCell>
-                      <span className={lowStock ? "font-medium text-red-700" : ""}>
-                        {p.stock}
-                      </span>
-                      {lowStock && (
-                        <Badge variant="destructive" className="ml-2">
-                          Bajo
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={p.activo ? "outline" : "secondary"}>
-                        {p.activo ? "Activo" : "Inactivo"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex gap-1">
-                        <PrintPriceLabelButton product={p} />
+                      <dl className="mt-3 flex flex-col gap-1.5">
+                        <div className="flex justify-between gap-2">
+                          <dt className="text-muted-foreground">Cantidad</dt>
+                          <dd
+                            className={
+                              lowStock ? "font-medium text-red-700" : ""
+                            }
+                          >
+                            {p.stock}
+                            {lowStock && (
+                              <Badge variant="destructive" className="ml-2">
+                                Bajo
+                              </Badge>
+                            )}
+                          </dd>
+                        </div>
+                        <div className="flex justify-between gap-2">
+                          <dt className="text-muted-foreground">Costo</dt>
+                          <dd>{formatCop(p.costo ?? 0)}</dd>
+                        </div>
+                        <div className="flex justify-between gap-2">
+                          <dt className="text-muted-foreground">Precio venta</dt>
+                          <dd>{formatCop(p.precio)}</dd>
+                        </div>
+                        <div className="flex justify-between gap-2">
+                          <dt className="text-muted-foreground">Ubicación</dt>
+                          <dd>{ubicacion}</dd>
+                        </div>
+                      </dl>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <PrintPriceLabelButton
+                          product={p}
+                          variant="outline"
+                          className="flex-1"
+                        />
                         <Button
-                          variant="ghost"
-                          size="icon"
+                          variant="outline"
+                          size="sm"
+                          className="flex-1"
+                          aria-label={`Editar ${p.nombre}`}
                           onClick={() => {
                             setEditingProd(p);
                             setProdOpen(true);
                           }}
                         >
-                          <Pencil className="h-4 w-4" />
+                          <Pencil className="mr-1 h-4 w-4" />
+                          Editar
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex-1"
+                          aria-label={
+                            img
+                              ? `Ver foto de ${p.nombre}`
+                              : `${p.nombre} no tiene foto`
+                          }
+                          disabled={!img}
+                          onClick={() => openPhoto(p)}
+                        >
+                          <Eye className="mr-1 h-4 w-4" />
+                          Ver foto
                         </Button>
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
-                            <Button variant="ghost" size="icon">
-                              <Trash2 className="h-4 w-4" />
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="flex-1"
+                              aria-label={`Eliminar ${p.nombre}`}
+                            >
+                              <Trash2 className="mr-1 h-4 w-4" />
+                              Eliminar
                             </Button>
                           </AlertDialogTrigger>
                           <AlertDialogContent className="bg-background">
                             <AlertDialogHeader>
-                              <AlertDialogTitle>¿Eliminar producto?</AlertDialogTitle>
-                              <AlertDialogDescription>{p.nombre}</AlertDialogDescription>
+                              <AlertDialogTitle>
+                                ¿Eliminar producto?
+                              </AlertDialogTitle>
+                              <AlertDialogDescription>
+                                {p.nombre}
+                              </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
                               <AlertDialogCancel>Cancelar</AlertDialogCancel>
@@ -230,83 +448,142 @@ export function InventarioManager({
                           </AlertDialogContent>
                         </AlertDialog>
                       </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </TabsContent>
+
+        <TabsContent value="categorias" className="flex flex-col gap-4">
+          <div className="flex justify-end">
+            <Button
+              onClick={() => {
+                setEditingCat(null);
+                setCatOpen(true);
+              }}
+            >
+              <Plus data-icon="inline-start" />
+              Nueva categoría
+            </Button>
+          </div>
+          <div className="hidden overflow-x-auto rounded-lg border border-border lg:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Nombre</TableHead>
+                  <TableHead>Slug</TableHead>
+                  <TableHead>Orden</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead className="w-24" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {categorias.map((c) => (
+                  <TableRow key={c.id}>
+                    <TableCell className="font-medium">{c.nombre}</TableCell>
+                    <TableCell>{c.slug}</TableCell>
+                    <TableCell>{c.orden}</TableCell>
+                    <TableCell>
+                      <Badge variant={c.activo ? "outline" : "secondary"}>
+                        {c.activo ? "Activa" : "Inactiva"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`Editar categoría ${c.nombre}`}
+                          onClick={() => {
+                            setEditingCat(c);
+                            setCatOpen(true);
+                          }}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              aria-label={`Eliminar categoría ${c.nombre}`}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent className="bg-background">
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>
+                                ¿Eliminar categoría?
+                              </AlertDialogTitle>
+                              <AlertDialogDescription>
+                                {c.nombre}
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() =>
+                                  startTransition(async () => {
+                                    try {
+                                      await deleteCategoria(c.id);
+                                      toast.success("Categoría eliminada.");
+                                      router.refresh();
+                                    } catch (e) {
+                                      toast.error(
+                                        e instanceof Error
+                                          ? e.message
+                                          : "No se pudo eliminar.",
+                                      );
+                                    }
+                                  })
+                                }
+                              >
+                                Eliminar
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
                     </TableCell>
                   </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </div>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
 
-        <div className="flex flex-col gap-3 lg:hidden">
-          {productos.map((p) => {
-            const img = getStoragePublicUrl(
-              STORAGE_BUCKETS.inventarioImagenes,
-              p.imagen_url,
-            );
-            const lowStock = p.stock <= p.stock_minimo;
-            return (
+          <div className="flex flex-col gap-3 lg:hidden">
+            {categorias.map((c) => (
               <div
-                key={p.id}
+                key={c.id}
                 className="rounded-lg border border-border p-4 text-sm"
               >
-                <div className="flex gap-3">
-                  {img ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={img}
-                      alt=""
-                      className="h-12 w-12 shrink-0 rounded object-cover"
-                    />
-                  ) : (
-                    <div className="h-12 w-12 shrink-0 rounded bg-muted" />
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <p className="font-medium">{p.nombre}</p>
-                    <p className="text-muted-foreground">{p.sku}</p>
-                  </div>
-                  <Badge variant={p.activo ? "outline" : "secondary"}>
-                    {p.activo ? "Activo" : "Inactivo"}
+                <div className="flex items-start justify-between gap-2">
+                  <p className="font-medium">{c.nombre}</p>
+                  <Badge variant={c.activo ? "outline" : "secondary"}>
+                    {c.activo ? "Activa" : "Inactiva"}
                   </Badge>
                 </div>
                 <dl className="mt-3 flex flex-col gap-1.5">
                   <div className="flex justify-between gap-2">
-                    <dt className="text-muted-foreground">Categoría</dt>
-                    <dd>{p.inventario_categorias?.nombre ?? "—"}</dd>
+                    <dt className="text-muted-foreground">Slug</dt>
+                    <dd>{c.slug}</dd>
                   </div>
                   <div className="flex justify-between gap-2">
-                    <dt className="text-muted-foreground">Precio</dt>
-                    <dd>{formatCop(p.precio)}</dd>
-                  </div>
-                  <div className="flex justify-between gap-2">
-                    <dt className="text-muted-foreground">Costo</dt>
-                    <dd>{formatCop(p.costo ?? 0)}</dd>
-                  </div>
-                  <div className="flex justify-between gap-2">
-                    <dt className="text-muted-foreground">Stock</dt>
-                    <dd className={lowStock ? "font-medium text-red-700" : ""}>
-                      {p.stock}
-                      {lowStock && (
-                        <Badge variant="destructive" className="ml-2">
-                          Bajo
-                        </Badge>
-                      )}
-                    </dd>
+                    <dt className="text-muted-foreground">Orden</dt>
+                    <dd>{c.orden}</dd>
                   </div>
                 </dl>
                 <div className="mt-3 flex gap-2">
-                  <PrintPriceLabelButton
-                    product={p}
-                    variant="outline"
-                    className="flex-1"
-                  />
                   <Button
                     variant="outline"
                     size="sm"
                     className="flex-1"
                     onClick={() => {
-                      setEditingProd(p);
-                      setProdOpen(true);
+                      setEditingCat(c);
+                      setCatOpen(true);
                     }}
                   >
                     <Pencil className="mr-1 h-4 w-4" />
@@ -321,8 +598,10 @@ export function InventarioManager({
                     </AlertDialogTrigger>
                     <AlertDialogContent className="bg-background">
                       <AlertDialogHeader>
-                        <AlertDialogTitle>¿Eliminar producto?</AlertDialogTitle>
-                        <AlertDialogDescription>{p.nombre}</AlertDialogDescription>
+                        <AlertDialogTitle>¿Eliminar categoría?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          {c.nombre}
+                        </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
                         <AlertDialogCancel>Cancelar</AlertDialogCancel>
@@ -330,8 +609,8 @@ export function InventarioManager({
                           onClick={() =>
                             startTransition(async () => {
                               try {
-                                await deleteProducto(p.id);
-                                toast.success("Producto eliminado.");
+                                await deleteCategoria(c.id);
+                                toast.success("Categoría eliminada.");
                                 router.refresh();
                               } catch (e) {
                                 toast.error(
@@ -350,228 +629,98 @@ export function InventarioManager({
                   </AlertDialog>
                 </div>
               </div>
-            );
-          })}
-        </div>
-          </>
-        )}
-      </TabsContent>
+            ))}
+          </div>
+        </TabsContent>
 
-      <TabsContent value="categorias" className="flex flex-col gap-4">
-        <div className="flex justify-end">
-          <Button
-            onClick={() => {
-              setEditingCat(null);
-              setCatOpen(true);
-            }}
-          >
-            <Plus data-icon="inline-start" />
-            Nueva categoría
-          </Button>
-        </div>
-        <div className="hidden overflow-x-auto rounded-lg border border-border lg:block">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Nombre</TableHead>
-                <TableHead>Slug</TableHead>
-                <TableHead>Orden</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead className="w-24" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {categorias.map((c) => (
-                <TableRow key={c.id}>
-                  <TableCell className="font-medium">{c.nombre}</TableCell>
-                  <TableCell>{c.slug}</TableCell>
-                  <TableCell>{c.orden}</TableCell>
-                  <TableCell>
-                    <Badge variant={c.activo ? "outline" : "secondary"}>
-                      {c.activo ? "Activa" : "Inactiva"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => {
-                          setEditingCat(c);
-                          setCatOpen(true);
-                        }}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button variant="ghost" size="icon">
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent className="bg-background">
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>¿Eliminar categoría?</AlertDialogTitle>
-                            <AlertDialogDescription>{c.nombre}</AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                            <AlertDialogAction
-                              onClick={() =>
-                                startTransition(async () => {
-                                  try {
-                                    await deleteCategoria(c.id);
-                                    toast.success("Categoría eliminada.");
-                                    router.refresh();
-                                  } catch (e) {
-                                    toast.error(
-                                      e instanceof Error
-                                        ? e.message
-                                        : "No se pudo eliminar.",
-                                    );
-                                  }
-                                })
-                              }
-                            >
-                              Eliminar
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-
-        <div className="flex flex-col gap-3 lg:hidden">
-          {categorias.map((c) => (
-            <div
-              key={c.id}
-              className="rounded-lg border border-border p-4 text-sm"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <p className="font-medium">{c.nombre}</p>
-                <Badge variant={c.activo ? "outline" : "secondary"}>
-                  {c.activo ? "Activa" : "Inactiva"}
-                </Badge>
-              </div>
-              <dl className="mt-3 flex flex-col gap-1.5">
-                <div className="flex justify-between gap-2">
-                  <dt className="text-muted-foreground">Slug</dt>
-                  <dd>{c.slug}</dd>
-                </div>
-                <div className="flex justify-between gap-2">
-                  <dt className="text-muted-foreground">Orden</dt>
-                  <dd>{c.orden}</dd>
-                </div>
-              </dl>
-              <div className="mt-3 flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="flex-1"
-                  onClick={() => {
-                    setEditingCat(c);
-                    setCatOpen(true);
-                  }}
-                >
-                  <Pencil className="mr-1 h-4 w-4" />
-                  Editar
-                </Button>
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button variant="outline" size="sm" className="flex-1">
-                      <Trash2 className="mr-1 h-4 w-4" />
-                      Eliminar
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent className="bg-background">
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>¿Eliminar categoría?</AlertDialogTitle>
-                      <AlertDialogDescription>{c.nombre}</AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                      <AlertDialogAction
-                        onClick={() =>
-                          startTransition(async () => {
-                            try {
-                              await deleteCategoria(c.id);
-                              toast.success("Categoría eliminada.");
-                              router.refresh();
-                            } catch (e) {
-                              toast.error(
-                                e instanceof Error
-                                  ? e.message
-                                  : "No se pudo eliminar.",
-                              );
-                            }
-                          })
-                        }
-                      >
-                        Eliminar
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              </div>
-            </div>
-          ))}
-        </div>
-      </TabsContent>
-
-      <CategoriaDialog
-        open={catOpen}
-        onOpenChange={setCatOpen}
-        editing={editingCat}
-        pending={pending}
-        onSave={(form) =>
-          startTransition(async () => {
-            try {
-              await saveCategoria(form);
-              toast.success(editingCat ? "Categoría actualizada." : "Categoría creada.");
-              router.refresh();
-              setCatOpen(false);
-            } catch (e) {
-              toast.error(e instanceof Error ? e.message : "Error al guardar.");
-            }
-          })
-        }
-      />
-
-      <ProductoDialog
-        open={prodOpen}
-        onOpenChange={setProdOpen}
-        editing={editingProd}
-        categorias={categorias}
-        pending={pending}
-        onSave={(form) =>
-          startTransition(async () => {
-            try {
-              let imagenUrl = form.imagenUrl;
-              if (form.imageFile) {
-                imagenUrl = await uploadImageFile(
-                  STORAGE_BUCKETS.inventarioImagenes,
-                  productoUploadFolder(form.sku, form.nombre),
-                  form.imageFile,
+        <CategoriaDialog
+          open={catOpen}
+          onOpenChange={setCatOpen}
+          editing={editingCat}
+          pending={pending}
+          onSave={(form) =>
+            startTransition(async () => {
+              try {
+                await saveCategoria(form);
+                toast.success(
+                  editingCat ? "Categoría actualizada." : "Categoría creada.",
+                );
+                router.refresh();
+                setCatOpen(false);
+              } catch (e) {
+                toast.error(
+                  e instanceof Error ? e.message : "Error al guardar.",
                 );
               }
-              await saveProducto({ ...form, imagenUrl });
-              toast.success(editingProd ? "Producto actualizado." : "Producto creado.");
-              router.refresh();
-              setProdOpen(false);
-            } catch (e) {
-              toast.error(e instanceof Error ? e.message : "Error al guardar.");
-            }
-          })
-        }
-      />
-    </Tabs>
+            })
+          }
+        />
+
+        <ProductoDialog
+          open={prodOpen}
+          onOpenChange={setProdOpen}
+          editing={editingProd}
+          categorias={categorias}
+          pending={pending}
+          onSave={(form) =>
+            startTransition(async () => {
+              try {
+                let imagenUrl = form.imagenUrl;
+                if (form.imageFile) {
+                  imagenUrl = await uploadImageFile(
+                    STORAGE_BUCKETS.inventarioImagenes,
+                    productoUploadFolder(form.sku, form.nombre),
+                    form.imageFile,
+                  );
+                }
+                await saveProducto({ ...form, imagenUrl });
+                toast.success(
+                  editingProd ? "Producto actualizado." : "Producto creado.",
+                );
+                router.refresh();
+                setProdOpen(false);
+              } catch (e) {
+                toast.error(
+                  e instanceof Error ? e.message : "Error al guardar.",
+                );
+              }
+            })
+          }
+        />
+
+        <Dialog
+          open={!!photoPreview}
+          onOpenChange={(open) => {
+            if (!open) setPhotoPreview(null);
+          }}
+        >
+          <DialogContent className="max-w-lg bg-background">
+            <DialogHeader>
+              <DialogTitle>{photoPreview?.nombre ?? "Foto"}</DialogTitle>
+              <DialogDescription>Vista de la foto del producto</DialogDescription>
+            </DialogHeader>
+            {photoPreview ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={photoPreview.url}
+                alt={`Foto de ${photoPreview.nombre}`}
+                className="max-h-[70vh] w-full rounded object-contain"
+              />
+            ) : null}
+          </DialogContent>
+        </Dialog>
+      </Tabs>
     </div>
   );
+}
+
+function slugFromNombre(nombre: string): string {
+  return nombre
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
 }
 
 function CategoriaDialog({
@@ -591,53 +740,141 @@ function CategoriaDialog({
     slug: string;
     descripcion: string;
     activo: boolean;
-    orden: number;
+    orden?: number;
   }) => void;
 }) {
+  const formId = useId();
+  const nombreId = `${formId}-nombre`;
+  const slugId = `${formId}-slug`;
+  const descId = `${formId}-desc`;
+  const activoId = `${formId}-activo`;
+
   const [nombre, setNombre] = useState("");
   const [slug, setSlug] = useState("");
   const [descripcion, setDescripcion] = useState("");
-  const [orden, setOrden] = useState("0");
   const [activo, setActivo] = useState(true);
+  const [slugTouched, setSlugTouched] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [errors, setErrors] = useState<{ nombre?: string; slug?: string }>({});
 
   function load() {
     setNombre(editing?.nombre ?? "");
     setSlug(editing?.slug ?? "");
     setDescripcion(editing?.descripcion ?? "");
-    setOrden(String(editing?.orden ?? 0));
     setActivo(editing?.activo ?? true);
+    setSlugTouched(!!editing?.slug);
+    setMoreOpen(false);
+    setErrors({});
   }
 
   useEffect(() => {
     if (open) load();
   }, [open, editing]);
 
+  function handleNombreChange(value: string) {
+    setNombre(value);
+    if (!slugTouched) {
+      setSlug(slugFromNombre(value));
+    }
+  }
+
+  function focusField(id: string) {
+    document.getElementById(id)?.focus();
+  }
+
+  function handleSubmit() {
+    const next: { nombre?: string; slug?: string } = {};
+    if (!nombre.trim()) {
+      next.nombre = "Escribe el nombre de la categoría.";
+    }
+    let resolvedSlug = slug.trim() || slugFromNombre(nombre);
+    if (!resolvedSlug) {
+      next.slug = "El código se genera del nombre; revísalo en Más opciones.";
+    }
+    setErrors(next);
+    if (Object.keys(next).length > 0) {
+      if (next.nombre) focusField(nombreId);
+      else if (next.slug) {
+        setMoreOpen(true);
+        queueMicrotask(() => focusField(slugId));
+      }
+      return;
+    }
+
+    onSave({
+      id: editing?.id,
+      nombre,
+      slug: resolvedSlug,
+      descripcion,
+      activo,
+      ...(editing ? { orden: editing.orden } : {}),
+    });
+  }
+
   return (
-    <Dialog
-      open={open}
-      onOpenChange={onOpenChange}
-    >
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="bg-background">
         <DialogHeader>
           <DialogTitle>
             {editing ? "Editar categoría" : "Nueva categoría"}
           </DialogTitle>
+          <DialogDescription>
+            Ponle un nombre a la categoría.
+          </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4">
-          <Field label="Nombre" value={nombre} onChange={setNombre} />
-          <Field label="Slug" value={slug} onChange={setSlug} />
-          <Field label="Orden" value={orden} onChange={setOrden} type="number" />
-          <div className="flex flex-col gap-2">
-            <Label>Descripción</Label>
-            <Textarea
-              value={descripcion}
-              onChange={(e) => setDescripcion(e.target.value)}
-              className="min-h-24 touch-manipulation text-base md:text-sm"
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <Switch checked={activo} onCheckedChange={setActivo} />
-            <Label>Activa</Label>
+          <Field
+            id={nombreId}
+            label="Nombre"
+            value={nombre}
+            onChange={handleNombreChange}
+            error={errors.nombre}
+          />
+
+          <div>
+            <Button
+              type="button"
+              variant="ghost"
+              className="h-auto w-full justify-between px-0 py-2 font-medium"
+              aria-expanded={moreOpen}
+              onClick={() => setMoreOpen((v) => !v)}
+            >
+              Más opciones
+              <ChevronDown
+                className={`h-4 w-4 transition-transform ${moreOpen ? "rotate-180" : ""}`}
+              />
+            </Button>
+            {moreOpen ? (
+              <div className="mt-2 grid gap-4">
+                <Field
+                  id={slugId}
+                  label="Código (slug)"
+                  value={slug}
+                  onChange={(v) => {
+                    setSlugTouched(true);
+                    setSlug(v);
+                  }}
+                  error={errors.slug}
+                />
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor={descId}>Descripción</Label>
+                  <Textarea
+                    id={descId}
+                    value={descripcion}
+                    onChange={(e) => setDescripcion(e.target.value)}
+                    className="min-h-24 touch-manipulation text-base md:text-sm"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <Switch
+                    id={activoId}
+                    checked={activo}
+                    onCheckedChange={setActivo}
+                  />
+                  <Label htmlFor={activoId}>Categoría activa</Label>
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
         <DialogFooter>
@@ -646,25 +883,26 @@ function CategoriaDialog({
           </Button>
           <Button
             className="bg-primary text-primary-foreground hover:bg-primary/80"
-            disabled={pending || !nombre.trim() || !slug.trim()}
-            onClick={() =>
-              onSave({
-                id: editing?.id,
-                nombre,
-                slug,
-                descripcion,
-                activo,
-                orden: Number(orden),
-              })
-            }
+            disabled={pending}
+            onClick={handleSubmit}
           >
-            Guardar
+            Guardar categoría
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
+
+type ProductoFormErrors = {
+  nombre?: string;
+  stock?: string;
+  costo?: string;
+  precio?: string;
+  ubicacion?: string;
+  categoriaId?: string;
+  sku?: string;
+};
 
 function ProductoDialog({
   open,
@@ -689,58 +927,215 @@ function ProductoDialog({
     costo: number;
     stock: number;
     stockMinimo: number;
+    ubicacion: InventarioUbicacion;
     imagenUrl: string;
     imageFile: File | null;
     compatibleModelos: string[];
     activo: boolean;
   }) => void;
 }) {
+  const formId = useId();
+
   const [categoriaId, setCategoriaId] = useState("");
   const [sku, setSku] = useState("");
+  const [skuTouched, setSkuTouched] = useState(false);
   const [nombre, setNombre] = useState("");
   const [descripcion, setDescripcion] = useState("");
-  const [precio, setPrecio] = useState("0");
-  const [costo, setCosto] = useState("0");
-  const [stock, setStock] = useState("0");
+  const [precio, setPrecio] = useState("");
+  const [costo, setCosto] = useState("");
+  const [stock, setStock] = useState("");
   const [stockMinimo, setStockMinimo] = useState("0");
+  const [ubicacion, setUbicacion] = useState<InventarioUbicacion>("Soluciones");
   const [imagenUrl, setImagenUrl] = useState("");
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [modelos, setModelos] = useState("");
   const [activo, setActivo] = useState(true);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [errors, setErrors] = useState<ProductoFormErrors>({});
+
+  const nombreId = `${formId}-nombre`;
+  const stockId = `${formId}-stock`;
+  const costoId = `${formId}-costo`;
+  const precioId = `${formId}-precio`;
+  const skuId = `${formId}-sku`;
+  const ubicacionId = `${formId}-ubicacion`;
+  const categoriaFieldId = `${formId}-categoria`;
+
+  function focusField(id: string) {
+    document.getElementById(id)?.focus();
+  }
 
   function load() {
     setCategoriaId(String(editing?.categoria_id ?? categorias[0]?.id ?? ""));
     setSku(editing?.sku ?? "");
+    setSkuTouched(!!editing?.sku);
     setNombre(editing?.nombre ?? "");
     setDescripcion(editing?.descripcion ?? "");
-    setPrecio(String(editing?.precio ?? 0));
-    setCosto(String(editing?.costo ?? 0));
-    setStock(String(editing?.stock ?? 0));
+    setPrecio(editing ? formatMilesFromNumber(editing.precio) : "");
+    setCosto(editing ? formatMilesFromNumber(editing.costo ?? 0) : "");
+    setStock(editing ? String(editing.stock) : "");
     setStockMinimo(String(editing?.stock_minimo ?? 0));
+    setUbicacion(editing?.ubicacion ?? "Soluciones");
     setImagenUrl(editing?.imagen_url ?? "");
     setImageFile(null);
     setModelos((editing?.compatible_modelos ?? []).join(", "));
     setActivo(editing?.activo ?? true);
+    setMoreOpen(false);
+    setErrors({});
   }
 
   useEffect(() => {
     if (open) load();
   }, [open, editing]);
 
+  function handleNombreChange(value: string) {
+    setNombre(value);
+    if (!skuTouched) {
+      setSku(skuFromNombre(value));
+    }
+  }
+
+  function validate(): ProductoFormErrors {
+    const next: ProductoFormErrors = {};
+    if (!nombre.trim()) next.nombre = "Escribe el nombre del producto.";
+    const stockNum = Number(stock.replace(/\D/g, ""));
+    if (stock.trim() === "" || !Number.isFinite(stockNum) || stockNum < 0) {
+      next.stock = "Indica cuántas unidades hay (0 o más).";
+    }
+    const costoNum = parseMilesInput(costo);
+    if (costo.trim() === "" || !Number.isFinite(costoNum) || costoNum < 0) {
+      next.costo = "Indica cuánto te costó (0 o más).";
+    }
+    const precioNum = parseMilesInput(precio);
+    if (precio.trim() === "" || !Number.isFinite(precioNum) || precioNum < 0) {
+      next.precio = "Indica a cuánto lo vendes (0 o más).";
+    }
+    if (!ubicacion) next.ubicacion = "Elige dónde está el producto.";
+    if (!categoriaId) next.categoriaId = "Elige una categoría.";
+    const resolvedSku = sku.trim() || skuFromNombre(nombre);
+    if (!resolvedSku) next.sku = "El SKU se genera del nombre; revísalo en Más opciones.";
+    return next;
+  }
+
+  function handleSubmit() {
+    const next = validate();
+    setErrors(next);
+    if (Object.keys(next).length > 0) {
+      if (next.nombre) focusField(nombreId);
+      else if (next.stock) focusField(stockId);
+      else if (next.costo) focusField(costoId);
+      else if (next.precio) focusField(precioId);
+      else if (next.ubicacion) focusField(ubicacionId);
+      else if (next.categoriaId) focusField(categoriaFieldId);
+      else if (next.sku) {
+        setMoreOpen(true);
+        queueMicrotask(() => focusField(skuId));
+      }
+      return;
+    }
+
+    const resolvedSku = (sku.trim() || skuFromNombre(nombre)).toUpperCase();
+    onSave({
+      id: editing?.id,
+      categoriaId: Number(categoriaId),
+      sku: resolvedSku,
+      nombre,
+      descripcion,
+      precio: parseMilesInput(precio),
+      costo: parseMilesInput(costo),
+      stock: Number(stock.replace(/\D/g, "")),
+      stockMinimo: Number(stockMinimo) || 0,
+      ubicacion,
+      imagenUrl,
+      imageFile,
+      compatibleModelos: modelos
+        .split(",")
+        .map((m) => m.trim())
+        .filter(Boolean),
+      activo,
+    });
+  }
+
+  const basicosCompletos =
+    nombre.trim().length > 0 &&
+    stock.trim() !== "" &&
+    costo.trim() !== "" &&
+    precio.trim() !== "" &&
+    Boolean(categoriaId) &&
+    Boolean(ubicacion);
+
   return (
-    <Dialog
-      open={open}
-      onOpenChange={onOpenChange}
-    >
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto bg-background">
         <DialogHeader>
-          <DialogTitle>{editing ? "Editar producto" : "Nuevo producto"}</DialogTitle>
+          <DialogTitle>
+            {editing ? "Editar producto" : "Nuevo producto"}
+          </DialogTitle>
+          <DialogDescription>
+            Escribe el nombre, cuántas hay, cuánto costó y a cuánto se vende.
+          </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 sm:grid-cols-2">
-          <div className="flex flex-col gap-2 sm:col-span-2">
-            <Label>Categoría</Label>
+          <Field
+            id={nombreId}
+            label="Nombre"
+            value={nombre}
+            onChange={handleNombreChange}
+            error={errors.nombre}
+            className="sm:col-span-2"
+          />
+          <Field
+            id={stockId}
+            label="Cuántas hay"
+            value={stock}
+            onChange={(v) => setStock(v.replace(/\D/g, ""))}
+            inputMode="numeric"
+            placeholder="Ej. 5"
+            error={errors.stock}
+          />
+          <Field
+            id={costoId}
+            label="Cuánto te costó"
+            value={costo}
+            onChange={(v) => setCosto(formatMilesInput(v))}
+            inputMode="numeric"
+            placeholder="Ej. 50.000"
+            error={errors.costo}
+          />
+          <Field
+            id={precioId}
+            label="A cuánto lo vendes"
+            value={precio}
+            onChange={(v) => setPrecio(formatMilesInput(v))}
+            inputMode="numeric"
+            placeholder="Ej. 80.000"
+            error={errors.precio}
+          />
+          <div className="flex flex-col gap-2">
+            <Label htmlFor={ubicacionId}>Ubicación</Label>
             <TouchSelect
+              id={ubicacionId}
+              aria-label="Ubicación"
+              aria-invalid={!!errors.ubicacion}
+              value={ubicacion}
+              onChange={(v) => setUbicacion(v as InventarioUbicacion)}
+              options={INVENTARIO_UBICACIONES.map((u) => ({
+                value: u,
+                label: u,
+              }))}
+            />
+            {errors.ubicacion ? (
+              <p className="text-sm text-destructive" role="alert">
+                {errors.ubicacion}
+              </p>
+            ) : null}
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor={categoriaFieldId}>Categoría</Label>
+            <TouchSelect
+              id={categoriaFieldId}
               aria-label="Categoría"
+              aria-invalid={!!errors.categoriaId}
               value={categoriaId}
               onChange={setCategoriaId}
               options={categorias.map((c) => ({
@@ -748,21 +1143,15 @@ function ProductoDialog({
                 label: c.nombre,
               }))}
             />
+            {errors.categoriaId ? (
+              <p className="text-sm text-destructive" role="alert">
+                {errors.categoriaId}
+              </p>
+            ) : null}
           </div>
-          <Field label="SKU" value={sku} onChange={setSku} />
-          <Field label="Nombre" value={nombre} onChange={setNombre} />
-          <Field label="Precio" value={precio} onChange={setPrecio} type="number" />
-          <Field label="Costo" value={costo} onChange={setCosto} type="number" />
-          <Field label="Stock" value={stock} onChange={setStock} type="number" />
-          <Field
-            label="Stock mínimo"
-            value={stockMinimo}
-            onChange={setStockMinimo}
-            type="number"
-          />
           <div className="sm:col-span-2">
             <ImageFileField
-              label="Foto del producto"
+              label="Foto"
               existingUrl={imagenUrl}
               file={imageFile}
               onFileChange={setImageFile}
@@ -772,24 +1161,66 @@ function ProductoDialog({
               cameraInputId="inventario-producto-camera"
             />
           </div>
+
           <div className="sm:col-span-2">
-            <Field
-              label="Modelos compatibles (separados por coma)"
-              value={modelos}
-              onChange={setModelos}
-            />
-          </div>
-          <div className="sm:col-span-2">
-            <Label>Descripción</Label>
-            <Textarea
-              value={descripcion}
-              onChange={(e) => setDescripcion(e.target.value)}
-              className="min-h-24 touch-manipulation text-base md:text-sm"
-            />
-          </div>
-          <div className="flex items-center gap-2 sm:col-span-2">
-            <Switch checked={activo} onCheckedChange={setActivo} />
-            <Label>Activo en tienda</Label>
+            <Button
+              type="button"
+              variant="ghost"
+              className="h-auto w-full justify-between px-0 py-2 font-medium"
+              aria-expanded={moreOpen}
+              onClick={() => setMoreOpen((v) => !v)}
+            >
+              Más opciones
+              <ChevronDown
+                className={`h-4 w-4 transition-transform ${moreOpen ? "rotate-180" : ""}`}
+              />
+            </Button>
+            {moreOpen ? (
+              <div className="mt-2 grid gap-4 sm:grid-cols-2">
+                <Field
+                  id={skuId}
+                  label="SKU"
+                  value={sku}
+                  onChange={(v) => {
+                    setSkuTouched(true);
+                    setSku(v);
+                  }}
+                  error={errors.sku}
+                />
+                <Field
+                  id={`${formId}-minimo`}
+                  label="Aviso cuando queden pocas"
+                  value={stockMinimo}
+                  onChange={setStockMinimo}
+                  type="number"
+                />
+                <div className="sm:col-span-2">
+                  <Field
+                    id={`${formId}-modelos`}
+                    label="Modelos compatibles (separados por coma)"
+                    value={modelos}
+                    onChange={setModelos}
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <Label htmlFor={`${formId}-desc`}>Descripción</Label>
+                  <Textarea
+                    id={`${formId}-desc`}
+                    value={descripcion}
+                    onChange={(e) => setDescripcion(e.target.value)}
+                    className="mt-2 min-h-24 touch-manipulation text-base md:text-sm"
+                  />
+                </div>
+                <div className="flex items-center gap-2 sm:col-span-2">
+                  <Switch
+                    id={`${formId}-activo`}
+                    checked={activo}
+                    onCheckedChange={setActivo}
+                  />
+                  <Label htmlFor={`${formId}-activo`}>Activo en tienda</Label>
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
         <DialogFooter>
@@ -798,29 +1229,15 @@ function ProductoDialog({
           </Button>
           <Button
             className="bg-primary text-primary-foreground hover:bg-primary/80"
-            disabled={pending || !sku.trim() || !nombre.trim() || !categoriaId}
-            onClick={() =>
-              onSave({
-                id: editing?.id,
-                categoriaId: Number(categoriaId),
-                sku,
-                nombre,
-                descripcion,
-                precio: Number(precio),
-                costo: Number(costo),
-                stock: Number(stock),
-                stockMinimo: Number(stockMinimo),
-                imagenUrl,
-                imageFile,
-                compatibleModelos: modelos
-                  .split(",")
-                  .map((m) => m.trim())
-                  .filter(Boolean),
-                activo,
-              })
+            disabled={pending || !basicosCompletos}
+            title={
+              basicosCompletos
+                ? undefined
+                : "Completa nombre, cantidad, costo, precio, ubicación y categoría"
             }
+            onClick={handleSubmit}
           >
-            Guardar
+            Guardar producto
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -829,25 +1246,46 @@ function ProductoDialog({
 }
 
 function Field({
+  id,
   label,
   value,
   onChange,
   type = "text",
+  inputMode,
+  placeholder,
+  error,
+  className,
 }: {
+  id?: string;
   label: string;
   value: string;
   onChange: (v: string) => void;
   type?: string;
+  inputMode?: "numeric" | "text" | "decimal" | "tel";
+  placeholder?: string;
+  error?: string;
+  className?: string;
 }) {
+  const errorId = id && error ? `${id}-error` : undefined;
   return (
-    <div className="flex flex-col gap-2">
-      <Label>{label}</Label>
+    <div className={`flex flex-col gap-2 ${className ?? ""}`}>
+      <Label htmlFor={id}>{label}</Label>
       <Input
+        id={id}
         type={type}
+        inputMode={inputMode}
+        placeholder={placeholder}
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        aria-invalid={!!error}
+        aria-describedby={errorId}
         className="min-h-11 touch-manipulation text-base md:text-sm"
       />
+      {error ? (
+        <p id={errorId} className="text-sm text-destructive" role="alert">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }

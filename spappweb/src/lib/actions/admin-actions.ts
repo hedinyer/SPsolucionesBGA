@@ -142,6 +142,7 @@ const assignMotoSchema = z.object({
   cuotaInicial: z.number().int().min(MIN_CUOTA_INICIAL).optional(),
   cuotaDiaria: z.number().int().positive().optional(),
   montoVisita: z.number().int().min(0).optional(),
+  cobraCuotaAdelantada: z.boolean().optional(),
 });
 
 export async function assignMotoByAdmin(
@@ -837,19 +838,38 @@ const categoriaSchema = z.object({
   slug: z.string().min(1),
   descripcion: z.string().optional(),
   activo: z.boolean(),
-  orden: z.number().int().min(0),
+  orden: z.number().int().min(0).optional(),
 });
 
 export async function saveCategoria(input: z.infer<typeof categoriaSchema>) {
   const parsed = categoriaSchema.parse(input);
   const supabase = await assertAdmin();
-  const payload = {
+
+  let orden = parsed.orden;
+  if (orden == null && !parsed.id) {
+    const { data: last } = await supabase
+      .from("inventario_categorias")
+      .select("orden")
+      .order("orden", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    orden = ((last?.orden as number | undefined) ?? -1) + 1;
+  }
+
+  const payload: {
+    nombre: string;
+    slug: string;
+    descripcion: string | null;
+    activo: boolean;
+    orden?: number;
+  } = {
     nombre: parsed.nombre.trim(),
     slug: parsed.slug.trim().toLowerCase(),
     descripcion: parsed.descripcion?.trim() || null,
     activo: parsed.activo,
-    orden: parsed.orden,
   };
+  if (orden != null) payload.orden = orden;
+
   if (parsed.id) {
     const { error } = await supabase
       .from("inventario_categorias")
@@ -859,7 +879,7 @@ export async function saveCategoria(input: z.infer<typeof categoriaSchema>) {
   } else {
     const { error } = await supabase
       .from("inventario_categorias")
-      .insert(payload);
+      .insert({ ...payload, orden: orden ?? 0 });
     if (error) throw new Error(error.message);
   }
   revalidatePath("/inventario");
@@ -881,6 +901,7 @@ const productoSchema = z.object({
   costo: z.number().int().min(0),
   stock: z.number().int().min(0),
   stockMinimo: z.number().int().min(0),
+  ubicacion: z.enum(["Soluciones", "Bera", "Bodega"]),
   imagenUrl: z.string().optional(),
   compatibleModelos: z.array(z.string()).optional(),
   activo: z.boolean(),
@@ -898,6 +919,7 @@ export async function saveProducto(input: z.infer<typeof productoSchema>) {
     costo: parsed.costo,
     stock: parsed.stock,
     stock_minimo: parsed.stockMinimo,
+    ubicacion: parsed.ubicacion,
     imagen_url: parsed.imagenUrl?.trim() || null,
     compatible_modelos: parsed.compatibleModelos ?? [],
     activo: parsed.activo,

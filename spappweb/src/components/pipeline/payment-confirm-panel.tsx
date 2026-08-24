@@ -13,6 +13,7 @@ import {
   printCreditoPagoReceipt,
   type CreditoPagoReceiptData,
 } from "@/lib/printing/credito-pago-receipt";
+import { cobraCuotaAdelantada } from "@/lib/moto-payment";
 import {
   abonosPorConcepto,
   conceptoCompleto,
@@ -98,6 +99,7 @@ export function PaymentConfirmPanel({
 
   const canEditMontoVisita = puedeEditarMontoVisita(compra, pagos);
   const canEditFrecuencia = puedeEditarFrecuenciaPago(compra, pagos);
+  const cobraAdelantada = cobraCuotaAdelantada(compra);
   const showVisitaSection =
     compra.monto_visita_monto > 0 || canEditMontoVisita;
 
@@ -127,10 +129,15 @@ export function PaymentConfirmPanel({
               {formatCop(compra.monto_total_primer_pago)}
             </p>
             <p className="mt-2 text-sm text-muted-foreground">
-              Inicial {formatCop(compra.cuota_inicial_monto)} + adelantada{" "}
-              {formatCop(compra.monto_cuota_periodo)}
+              Inicial {formatCop(compra.cuota_inicial_monto)}
+              {cobraAdelantada && (
+                <> + adelantada {formatCop(compra.monto_cuota_periodo)}</>
+              )}
               {compra.monto_visita_monto > 0 && (
                 <> + visita {formatCop(compra.monto_visita_monto)}</>
+              )}
+              {!cobraAdelantada && (
+                <> · sin cuota adelantada</>
               )}
             </p>
           </div>
@@ -162,19 +169,21 @@ export function PaymentConfirmPanel({
             onAddAbono={() => openAbonoDialog("inicial")}
             onAddEfectivo={() => openAbonoDialog("inicial", "efectivo")}
           />
-          <ConceptoAbonoSection
-            compra={compra}
-            pagos={pagos}
-            contexto="cuota_adelantada"
-            userId={userId}
-            canEdit={puedeEditarAbonoConcepto(compra, pagos, "cuota_adelantada")}
-            clienteNombre={clienteNombre}
-            clienteCedula={clienteCedula}
-            onAddAbono={() => openAbonoDialog("cuota_adelantada")}
-            onAddEfectivo={() =>
-              openAbonoDialog("cuota_adelantada", "efectivo")
-            }
-          />
+          {cobraAdelantada && (
+            <ConceptoAbonoSection
+              compra={compra}
+              pagos={pagos}
+              contexto="cuota_adelantada"
+              userId={userId}
+              canEdit={puedeEditarAbonoConcepto(compra, pagos, "cuota_adelantada")}
+              clienteNombre={clienteNombre}
+              clienteCedula={clienteCedula}
+              onAddAbono={() => openAbonoDialog("cuota_adelantada")}
+              onAddEfectivo={() =>
+                openAbonoDialog("cuota_adelantada", "efectivo")
+              }
+            />
+          )}
           {showVisitaSection && (
             <ConceptoAbonoSection
               compra={compra}
