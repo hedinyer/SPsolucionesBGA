@@ -1228,21 +1228,6 @@ const garajeMotoSchema = z
     cuotaDiaria: z.number().int().nonnegative().nullable().optional(),
     montoVisita: z.number().int().nonnegative().nullable().optional(),
     notas: z.string().optional(),
-    isNewManual: z.boolean().optional(),
-  })
-  .superRefine((data, ctx) => {
-    // Motos nuevas suelen no tener placa aún.
-    if (
-      data.isNewManual &&
-      data.condicion !== "nueva" &&
-      !data.placaFotoUrl?.trim()
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "La foto de placa es obligatoria para registros manuales.",
-        path: ["placaFotoUrl"],
-      });
-    }
   });
 
 export async function saveGarajeMoto(
@@ -1282,6 +1267,12 @@ export async function saveGarajeMoto(
     revalidatePath("/garaje");
     return { ok: true };
   } catch (e) {
+    if (e instanceof z.ZodError) {
+      return {
+        ok: false,
+        error: e.issues[0]?.message ?? "Datos inválidos.",
+      };
+    }
     return {
       ok: false,
       error: e instanceof Error ? e.message : "Error al guardar la moto.",

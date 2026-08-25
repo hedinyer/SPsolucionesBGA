@@ -816,8 +816,6 @@ export function GarajeManager({
                 );
               }
 
-              const isNewManual = !editingMoto && form.origen === "manual";
-
               const result = await saveGarajeMoto({
                 id: editingMoto?.id,
                 parqueaderoId: form.parqueaderoId,
@@ -830,7 +828,6 @@ export function GarajeManager({
                 condicion: form.condicion,
                 estado: form.estado,
                 notas: form.notas,
-                isNewManual,
               });
               if (!result.ok) {
                 toast.error(result.error);
@@ -931,10 +928,8 @@ function MotoDialog({
     if (open) load();
   }, [open, editing?.id]);
 
-  const isNewManual = !editing;
   const requiresPhoto =
-    (isNewManual && condicion !== "nueva") ||
-    (editing?.origen === "recuperacion" && !placaFotoUrl && !imageFile);
+    editing?.origen === "recuperacion" && !placaFotoUrl && !imageFile;
 
   if (!open) return null;
 
@@ -983,9 +978,7 @@ function MotoDialog({
             <div className="sm:col-span-2">
               <ImageFileField
                 label={
-                  condicion === "nueva"
-                    ? "Foto de placa (opcional)"
-                    : "Foto de placa"
+                  requiresPhoto ? "Foto de placa" : "Foto de placa (opcional)"
                 }
                 existingUrl={
                   placaFotoUrl

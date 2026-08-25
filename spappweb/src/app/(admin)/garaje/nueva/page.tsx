@@ -29,8 +29,8 @@ export default async function NuevaMotoGarajePage({
         <div>
           <h1 className="text-xl font-semibold sm:text-2xl">Registrar moto</h1>
           <p className="mt-1 text-muted-foreground">
-            Elige un modelo del catálogo o escribe uno nuevo. Luego vende en
-            Contado si aplica.
+            Nueva o de segunda mano. Elige un modelo del catálogo o escribe uno
+            nuevo. Luego vende en Contado si aplica.
           </p>
         </div>
       </div>

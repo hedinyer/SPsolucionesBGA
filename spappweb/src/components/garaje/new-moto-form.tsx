@@ -225,17 +225,11 @@ export function NewMotoForm({
     if (!referencia.trim()) setReferencia(bike.modelo);
   }
 
-  const requiresPhoto = condicion !== "nueva";
   const canSave =
-    !pending &&
-    referencia.trim() &&
-    modelo.trim() &&
-    color.trim() &&
-    (!requiresPhoto || imageFile != null);
+    !pending && referencia.trim() && modelo.trim() && color.trim();
 
   function handleSubmit() {
     if (!canSave) return;
-    if (requiresPhoto && !imageFile) return;
 
     const modeloSaved = modelo.trim();
     const colorSaved = color.trim();
@@ -263,7 +257,6 @@ export function NewMotoForm({
           condicion,
           estado,
           notas,
-          isNewManual: true,
         });
 
         if (!result.ok) {
@@ -326,11 +319,7 @@ export function NewMotoForm({
         ) : null}
         <div className="sm:col-span-2">
           <ImageFileField
-            label={
-              condicion === "nueva"
-                ? "Foto de placa (opcional)"
-                : "Foto de placa"
-            }
+            label="Foto de placa (opcional)"
             file={imageFile}
             previewUrl={imagePreviewUrl}
             onFileChange={(file) => {

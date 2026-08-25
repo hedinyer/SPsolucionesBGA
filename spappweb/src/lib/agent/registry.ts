@@ -724,7 +724,7 @@ export const AGENT_TOOLS = {
   save_garaje_moto: tool({
     category: "garaje",
     description:
-      "Crea o edita una moto física del garaje. Para registros manuales nuevos la foto de placa es obligatoria.",
+      "Crea o edita una moto física del garaje. Nueva, segunda mano o recuperada; la foto de placa es opcional.",
     input: z.object({
       id: z.string().uuid().optional(),
       parqueaderoId: z.number().int().positive().nullable(),
@@ -737,7 +737,6 @@ export const AGENT_TOOLS = {
       condicion: z.enum(["nueva", "segunda_mano", "recuperada"]),
       estado: z.enum(["en_garaje", "disponible", "vendida", "baja"]),
       notas: z.string().optional(),
-      isNewManual: z.boolean().optional(),
     }),
     handler: async (args) => (await loadAdminActions()).saveGarajeMoto(args),
   }),
