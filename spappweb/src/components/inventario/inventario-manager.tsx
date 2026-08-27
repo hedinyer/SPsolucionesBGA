@@ -375,7 +375,9 @@ export function InventarioManager({
     () =>
       [...categorias]
         .filter((c) => c.activo)
-        .sort((a, b) => a.orden - b.orden || a.nombre.localeCompare(b.nombre)),
+        .sort((a, b) =>
+          a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base" }),
+        ),
     [categorias],
   );
 
@@ -454,7 +456,10 @@ export function InventarioManager({
         if (!inInclusiveRange(producto.precio, pMin, pMax)) return false;
         return true;
       })
-      .map(({ producto }) => producto);
+      .map(({ producto }) => producto)
+      .sort((a, b) =>
+        a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base" }),
+      );
   }, [
     nombreQuery,
     productosIndex,
@@ -1807,6 +1812,14 @@ function ProductoDialog({
   const formId = useId();
   const isEditing = editing != null;
 
+  const categoriasOrdenadas = useMemo(
+    () =>
+      [...categorias].sort((a, b) =>
+        a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base" }),
+      ),
+    [categorias],
+  );
+
   const [categoriaId, setCategoriaId] = useState("");
   const [sku, setSku] = useState("");
   const [skuTouched, setSkuTouched] = useState(false);
@@ -1843,7 +1856,9 @@ function ProductoDialog({
   }
 
   function load() {
-    setCategoriaId(String(editing?.categoria_id ?? categorias[0]?.id ?? ""));
+    setCategoriaId(
+      String(editing?.categoria_id ?? categoriasOrdenadas[0]?.id ?? ""),
+    );
     setSku(editing?.sku ?? "");
     setSkuTouched(!!editing?.sku);
     setNombre(editing?.nombre ?? "");
@@ -2124,7 +2139,7 @@ function ProductoDialog({
                 aria-invalid={!!errors.categoriaId}
                 value={categoriaId}
                 onChange={setCategoriaId}
-                options={categorias.map((c) => ({
+                options={categoriasOrdenadas.map((c) => ({
                   value: String(c.id),
                   label: c.nombre,
                 }))}

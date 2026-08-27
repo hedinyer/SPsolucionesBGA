@@ -1349,7 +1349,6 @@ export async function getAllProductos(): Promise<InventarioProductoRow[]> {
       "id, categoria_id, sku, nombre, descripcion, precio, costo, stock, stock_minimo, ubicacion, gaveta, editado_por, motivo_edicion, editado_at, eliminado_por, motivo_eliminacion, eliminado_at, imagen_url, compatible_modelos, activo, inventario_categorias(id, nombre, slug, descripcion, activo, orden)",
     )
     .is("eliminado_at", null)
-    .order("stock", { ascending: true })
     .order("nombre");
   return ((data ?? []) as unknown as InventarioProductoRow[]);
 }
