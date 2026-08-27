@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useTransition, useEffect, useId } from "react";
+import { useState, useTransition, useEffect, useId, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { usePollingRefresh } from "@/hooks/use-polling-refresh";
-import { ChevronDown, Eye, Pencil, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, Eye, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 import {
   deleteCategoria,
   deleteProducto,
@@ -82,6 +82,13 @@ function skuFromNombre(nombre: string): string {
     .slice(0, 40);
 }
 
+function normalizeSearch(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
 function formatMilesInput(raw: string): string {
   const digits = raw.replace(/\D/g, "");
   if (!digits) return "";
@@ -132,7 +139,26 @@ export function InventarioManager({
     useState<InventarioProductoRow | null>(null);
   const [novedadesProd, setNovedadesProd] =
     useState<InventarioProductoRow | null>(null);
+  const [nombreQuery, setNombreQuery] = useState("");
   const [pending, startTransition] = useTransition();
+
+  const productosIndex = useMemo(
+    () =>
+      productos.map((producto) => ({
+        producto,
+        haystack: normalizeSearch(producto.nombre),
+      })),
+    [productos],
+  );
+
+  const productosFiltrados = useMemo(() => {
+    const q = normalizeSearch(nombreQuery.trim());
+    if (!q) return productos;
+    const terms = q.split(/\s+/).filter(Boolean);
+    return productosIndex
+      .filter(({ haystack }) => terms.every((term) => haystack.includes(term)))
+      .map(({ producto }) => producto);
+  }, [nombreQuery, productos, productosIndex]);
 
   const { secondsAgo } = usePollingRefresh({
     intervalMs: 30_000,
@@ -169,8 +195,44 @@ export function InventarioManager({
         </TabsList>
 
         <TabsContent value="productos" className="flex flex-col gap-4">
-          <div className="flex justify-end">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="relative min-w-0 flex-1" role="search">
+              <label htmlFor="inventario-buscar-nombre" className="sr-only">
+                Buscar producto por nombre
+              </label>
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                id="inventario-buscar-nombre"
+                value={nombreQuery}
+                onChange={(e) => setNombreQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape" && nombreQuery) {
+                    e.preventDefault();
+                    setNombreQuery("");
+                  }
+                }}
+                placeholder="Buscar por nombre…"
+                className="min-h-11 pl-9 pr-9"
+                inputMode="search"
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck={false}
+              />
+              {nombreQuery ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2"
+                  aria-label="Borrar búsqueda"
+                  onClick={() => setNombreQuery("")}
+                >
+                  <X />
+                </Button>
+              ) : null}
+            </div>
             <Button
+              className="shrink-0"
               onClick={() => {
                 setEditingProd(null);
                 setProdOpen(true);
@@ -180,12 +242,31 @@ export function InventarioManager({
               Nuevo producto
             </Button>
           </div>
+          <p className="sr-only" role="status">
+            {nombreQuery.trim()
+              ? `${productosFiltrados.length} ${
+                  productosFiltrados.length === 1
+                    ? "producto encontrado"
+                    : "productos encontrados"
+                }`
+              : ""}
+          </p>
           {productos.length === 0 ? (
             <Empty className="border border-dashed border-border">
               <EmptyHeader>
                 <EmptyTitle>Inventario vacío</EmptyTitle>
                 <EmptyDescription>
                   Aún no hay productos. Crea el primero con Nuevo producto.
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          ) : productosFiltrados.length === 0 ? (
+            <Empty className="border border-dashed border-border">
+              <EmptyHeader>
+                <EmptyTitle>Ningún producto coincide</EmptyTitle>
+                <EmptyDescription>
+                  No hay productos con ese nombre. Prueba otra búsqueda o
+                  bórrala para ver todo el inventario.
                 </EmptyDescription>
               </EmptyHeader>
             </Empty>
@@ -206,7 +287,7 @@ export function InventarioManager({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {productos.map((p) => {
+                    {productosFiltrados.map((p) => {
                       const img = getStoragePublicUrl(
                         STORAGE_BUCKETS.inventarioImagenes,
                         p.imagen_url,
@@ -303,7 +384,7 @@ export function InventarioManager({
               </div>
 
               <div className="flex flex-col gap-3 lg:hidden">
-                {productos.map((p) => {
+                {productosFiltrados.map((p) => {
                   const img = getStoragePublicUrl(
                     STORAGE_BUCKETS.inventarioImagenes,
                     p.imagen_url,
