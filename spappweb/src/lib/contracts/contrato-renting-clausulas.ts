@@ -38,6 +38,8 @@ export interface ContratoData {
   fechaFirmaDia: string;
   fechaFirmaMes: string;
   fechaFirmaAnio: string;
+  /** Celular del contratante (hoja de vida). */
+  celularContratante: string;
   marca: string;
   modelo: string;
   linea: string;
@@ -55,6 +57,8 @@ export interface ContratoData {
   mediosPago: string;
 }
 
+export type CondicionMotoContrato = "nueva" | "segunda_mano" | "recuperada";
+
 export interface CompraContratoInput {
   modelo: string;
   color: string;
@@ -64,6 +68,23 @@ export interface CompraContratoInput {
   frecuencia_pago: FrecuenciaPago;
   cuota_inicial_monto: number;
   monto_cuota_periodo: number;
+  condicion?: CondicionMotoContrato | null;
+}
+
+export function estadoContratoFromCondicion(
+  condicion?: string | null,
+): "Nueva" | "Usada" {
+  if (condicion === "segunda_mano" || condicion === "recuperada") return "Usada";
+  return "Nueva";
+}
+
+export function condicionFromAdminData(
+  adminData: unknown,
+): CondicionMotoContrato | undefined {
+  if (!adminData || typeof adminData !== "object") return undefined;
+  const c = (adminData as Record<string, unknown>).condicion;
+  if (c === "nueva" || c === "segunda_mano" || c === "recuperada") return c;
+  return undefined;
 }
 
 export interface Clausula {
@@ -121,6 +142,7 @@ export function buildContratoComercial(compra: CompraContratoInput): Omit<
   | "fechaFirmaDia"
   | "fechaFirmaMes"
   | "fechaFirmaAnio"
+  | "celularContratante"
 > {
   const valorCuota = formatCop(compra.monto_cuota_periodo);
   const cuotaInicial = formatCop(compra.cuota_inicial_monto);
@@ -135,7 +157,7 @@ export function buildContratoComercial(compra: CompraContratoInput): Omit<
     marca: EMPRESA_PROPIETARIA.marcaMoto,
     modelo: compra.modelo,
     linea: compra.modelo,
-    estado: "Nueva",
+    estado: estadoContratoFromCondicion(compra.condicion),
     chasis: compra.chasis,
     motor: "N/A",
     placa: compra.placa,
@@ -163,6 +185,7 @@ export function buildContratoDataFromStored(
   stored: Record<string, unknown>,
   compra?: CompraContratoInput | null,
 ): ContratoData {
+  const storedEstado = String(stored.moto_estado ?? "").toLowerCase();
   const comercial = buildContratoComercial({
     modelo: String(compra?.modelo ?? stored.moto_modelo ?? ""),
     color: String(compra?.color ?? stored.moto_color ?? ""),
@@ -178,6 +201,9 @@ export function buildContratoDataFromStored(
     monto_cuota_periodo: Number(
       compra?.monto_cuota_periodo ?? stored.valor_cuota ?? 0,
     ),
+    condicion:
+      compra?.condicion ??
+      (storedEstado === "usada" ? "segunda_mano" : "nueva"),
   });
 
   const tipoRaw = String(stored.tipo_documento_contratante ?? "").toLowerCase();
@@ -200,6 +226,7 @@ export function buildContratoDataFromStored(
     fechaFirmaDia: String(stored.fecha_firma_dia ?? ""),
     fechaFirmaMes: String(stored.fecha_firma_mes ?? ""),
     fechaFirmaAnio: String(stored.fecha_firma_anio ?? ""),
+    celularContratante: String(stored.celular_contratante ?? ""),
     ...comercial,
   };
 }
@@ -368,7 +395,8 @@ Nit: 901.397.015-2
 
 EL CONTRATANTE
 [NOMBRE_CONTRATANTE]
-[TIPO_DOC_CONTRATANTE] [CEDULA_CONTRATANTE]`;
+[TIPO_DOC_CONTRATANTE] [CEDULA_CONTRATANTE]
+Celular: [CELULAR_CONTRATANTE]`;
 
 function applyContratantePlaceholders(text: string, form: ContratoData): string {
   return text
@@ -432,7 +460,11 @@ export function renderFirma(form: ContratoData): string {
       "[TIPO_DOC_CONTRATANTE]",
       form.tipoDocumentoContratante || "C.C.",
     )
-    .replaceAll("[CEDULA_CONTRATANTE]", form.cedulaContratante);
+    .replaceAll("[CEDULA_CONTRATANTE]", form.cedulaContratante)
+    .replaceAll(
+      "[CELULAR_CONTRATANTE]",
+      form.celularContratante.trim() || "________________",
+    );
 }
 
 const MESES = [
@@ -491,6 +523,7 @@ export function contratoClausulasSelfCheck(): void {
     fechaFirmaDia: "14",
     fechaFirmaMes: "julio",
     fechaFirmaAnio: "2026",
+    celularContratante: "3001234567",
     marca: "BERA",
     modelo: "X",
     linea: "X",
@@ -521,10 +554,12 @@ export function contratoClausulasSelfCheck(): void {
     fecha_firma_dia: "4",
     fecha_firma_mes: "agosto",
     fecha_firma_anio: "2026",
+    celular_contratante: "3001112233",
     moto_modelo: "X1",
     moto_color: "Rojo",
     moto_placa: "ABC123",
     moto_chasis: "CH1",
+    moto_estado: "Usada",
     frecuencia_pago: "semanal",
     cuota_inicial: 100000,
     valor_cuota: 50000,
@@ -535,11 +570,20 @@ export function contratoClausulasSelfCheck(): void {
   if (rebuilt.tipoDocumentoContratante !== "PPT") {
     throw new Error("buildContratoDataFromStored tipo PPT");
   }
+  if (rebuilt.estado !== "Usada") {
+    throw new Error("buildContratoDataFromStored estado usada");
+  }
+  if (rebuilt.celularContratante !== "3001112233") {
+    throw new Error("buildContratoDataFromStored celular");
+  }
   if (!rebuilt.formaPagoSaldo.includes("52 CUOTAS SEMANALES")) {
     throw new Error("buildContratoDataFromStored frecuencia");
   }
   const firmaPpt = renderFirma({ ...rebuilt, tipoDocumentoContratante: "PPT" });
   if (!firmaPpt.includes("PPT 123")) {
     throw new Error("renderFirma PPT");
+  }
+  if (!firmaPpt.includes("Celular: 3001112233")) {
+    throw new Error("renderFirma celular");
   }
 }

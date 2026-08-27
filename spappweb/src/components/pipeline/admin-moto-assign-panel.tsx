@@ -53,6 +53,9 @@ export function AdminMotoAssignPanel({
   const [cobraAdelantada, setCobraAdelantada] = useState(
     cobraCuotaAdelantada(compra),
   );
+  const [condicion, setCondicion] = useState<"nueva" | "segunda_mano">(
+    compra?.admin_data?.condicion === "segunda_mano" ? "segunda_mano" : "nueva",
+  );
 
   const activeBikes = bikes.filter((b) => b.activo);
   const selectedBike = activeBikes.find((b) => String(b.id) === bikeId);
@@ -145,6 +148,7 @@ export function AdminMotoAssignPanel({
                   cuotaDiaria: parsedDiaria,
                   montoVisita: parsedVisita,
                   cobraCuotaAdelantada: cobraAdelantada,
+                  condicion,
                 });
                 toast.success("Moto asignada. Envía el link de contrato al cliente.");
               } catch (err) {
@@ -167,6 +171,20 @@ export function AdminMotoAssignPanel({
                   value: String(b.id),
                   label: `${b.modelo} · ${b.color} (stock ${b.stock})`,
                 }))}
+              />
+            </div>
+            <div className="flex flex-col gap-2 sm:col-span-2">
+              <Label>Condición</Label>
+              <TouchSelect
+                aria-label="Condición"
+                value={condicion}
+                onChange={(v) =>
+                  setCondicion(v === "segunda_mano" ? "segunda_mano" : "nueva")
+                }
+                options={[
+                  { value: "nueva", label: "Nueva" },
+                  { value: "segunda_mano", label: "Usada" },
+                ]}
               />
             </div>
             <div className="flex flex-col gap-2 sm:col-span-2">

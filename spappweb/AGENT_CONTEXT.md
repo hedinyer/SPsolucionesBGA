@@ -89,10 +89,11 @@ Cada paso tiene estado visual: `completado | actual | pendiente | bloqueado | er
 | **moto** | existe `user_moto_compra` | contrato no firmado |
 | **pago** | `pago_inicial_confirmado && pago_cuota_confirmado` y compra en `lista_retiro`/`entregada` | no hay compra |
 | **entrega** | `user_moto_compra.estado = 'entregada'` (error si `cancelada`) | no pagado y no `lista_retiro` |
-| **visita** | `visitas.estado = 'completada'` (error si `cancelada`) | no entregada |
+| **visita** | `visitas.estado = 'completada'` (error si `cancelada`) | no pagado y no `lista_retiro` |
 
-> La **visita domiciliaria** puede ir antes o después de la entrega según
-> `admin_data.entrega_antes_visita` en la compra.
+> **Visita y entrega son independientes:** se pueden hacer en cualquier orden
+> (entregar y luego visitar, o al revés). Ambas se desbloquean al pasar a
+> `lista_retiro`.
 
 `getClientPipeline(userId)` (tool `get_client_pipeline`) devuelve el agregado 360°
 con: user, document, contract, visita, compra, tracking, tarifas, moroso, recoger,

@@ -1,4 +1,5 @@
 import { runPlacaGpsSelfCheck } from "@/lib/gps/placaGps";
+import { runUbicacionGpsSelfCheck } from "@/lib/gps/ubicacionGps";
 import type {
   ClientPipeline,
   ContractStatus,
@@ -32,17 +33,6 @@ const STEP_LABELS: Record<PipelineStepId, string> = {
   entrega: "Entrega",
 };
 
-export function entregaAntesVisita(compra: UserMotoCompraRow | null): boolean {
-  return compra?.admin_data?.entrega_antes_visita === true;
-}
-
-function stepOrder(compra: UserMotoCompraRow | null): PipelineStepId[] {
-  if (entregaAntesVisita(compra)) {
-    return ["credito", "moto", "contrato", "pago", "entrega", "visita"];
-  }
-  return STEP_ORDER;
-}
-
 export function motoListo(compra: UserMotoCompraRow | null): boolean {
   return Boolean(compra?.placa?.trim() && compra?.chasis?.trim());
 }
@@ -55,17 +45,6 @@ export function motoDone(
   // ponytail: legacy — cliente eligió moto tras contrato firmado sin placa admin
   if (contractDone(contract) && !motoListo(compra)) return true;
   return motoListo(compra);
-}
-
-export function canChooseFlowOrder(
-  compra: UserMotoCompraRow | null,
-  visita: VisitaRow | null,
-): boolean {
-  if (!compra || compra.estado !== "lista_retiro") return false;
-  if (deliveryDone(compra)) return false;
-  if (visitDone(visita)) return false;
-  if (compra.admin_data?.entrega_antes_visita !== undefined) return false;
-  return true;
 }
 
 function creditDone(doc: UserDocumentRow | null): boolean {
@@ -155,7 +134,7 @@ function isBlockedForStep(
   stepId: PipelineStepId,
   doc: UserDocumentRow | null,
   contract: DigitalContractRow | null,
-  visita: VisitaRow | null,
+  _visita: VisitaRow | null,
   compra: UserMotoCompraRow | null,
 ): boolean {
   switch (stepId) {
@@ -168,13 +147,9 @@ function isBlockedForStep(
     case "pago":
       return !contractDone(contract) || !motoDone(compra, contract);
     case "visita":
-      if (entregaAntesVisita(compra)) return !deliveryDone(compra);
-      return !paymentDone(compra) && compra?.estado !== "lista_retiro";
     case "entrega":
-      if (entregaAntesVisita(compra)) {
-        return !paymentDone(compra) && compra?.estado !== "lista_retiro";
-      }
-      return !visitDone(visita);
+      // ponytail: visita y entrega son independientes; solo esperan el pago
+      return !paymentDone(compra) && compra?.estado !== "lista_retiro";
     default:
       return true;
   }
@@ -203,25 +178,13 @@ export function detectAdminActionStep(
   ) {
     return "pago";
   }
+  if (compra?.estado === "lista_retiro") return "entrega";
   if (
-    compra &&
-    (compra.estado === "lista_retiro" || paymentDone(compra)) &&
-    !deliveryDone(compra)
+    deliveryDone(compra) &&
+    visita &&
+    !visitDone(visita) &&
+    !visitError(visita)
   ) {
-    if (entregaAntesVisita(compra)) return "entrega";
-    if (
-      !visita ||
-      visita.estado === "pendiente_asignacion" ||
-      visita.estado === "asignada" ||
-      visita.estado === "cancelada"
-    ) {
-      return "visita";
-    }
-    if (compra.estado === "lista_retiro" && visitDone(visita)) {
-      return "entrega";
-    }
-  }
-  if (deliveryDone(compra) && visita && !visitDone(visita)) {
     return "visita";
   }
   return null;
@@ -234,9 +197,19 @@ export function buildPipelineSteps(
   compra: UserMotoCompraRow | null,
 ): PipelineStep[] {
   const adminStep = detectAdminActionStep(doc, contract, visita, compra);
+  const entregaActual = compra?.estado === "lista_retiro";
+  const visitaActual =
+    Boolean(visita) &&
+    !visitDone(visita) &&
+    !visitError(visita) &&
+    (entregaActual || deliveryDone(compra));
 
-  return stepOrder(compra).map((id) => {
+  return STEP_ORDER.map((id) => {
     let state: StepVisualState = "pendiente";
+    const actionRequired =
+      adminStep === id ||
+      (id === "entrega" && entregaActual) ||
+      (id === "visita" && visitaActual);
 
     if (isStepError(id, doc, visita, compra)) {
       state = "error";
@@ -244,7 +217,7 @@ export function buildPipelineSteps(
       state = "completado";
     } else if (isBlockedForStep(id, doc, contract, visita, compra)) {
       state = "bloqueado";
-    } else if (adminStep === id) {
+    } else if (actionRequired) {
       state = "actual";
     } else if (
       id === "contrato" &&
@@ -259,7 +232,7 @@ export function buildPipelineSteps(
       id,
       label: STEP_LABELS[id],
       state,
-      adminActionRequired: adminStep === id,
+      adminActionRequired: actionRequired,
     };
   });
 }
@@ -382,6 +355,7 @@ export function visitaEstadoLabel(estado: VisitaEstado | undefined): string {
 
 export function runPipelineSelfCheck(): void {
   runPlacaGpsSelfCheck();
+  runUbicacionGpsSelfCheck();
 
   const docAceptada = { estado_solicitud: "aceptada" } as UserDocumentRow;
   const contractFirmado = { status: "firmado" } as DigitalContractRow;
@@ -441,23 +415,34 @@ export function runPipelineSelfCheck(): void {
       contractFirmado,
       visitaPendiente,
       compraLista,
-    ) !== "visita"
+    ) !== "entrega"
   ) {
-    throw new Error("default: visita first");
+    throw new Error("lista_retiro: entrega available with visita pending");
   }
-  const compraExcepcion = {
-    ...compraLista,
-    admin_data: { entrega_antes_visita: true },
-  };
+  const steps = buildPipelineSteps(
+    docAceptada,
+    contractFirmado,
+    visitaPendiente,
+    compraLista,
+  );
+  const visitaStep = steps.find((s) => s.id === "visita");
+  const entregaStep = steps.find((s) => s.id === "entrega");
+  if (visitaStep?.state === "bloqueado" || entregaStep?.state === "bloqueado") {
+    throw new Error("visita and entrega must not block each other");
+  }
+  if (!visitaStep?.adminActionRequired || !entregaStep?.adminActionRequired) {
+    throw new Error("visita and entrega both require admin when pending");
+  }
+  const compraEntregada = { ...compraLista, estado: "entregada" as const };
   if (
     detectAdminActionStep(
       docAceptada,
       contractFirmado,
       visitaPendiente,
-      compraExcepcion,
-    ) !== "entrega"
+      compraEntregada,
+    ) !== "visita"
   ) {
-    throw new Error("exception: entrega first");
+    throw new Error("after delivery: visita still available");
   }
 }
 

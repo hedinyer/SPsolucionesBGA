@@ -3,6 +3,7 @@ import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { cobraCuotaAdelantada } from "@/lib/moto-payment";
 import { buildClientPipeline } from "@/lib/pipeline/step-logic";
+import { parseDateOnlyYmd } from "@/lib/utils/format-date";
 import type {
   BikeRow,
   ClienteFacturacion,
@@ -471,8 +472,11 @@ function buildRentingResumen(
 ): RentingResumen | null {
   if (!compra || compra.estado !== "entregada") return null;
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const hoy = parseDateOnlyYmd(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Bogota",
+    }).format(new Date()),
+  );
 
   let totalPagado = 0;
   let totalAdeudado = 0;
@@ -501,12 +505,15 @@ function buildRentingResumen(
       } else if (tarifa.estado === "vencida") {
         cuotasVencidas++;
         totalAdeudado += tarifa.monto_esperado - pagadoParcial;
-        const venc = new Date(tarifa.fecha_vencimiento);
-        venc.setHours(0, 0, 0, 0);
-        const atraso = Math.floor(
-          (today.getTime() - venc.getTime()) / (1000 * 60 * 60 * 24),
-        );
-        if (diasAtraso === null || atraso > diasAtraso) diasAtraso = atraso;
+        const venc = parseDateOnlyYmd(tarifa.fecha_vencimiento);
+        if (venc && hoy) {
+          const atraso = Math.floor(
+            (Date.UTC(hoy.y, hoy.m - 1, hoy.d) -
+              Date.UTC(venc.y, venc.m - 1, venc.d)) /
+              (1000 * 60 * 60 * 24),
+          );
+          if (diasAtraso === null || atraso > diasAtraso) diasAtraso = atraso;
+        }
       }
     }
   }

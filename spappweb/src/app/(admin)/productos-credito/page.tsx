@@ -10,8 +10,8 @@ export default async function ProductosCreditoPage() {
     <div className="flex flex-col gap-6">
       <AdminHubSubnav hubId="tienda" />
       <PageHeader
-        title="Extras a crédito"
-        description="Accesorios y extras que el cliente puede llevarse a cuotas (inicial + cuota diaria). Se asignan en el paso de pago del cliente."
+        title="Extras a cuotas"
+        description="Cosas que el cliente paga poco a poco."
       />
       <ProductosCreditoManager productos={productos} />
     </div>

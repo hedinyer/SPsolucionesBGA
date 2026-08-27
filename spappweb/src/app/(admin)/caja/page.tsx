@@ -1,5 +1,4 @@
 ﻿import { CajaCuadrePanel } from "@/components/caja/caja-cuadre-panel";
-import { CajaProductosManager } from "@/components/caja/caja-productos-manager";
 import { AdminHubSubnav } from "@/components/layout/admin-hub-subnav";
 import { PageHeader } from "@/components/layout/page-header";
 import { getCajaSesionHoy } from "@/lib/actions/caja-actions";
@@ -12,10 +11,9 @@ export default async function CajaPage() {
       <AdminHubSubnav hubId="tienda" />
       <PageHeader
         title="Caja"
-        description="Abre y cierra la caja del día, y factura carritos del móvil."
+        description="Abrir, cerrar y cuadrar el dinero del día."
       />
       <CajaCuadrePanel initialSesion={sesion} />
-      <CajaProductosManager />
     </div>
   );
 }

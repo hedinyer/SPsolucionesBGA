@@ -15,7 +15,7 @@ export default async function CatalogoPage() {
     <div className="flex flex-col gap-6">
       <AdminHubSubnav hubId="motos" />
       <PageHeader
-        title="Modelos"
+        title="Referencia"
         description="Catálogo con precios, stock nuevo y segunda mano en patio. Desde aquí puedes registrar en garaje o vender al contado."
       />
       <CatalogoManager bikes={bikes} stockSegunda={stockSegunda} />

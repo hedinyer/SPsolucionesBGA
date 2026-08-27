@@ -4,14 +4,14 @@ import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { ExternalLink, MapPin } from "lucide-react";
 import { assignVisit, cancelVisit } from "@/lib/actions/admin-actions";
-import type { VisitaRow, VisitadorRow, UserMotoCompraRow } from "@/lib/pipeline/types";
+import type { VisitaRow, VisitadorRow } from "@/lib/pipeline/types";
 import {
   filterVisitadoresForReferral,
   referralLabel,
   resolveReferralSource,
 } from "@/lib/referrals";
 import { formatDate } from "@/lib/utils/format";
-import { visitaEstadoLabel, entregaAntesVisita } from "@/lib/pipeline/step-logic";
+import { visitaEstadoLabel } from "@/lib/pipeline/step-logic";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -37,7 +37,6 @@ interface VisitActionPanelProps {
   visita: VisitaRow | null;
   visitadores: VisitadorRow[];
   userId: number;
-  compra?: UserMotoCompraRow | null;
   referralSource?: string | null;
 }
 
@@ -45,7 +44,6 @@ export function VisitActionPanel({
   visita,
   visitadores,
   userId,
-  compra = null,
   referralSource = null,
 }: VisitActionPanelProps) {
   const [pending, startTransition] = useTransition();
@@ -99,9 +97,7 @@ export function VisitActionPanel({
         </CardTitle>
         <p className="text-sm text-muted-foreground">
           {visita.estado === "pendiente_asignacion"
-            ? entregaAntesVisita(compra)
-              ? "Programa la visita después de entregar la moto."
-              : "Asigna visitador y fecha antes de entregar la moto al cliente."
+            ? "Asigna visitador y fecha. La visita y la entrega se pueden hacer en cualquier orden."
             : visita.estado === "cancelada"
               ? "Estado: Cancelada. Puedes volver a agendarla."
               : `Estado: ${visitaEstadoLabel(visita.estado)}`}

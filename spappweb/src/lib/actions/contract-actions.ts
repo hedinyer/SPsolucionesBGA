@@ -7,6 +7,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import {
   buildContratoComercial,
   colombiaDateParts,
+  condicionFromAdminData,
   type ContratoData,
 } from "@/lib/contracts/contrato-renting-clausulas";
 import { documentoAbreviatura } from "@/lib/contracts/hoja-vida-schema";
@@ -60,7 +61,7 @@ export async function signContract(input: z.infer<typeof signSchema>) {
   const { data: compra, error: compraError } = await supabase
     .from("user_moto_compra")
     .select(
-      "modelo, color, placa, chasis, referencia, frecuencia_pago, cuota_inicial_monto, monto_cuota_periodo",
+      "modelo, color, placa, chasis, referencia, frecuencia_pago, cuota_inicial_monto, monto_cuota_periodo, admin_data",
     )
     .eq("user_id", userId)
     .maybeSingle();
@@ -94,7 +95,9 @@ export async function signContract(input: z.infer<typeof signSchema>) {
       frecuencia_pago: compra.frecuencia_pago as FrecuenciaPago,
       cuota_inicial_monto: compra.cuota_inicial_monto as number,
       monto_cuota_periodo: compra.monto_cuota_periodo as number,
+      condicion: condicionFromAdminData(compra.admin_data),
     }),
+    celularContratante: String(hojaRaw.celular ?? ""),
   };
 
   const signatureBuffer = Buffer.from(
@@ -115,6 +118,7 @@ export async function signContract(input: z.infer<typeof signSchema>) {
         cuotaInicial: contratoData.cuotaInicial,
         valorCuota: contratoData.valorCuota,
         frecuenciaPago: contratoData.frecuenciaPago,
+        estado: contratoData.estado,
       },
     }),
     generateContratoPdf({
@@ -167,6 +171,8 @@ export async function signContract(input: z.infer<typeof signSchema>) {
         cuota_inicial: compra.cuota_inicial_monto,
         valor_cuota: compra.monto_cuota_periodo,
         total_contrato: contratoData.totalContrato,
+        celular_contratante: String(hojaRaw.celular ?? ""),
+        moto_estado: contratoData.estado,
       },
       signature_path: signaturePath,
       hoja_vida_pdf_path: hojaVidaPath,

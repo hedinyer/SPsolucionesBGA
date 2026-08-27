@@ -1,5 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { buildContratoComercial } from "@/lib/contracts/contrato-renting-clausulas";
+import { buildContratoComercial, condicionFromAdminData } from "@/lib/contracts/contrato-renting-clausulas";
 import {
   prefillFromHojaYContrato,
   resolveHojaVidaForContract,
@@ -73,7 +73,7 @@ export default async function ContratoPage({
   let { data: compra } = await supabase
     .from("user_moto_compra")
     .select(
-      "modelo, color, placa, chasis, referencia, frecuencia_pago, cuota_inicial_monto, monto_cuota_periodo",
+      "modelo, color, placa, chasis, referencia, frecuencia_pago, cuota_inicial_monto, monto_cuota_periodo, admin_data",
     )
     .eq("digital_contract_id", contractId)
     .maybeSingle();
@@ -82,7 +82,7 @@ export default async function ContratoPage({
     const { data: byUser } = await supabase
       .from("user_moto_compra")
       .select(
-        "modelo, color, placa, chasis, referencia, frecuencia_pago, cuota_inicial_monto, monto_cuota_periodo",
+        "modelo, color, placa, chasis, referencia, frecuencia_pago, cuota_inicial_monto, monto_cuota_periodo, admin_data",
       )
       .eq("user_id", contract.user_id)
       .maybeSingle();
@@ -140,6 +140,7 @@ export default async function ContratoPage({
         frecuencia_pago: compra.frecuencia_pago as FrecuenciaPago,
         cuota_inicial_monto: compra.cuota_inicial_monto as number,
         monto_cuota_periodo: compra.monto_cuota_periodo as number,
+        condicion: condicionFromAdminData(compra.admin_data),
       })}
     />
   );

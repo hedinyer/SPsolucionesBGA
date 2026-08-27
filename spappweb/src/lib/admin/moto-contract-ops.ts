@@ -140,6 +140,7 @@ const assignMotoSchema = z.object({
   cuotaDiaria: z.number().int().positive().optional(),
   montoVisita: z.number().int().min(0).optional(),
   cobraCuotaAdelantada: z.boolean().optional(),
+  condicion: z.enum(["nueva", "segunda_mano"]).optional(),
 });
 
 export async function assignMotoByAdminOp(
@@ -211,6 +212,7 @@ export async function assignMotoByAdminOp(
   const adminData = {
     ...((existing?.admin_data as Record<string, unknown> | null) ?? {}),
     cobra_cuota_adelantada: cobraAdelantada,
+    condicion: parsed.condicion ?? "nueva",
   };
 
   let compraId: string;

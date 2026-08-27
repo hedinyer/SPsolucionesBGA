@@ -54,7 +54,7 @@ export const adminNavGroups: AdminNavGroup[] = [
     icon: Warehouse,
     children: [
       // ponytail: order = register → stock → sell → sold → street; Tarjetas out of that path
-      { href: "/catalogo", label: "Modelos", icon: Bike },
+      { href: "/catalogo", label: "Referencia", icon: Bike },
       { href: "/garaje", label: "Garaje", icon: Warehouse },
       { href: "/venta-contado", label: "Contado", icon: Banknote },
       { href: "/motos-vendidas", label: "Vendidas", icon: BadgeCheck },
@@ -68,10 +68,10 @@ export const adminNavGroups: AdminNavGroup[] = [
     href: "/venta",
     icon: ShoppingCart,
     children: [
-      { href: "/venta", label: "Repuestos y accesorios", icon: ShoppingCart },
+      { href: "/venta", label: "Vender", icon: ShoppingCart },
       { href: "/caja", label: "Caja", icon: Store },
       { href: "/inventario", label: "Inventario", icon: Package },
-      { href: "/productos-credito", label: "Extras a crédito", icon: CreditCard },
+      { href: "/productos-credito", label: "Extras a cuotas", icon: CreditCard },
       { href: "/historial-ventas", label: "Historial", icon: History },
     ],
   },

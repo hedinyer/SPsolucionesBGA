@@ -1,4 +1,4 @@
-import { runPipelineSelfCheck } from "./step-logic";
+import { runPipelineSelfCheck } from "./step-logic.ts";
 
 runPipelineSelfCheck();
 

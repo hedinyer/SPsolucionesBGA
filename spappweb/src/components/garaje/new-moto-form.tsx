@@ -296,22 +296,22 @@ export function NewMotoForm({
       <div className="grid gap-4 sm:grid-cols-2">
         {catalogOptions.length > 0 ? (
           <div className="flex flex-col gap-2 sm:col-span-2">
-            <Label htmlFor="garaje-catalogo-modelo">Modelo del catálogo</Label>
+            <Label htmlFor="garaje-catalogo-modelo">Referencia del catálogo</Label>
             <TouchSelect
               id="garaje-catalogo-modelo"
-              aria-label="Modelo del catálogo"
+              aria-label="Referencia del catálogo"
               value={catalogValue}
               onChange={applyCatalog}
               placeholder="Elegir del catálogo…"
               options={catalogOptions}
             />
             <p className="text-xs text-muted-foreground">
-              Rellena modelo y color. Si el modelo no existe, créalo antes en{" "}
+              Rellena referencia y color. Si la referencia no existe, créala antes en{" "}
               <Link
                 href="/catalogo"
                 className="font-medium text-foreground underline underline-offset-4"
               >
-                Modelos
+                Referencia
               </Link>
               .
             </p>

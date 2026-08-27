@@ -96,24 +96,32 @@ export function HistorialVentasClient({
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="relative">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+      <div className="relative" role="search">
+        <label htmlFor="historial-buscar" className="sr-only">
+          Buscar en el historial
+        </label>
+        <Search
+          className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+          aria-hidden="true"
+        />
         <Input
+          id="historial-buscar"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Buscar por placa, cédula, cliente, celular o producto…"
-          className="pl-9"
+          placeholder="Buscar por cliente, placa, producto…"
+          className="min-h-11 pl-9"
           inputMode="search"
+          autoComplete="off"
         />
       </div>
 
       <Tabs defaultValue="productos">
-        <TabsList className="h-auto w-full max-w-full gap-1 p-1">
+        <TabsList className="h-auto w-full max-w-full gap-1 overflow-x-auto p-1">
           <TabsTrigger
             value="productos"
             className="min-h-11 flex-1 touch-manipulation"
           >
-            Productos ({filteredProductos.length})
+            Productos de tienda ({filteredProductos.length})
           </TabsTrigger>
           <TabsTrigger
             value="motos"
@@ -124,24 +132,29 @@ export function HistorialVentasClient({
         </TabsList>
 
         <TabsContent value="productos" className="flex flex-col gap-4">
-          {ventas.length > 0 && (
+          {ventas.length > 0 ? (
             <div className="grid gap-3 sm:grid-cols-3">
               <Stat label="Ventas" value={String(filteredProductos.length)} />
-              <Stat label="Unidades vendidas" value={String(totalUnidades)} />
-              <Stat label="Total vendido" value={formatCop(totalVendido)} />
+              <Stat label="Unidades" value={String(totalUnidades)} />
+              <Stat label="Total" value={formatCop(totalVendido)} />
             </div>
-          )}
+          ) : null}
+          <p className="text-sm text-muted-foreground" role="status">
+            {query.trim()
+              ? `Quedan ${filteredProductos.length} de ${ventas.length} ventas`
+              : `${ventas.length} ventas`}
+          </p>
 
           {filteredProductos.length === 0 ? (
             <Empty className="border border-dashed border-border">
               <EmptyHeader>
                 <EmptyTitle>
-                  {ventas.length === 0 ? "Sin ventas" : "Sin coincidencias"}
+                  {ventas.length === 0 ? "Aún no hay ventas" : "No aparece nada"}
                 </EmptyTitle>
                 <EmptyDescription>
                   {ventas.length === 0
-                    ? "Aún no hay ventas de productos registradas."
-                    : "Ninguna venta coincide con la búsqueda."}
+                    ? "Cuando vendas en Caja, aparecen aquí."
+                    : "Prueba otra búsqueda o bórrala."}
                 </EmptyDescription>
               </EmptyHeader>
             </Empty>
@@ -155,23 +168,30 @@ export function HistorialVentasClient({
         </TabsContent>
 
         <TabsContent value="motos" className="flex flex-col gap-4">
-          {ventasMotos.length > 0 && (
+          {ventasMotos.length > 0 ? (
             <div className="grid gap-3 sm:grid-cols-2">
               <Stat label="Motos" value={String(filteredMotos.length)} />
               <Stat label="Total" value={formatCop(totalMotos)} />
             </div>
-          )}
+          ) : null}
+          <p className="text-sm text-muted-foreground" role="status">
+            {query.trim()
+              ? `Quedan ${filteredMotos.length} de ${ventasMotos.length} motos`
+              : `${ventasMotos.length} motos`}
+          </p>
 
           {filteredMotos.length === 0 ? (
             <Empty className="border border-dashed border-border">
               <EmptyHeader>
                 <EmptyTitle>
-                  {ventasMotos.length === 0 ? "Sin motos" : "Sin coincidencias"}
+                  {ventasMotos.length === 0
+                    ? "Aún no hay motos aquí"
+                    : "No aparece nada"}
                 </EmptyTitle>
                 <EmptyDescription>
                   {ventasMotos.length === 0
-                    ? "Aún no hay ventas de motos registradas."
-                    : "Ninguna moto coincide con la búsqueda."}
+                    ? "Aquí salen motos de contado o crédito ya pagado."
+                    : "Prueba otra búsqueda o bórrala."}
                 </EmptyDescription>
               </EmptyHeader>
             </Empty>
@@ -199,7 +219,9 @@ export function HistorialVentasClient({
                           {venta.modelo} · {venta.color}
                         </p>
                         {venta.placa ? (
-                          <p className="text-muted-foreground">Placa {venta.placa}</p>
+                          <p className="text-muted-foreground">
+                            Placa {venta.placa}
+                          </p>
                         ) : null}
                       </div>
                       <Badge variant="outline" className="shrink-0 font-normal">
@@ -210,7 +232,7 @@ export function HistorialVentasClient({
                     </div>
                     <div className="flex justify-between text-muted-foreground">
                       <span>{formatDate(venta.fecha)}</span>
-                      <span className="font-medium text-foreground">
+                      <span className="font-medium tabular-nums text-foreground">
                         {formatCop(venta.monto)}
                       </span>
                     </div>
@@ -296,74 +318,58 @@ function VentaCard({ venta }: { venta: VentaProductoRow }) {
   }
 
   return (
-    <Card className="overflow-hidden border-border shadow-none">
-      <CardContent className="p-0">
-        <div className="flex gap-0">
-          <div className="flex w-[7.5rem] shrink-0 flex-col border-r border-border sm:w-36">
-            <div className="relative aspect-square overflow-hidden bg-muted/50">
-              <PhotoThumb
-                src={venta.clienteSelfieUrl}
-                alt={`Foto de ${titulo}`}
-                fallback="user"
-              />
-              <span className="absolute bottom-1 left-1 rounded bg-foreground/70 px-1.5 py-0.5 text-[10px] font-medium text-background">
-                Cliente
-              </span>
-            </div>
-            <div className="relative aspect-square overflow-hidden border-t border-border bg-muted/50">
-              <PhotoThumb
-                src={venta.motoImagenUrl}
-                alt={venta.motoModelo ? `Moto ${venta.motoModelo}` : "Moto"}
-                fallback="bike"
-              />
-              <span className="absolute bottom-1 left-1 rounded bg-foreground/70 px-1.5 py-0.5 text-[10px] font-medium text-background">
-                {venta.motoPlaca ?? "Moto"}
-              </span>
-            </div>
+    <Card className="border-border shadow-none">
+      <CardContent className="flex flex-col gap-3 p-4">
+        <div className="flex items-start gap-3">
+          <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-border">
+            <PhotoThumb
+              src={venta.clienteSelfieUrl}
+              alt={`Foto de ${titulo}`}
+              fallback="user"
+            />
           </div>
-          <div className="min-w-0 flex-1 flex flex-col gap-2 p-4">
-            <div>
-              <p className="font-medium">{titulo}</p>
-              {subtituloParts.length > 0 ? (
-                <p className="text-xs text-muted-foreground">
-                  {subtituloParts.join(" · ")}
-                </p>
-              ) : null}
-            </div>
-            <ul className="flex flex-col gap-1 text-sm">
-              {venta.items.map((item) => (
-                <li key={item.id} className="flex justify-between gap-2">
-                  <span className="truncate">
-                    {item.cantidad}× {item.nombre}
-                  </span>
-                  <span className="shrink-0">
-                    {formatCop(item.precioUnitario * item.cantidad)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-            <div className="flex items-center justify-between border-t border-border pt-2 text-sm">
-              <span className="text-muted-foreground">{formatDate(venta.createdAt)}</span>
-              <span className="font-semibold">{formatCop(venta.total)}</span>
-            </div>
-            {saldo > 0 ? (
-              <p className="text-xs text-amber-700">
-                Saldo pendiente {formatCop(saldo)}
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">{titulo}</p>
+            {subtituloParts.length > 0 ? (
+              <p className="text-xs text-muted-foreground">
+                {subtituloParts.join(" · ")}
               </p>
             ) : null}
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="min-h-10 w-full"
-              disabled={printing}
-              onClick={handlePrint}
-            >
-              <Printer className="mr-2 h-4 w-4" />
-              Reimprimir
-            </Button>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {formatDate(venta.createdAt)}
+            </p>
           </div>
+          <p className="shrink-0 text-base font-semibold tabular-nums">
+            {formatCop(venta.total)}
+          </p>
         </div>
+        <ul className="flex flex-col gap-1 border-t border-border pt-3 text-sm">
+          {venta.items.map((item) => (
+            <li key={item.id} className="flex justify-between gap-2">
+              <span className="truncate">
+                {item.cantidad}× {item.nombre}
+              </span>
+              <span className="shrink-0 tabular-nums">
+                {formatCop(item.precioUnitario * item.cantidad)}
+              </span>
+            </li>
+          ))}
+        </ul>
+        {saldo > 0 ? (
+          <p className="text-xs text-amber-700">
+            Falta por pagar {formatCop(saldo)}
+          </p>
+        ) : null}
+        <Button
+          type="button"
+          variant="outline"
+          className="min-h-11 w-full"
+          disabled={printing}
+          onClick={handlePrint}
+        >
+          <Printer className="mr-2 h-4 w-4" aria-hidden="true" />
+          {printing ? "Imprimiendo…" : "Reimprimir"}
+        </Button>
       </CardContent>
     </Card>
   );

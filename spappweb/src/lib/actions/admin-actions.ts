@@ -10,21 +10,19 @@ import {
   emitPagoCompletoOnTransition,
   emitPipelineEvent,
 } from "@/lib/agent/pipeline-events";
-import { canChooseFlowOrder } from "@/lib/pipeline/step-logic";
 import { MIN_CUOTA_INICIAL } from "@/lib/moto-payment";
 import { MONTO_VISITA_DEFAULT } from "@/lib/payments/visita-monto";
-import type { CompraContratoInput } from "@/lib/contracts/contrato-renting-clausulas";
+import {
+  condicionFromAdminData,
+  type CompraContratoInput,
+} from "@/lib/contracts/contrato-renting-clausulas";
 import {
   hojaVidaFormSchema,
   hojaVidaFormToJson,
   patchContratoDataFromHoja,
 } from "@/lib/contracts/hoja-vida-schema";
 import { regenerateSignedContractPdfs } from "@/lib/contracts/regenerate-signed-pdfs";
-import type {
-  FrecuenciaPago,
-  UserMotoCompraRow,
-  VisitaRow,
-} from "@/lib/pipeline/types";
+import type { FrecuenciaPago } from "@/lib/pipeline/types";
 import {
   appendTitularidadHistorial,
   assertCanTransferTitularidad,
@@ -38,6 +36,59 @@ function revalidateClient(userId: number) {
   revalidatePath("/inbox");
   revalidatePath(`/clientes/${userId}`);
   revalidatePath("/visitadores");
+}
+
+/** Las tarifas exigen monto_esperado > 0. Si la compra quedó en $0, usa el contrato. */
+async function ensureCuotaPeriodoParaTarifas(
+  supabase: SupabaseClient,
+  compraId: string,
+  userId: number,
+  montoCuota: number,
+  adminData: Record<string, unknown>,
+): Promise<void> {
+  if (montoCuota > 0) return;
+
+  const { data: contract } = await supabase
+    .from("digital_contracts")
+    .select("contrato_data")
+    .eq("user_id", userId)
+    .eq("status", "firmado")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const fromContract = Number(
+    (contract?.contrato_data as { valor_cuota?: unknown } | null)?.valor_cuota ??
+      0,
+  );
+  if (!Number.isFinite(fromContract) || fromContract <= 0) {
+    throw new Error(
+      "La cuota periódica es $0 y no se pueden generar las tarifas. Pon el valor del contrato en la ficha de la moto y vuelve a marcar entregada.",
+    );
+  }
+
+  const { data: adelantada } = await supabase
+    .from("pagos")
+    .select("id")
+    .eq("user_moto_compra_id", compraId)
+    .eq("contexto_pago", "cuota_adelantada")
+    .eq("estado", "confirmado")
+    .limit(1)
+    .maybeSingle();
+
+  const { error } = await supabase
+    .from("user_moto_compra")
+    .update({
+      monto_cuota_periodo: fromContract,
+      admin_data: {
+        ...adminData,
+        // sin abono de adelantada: no marcar la semana 1 como pagada
+        cobra_cuota_adelantada: Boolean(adelantada),
+      },
+    })
+    .eq("id", compraId);
+
+  if (error) throw new Error(error.message);
 }
 
 async function assertAdmin() {
@@ -61,6 +112,9 @@ function mapDbError(message: string): string {
   }
   if (lower.includes("permission denied")) {
     return "Sin permisos para actualizar en la base de datos.";
+  }
+  if (lower.includes("tarifas_pagadas_monto_esperado")) {
+    return "La cuota periódica es $0 y no se pueden generar las tarifas. Corrígelo en la ficha de la moto.";
   }
   return message;
 }
@@ -143,6 +197,7 @@ const assignMotoSchema = z.object({
   cuotaDiaria: z.number().int().positive().optional(),
   montoVisita: z.number().int().min(0).optional(),
   cobraCuotaAdelantada: z.boolean().optional(),
+  condicion: z.enum(["nueva", "segunda_mano"]).optional(),
 });
 
 export async function assignMotoByAdmin(
@@ -204,7 +259,7 @@ export async function updateContractHojaVida(
       const { data: compra } = await supabase
         .from("user_moto_compra")
         .select(
-          "modelo, color, placa, chasis, referencia, frecuencia_pago, cuota_inicial_monto, monto_cuota_periodo",
+          "modelo, color, placa, chasis, referencia, frecuencia_pago, cuota_inicial_monto, monto_cuota_periodo, admin_data",
         )
         .eq("user_id", parsed.userId)
         .maybeSingle();
@@ -219,6 +274,7 @@ export async function updateContractHojaVida(
             frecuencia_pago: compra.frecuencia_pago as FrecuenciaPago,
             cuota_inicial_monto: compra.cuota_inicial_monto as number,
             monto_cuota_periodo: compra.monto_cuota_periodo as number,
+            condicion: condicionFromAdminData(compra.admin_data),
           }
         : null;
 
@@ -419,7 +475,9 @@ export async function markDelivered(compraId: string, userId: number) {
 
   const { data: compra } = await supabase
     .from("user_moto_compra")
-    .select("modelo, color, placa, chasis, estado, garaje_moto_id")
+    .select(
+      "modelo, color, placa, chasis, estado, garaje_moto_id, monto_cuota_periodo, admin_data",
+    )
     .eq("id", compraId)
     .maybeSingle();
 
@@ -430,6 +488,14 @@ export async function markDelivered(compraId: string, userId: number) {
     return { ok: true };
   }
 
+  await ensureCuotaPeriodoParaTarifas(
+    supabase,
+    compraId,
+    userId,
+    Number(compra.monto_cuota_periodo ?? 0),
+    (compra.admin_data as Record<string, unknown> | null) ?? {},
+  );
+
   const { error } = await supabase
     .from("user_moto_compra")
     .update({ estado: "entregada" })
@@ -437,9 +503,7 @@ export async function markDelivered(compraId: string, userId: number) {
     .neq("estado", "saldada")
     .neq("estado", "cancelada");
 
-  if (error) throw new Error(error.message);
-
-  // ponytail: deliveries often lack garaje_moto_id; placa match covers those
+  if (error) throw new Error(mapDbError(error.message));
   if (compra.garaje_moto_id) {
     await supabase
       .from("garaje_motos")
@@ -471,51 +535,6 @@ export async function markDelivered(compraId: string, userId: number) {
   revalidateClient(userId);
   revalidatePath("/catalogo");
   revalidatePath("/vendidas");
-  return { ok: true };
-}
-
-export async function setEntregaAntesVisita(
-  compraId: string,
-  userId: number,
-  entregaAntesVisita: boolean,
-) {
-  const supabase = await assertAdmin();
-
-  const { data: compra, error: fetchError } = await supabase
-    .from("user_moto_compra")
-    .select("id, user_id, estado, admin_data")
-    .eq("id", compraId)
-    .single();
-
-  if (fetchError || !compra) throw new Error("Compra no encontrada.");
-
-  const { data: visita } = await supabase
-    .from("visitas")
-    .select("estado")
-    .eq("user_id", userId)
-    .maybeSingle();
-
-  if (
-    !canChooseFlowOrder(
-      compra as UserMotoCompraRow,
-      visita as VisitaRow | null,
-    )
-  ) {
-    throw new Error("Ya no se puede cambiar el orden visita/entrega.");
-  }
-
-  const adminData = {
-    ...((compra.admin_data as Record<string, unknown>) ?? {}),
-    entrega_antes_visita: entregaAntesVisita,
-  };
-
-  const { error } = await supabase
-    .from("user_moto_compra")
-    .update({ admin_data: adminData })
-    .eq("id", compraId);
-
-  if (error) throw new Error(error.message);
-  revalidateClient(userId);
   return { ok: true };
 }
 

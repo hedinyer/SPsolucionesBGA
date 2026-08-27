@@ -127,11 +127,18 @@ export function CajaProductosManager() {
   return (
     <div className="flex flex-col gap-6">
       <div className="rounded-xl border border-border bg-background p-4">
-        <p className="text-sm font-medium text-foreground">
-          Cargar carrito del móvil
+        <p className="text-sm font-semibold text-foreground">
+          Cobrar un carrito
+        </p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Escribe el código de 6 dígitos que sale en el celular.
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
+          <label htmlFor="caja-codigo-carrito" className="sr-only">
+            Código del carrito
+          </label>
           <Input
+            id="caja-codigo-carrito"
             inputMode="numeric"
             maxLength={6}
             placeholder="Código de 6 dígitos"
@@ -145,20 +152,26 @@ export function CajaProductosManager() {
                 loadCart();
               }
             }}
-            className="max-w-xs font-mono text-lg tracking-widest"
+            className="min-h-11 max-w-xs font-mono text-lg tracking-widest"
+            autoComplete="off"
           />
           <Button
             type="button"
             variant="outline"
-            className="gap-2"
+            className="min-h-11 gap-2"
             disabled={loadPending || codeInput.length !== 6}
             onClick={loadCart}
           >
-            <Search className="h-4 w-4" />
+            <Search className="h-4 w-4" aria-hidden="true" />
             {loadPending ? "Cargando…" : "Cargar carrito"}
           </Button>
           {draft ? (
-            <Button type="button" variant="ghost" onClick={clearDraft}>
+            <Button
+              type="button"
+              variant="ghost"
+              className="min-h-11"
+              onClick={clearDraft}
+            >
               Cancelar
             </Button>
           ) : null}
@@ -167,8 +180,7 @@ export function CajaProductosManager() {
 
       {!draft ? (
         <p className="rounded-lg border border-dashed border-border py-12 text-center text-sm text-muted-foreground">
-          Ingresa el código que aparece en el móvil después de escanear
-          productos.
+          Aún no hay carrito. En Vender, arma el pedido y envíalo a la PC.
         </p>
       ) : (
         <>
@@ -211,20 +223,23 @@ export function CajaProductosManager() {
           </div>
 
           <div className="flex flex-col gap-4 rounded-xl border border-border bg-muted/50 p-4">
-            <p className="text-sm font-medium">Cliente</p>
+            <p className="text-sm font-semibold">Datos del cliente</p>
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="flex flex-col gap-2 sm:col-span-2">
                 <Label htmlFor="caja-cliente-nombre">Nombre</Label>
                 <Input
                   id="caja-cliente-nombre"
+                  className="min-h-11"
                   value={clienteNombre}
                   onChange={(e) => setClienteNombre(e.target.value)}
+                  autoComplete="name"
                 />
               </div>
               <div className="flex flex-col gap-2">
                 <Label htmlFor="caja-cliente-cedula">Cédula</Label>
                 <Input
                   id="caja-cliente-cedula"
+                  className="min-h-11"
                   inputMode="numeric"
                   value={clienteCedula}
                   onChange={(e) => setClienteCedula(e.target.value)}
@@ -234,20 +249,23 @@ export function CajaProductosManager() {
                 <Label htmlFor="caja-cliente-celular">Celular</Label>
                 <Input
                   id="caja-cliente-celular"
+                  className="min-h-11"
                   inputMode="tel"
                   value={clienteCelular}
                   onChange={(e) => setClienteCelular(e.target.value)}
+                  autoComplete="tel"
                 />
               </div>
             </div>
           </div>
 
           <div className="flex flex-col gap-4 rounded-xl border border-border bg-muted/50 p-4">
-            <p className="text-sm font-medium">Pago</p>
+            <p className="text-sm font-semibold">Pago</p>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="caja-monto-pagado">Pagado hoy</Label>
+              <Label htmlFor="caja-monto-pagado">¿Cuánto pagó hoy?</Label>
               <Input
                 id="caja-monto-pagado"
+                className="min-h-11"
                 inputMode="numeric"
                 placeholder={total > 0 ? String(total) : "0"}
                 value={montoPagado}
@@ -257,16 +275,17 @@ export function CajaProductosManager() {
             <Button
               type="button"
               variant="outline"
-              size="sm"
+              className="min-h-11 w-fit"
               disabled={total <= 0}
               onClick={() => setMontoPagado(String(total))}
             >
-              Marcar pago de contado
+              Pagó todo
             </Button>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="caja-notas">Notas</Label>
+              <Label htmlFor="caja-notas">Nota (opcional)</Label>
               <Input
                 id="caja-notas"
+                className="min-h-11"
                 value={notas}
                 onChange={(e) => setNotas(e.target.value)}
               />
@@ -275,11 +294,11 @@ export function CajaProductosManager() {
 
           <Button
             type="button"
-            className="w-full gap-2 bg-primary text-primary-foreground hover:bg-primary/80 sm:w-auto"
+            className="min-h-11 w-full gap-2 sm:w-auto"
             disabled={!canFacturar || savePending}
             onClick={submit}
           >
-            <Printer className="h-4 w-4" />
+            <Printer className="h-4 w-4" aria-hidden="true" />
             {savePending ? "Facturando…" : "Facturar e imprimir"}
           </Button>
         </>

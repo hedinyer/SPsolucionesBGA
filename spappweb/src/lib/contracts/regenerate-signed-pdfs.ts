@@ -45,6 +45,7 @@ export async function regenerateSignedContractPdfs(
     {
       ...args.contratoData,
       tipo_documento_contratante: args.hojaVida.tipo_identificacion,
+      celular_contratante: args.hojaVida.celular,
     },
     args.compra,
   );
@@ -63,6 +64,7 @@ export async function regenerateSignedContractPdfs(
         cuotaInicial: contrato.cuotaInicial,
         valorCuota: contrato.valorCuota,
         frecuenciaPago: contrato.frecuenciaPago,
+        estado: contrato.estado,
       },
     }),
     generateContratoPdf({

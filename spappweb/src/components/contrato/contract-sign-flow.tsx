@@ -70,6 +70,7 @@ interface ContractSignFlowProps {
     | "fechaFirmaDia"
     | "fechaFirmaMes"
     | "fechaFirmaAnio"
+    | "celularContratante"
   >;
 }
 

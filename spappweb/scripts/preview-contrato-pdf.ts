@@ -49,6 +49,7 @@ async function main() {
       fechaFirmaDia: fecha.dia,
       fechaFirmaMes: fecha.mes,
       fechaFirmaAnio: fecha.anio,
+      celularContratante: "3001234567",
     },
     signatureDataUrl: blankSig,
   });

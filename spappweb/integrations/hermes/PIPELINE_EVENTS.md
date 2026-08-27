@@ -7,9 +7,11 @@ clientes.
 
 ## Pasos del pipeline
 
-Orden visual en el stepper (puede variar si `entrega_antes_visita`):
+Orden visual en el stepper:
 
 **Crédito → Moto → Contrato → Pago → Visita → Entrega**
+
+Visita y entrega son independientes: se pueden completar en cualquier orden.
 
 ## Flujo recomendado para Hermes
 

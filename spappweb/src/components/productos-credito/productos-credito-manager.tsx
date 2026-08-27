@@ -41,6 +41,12 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@/components/ui/empty";
 
 export function ProductosCreditoManager({
   productos,
@@ -56,156 +62,184 @@ export function ProductosCreditoManager({
     <>
       <div className="flex justify-end">
         <Button
+          className="min-h-11"
           onClick={() => {
             setEditing(null);
             setOpen(true);
           }}
-          className="bg-primary text-primary-foreground hover:bg-primary/80"
         >
-          <Plus className="mr-2 h-4 w-4" />
-          Nuevo producto
+          <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
+          Nuevo extra
         </Button>
       </div>
 
-      <div className="hidden overflow-x-auto rounded-lg border border-border lg:block">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Producto</TableHead>
-              <TableHead>Cuota inicial</TableHead>
-              <TableHead>Cuota diaria</TableHead>
-              <TableHead>Días</TableHead>
-              <TableHead>Estado</TableHead>
-              <TableHead className="w-24" />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {productos.map((p) => (
-              <TableRow key={p.id}>
-                <TableCell>
-                  <p className="font-medium">{p.nombre}</p>
-                  {p.descripcion && (
-                    <p className="text-sm text-muted-foreground">{p.descripcion}</p>
-                  )}
-                </TableCell>
-                <TableCell>{formatCop(p.cuota_inicial)}</TableCell>
-                <TableCell>{formatCop(p.cuota_diaria)}</TableCell>
-                <TableCell>
-                  {p.plazo_dias != null ? `${p.plazo_dias} días` : "—"}
-                </TableCell>
-                <TableCell>
-                  <Badge variant={p.activo ? "outline" : "secondary"}>
-                    {p.activo ? "Activo" : "Inactivo"}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  <div className="flex gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => {
-                        setEditing(p);
-                        setOpen(true);
-                      }}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button variant="ghost" size="icon">
-                          <Trash2 className="h-4 w-4" />
+      {productos.length === 0 ? (
+        <Empty className="border border-dashed border-border">
+          <EmptyHeader>
+            <EmptyTitle>No hay extras</EmptyTitle>
+            <EmptyDescription>
+              Crea el primero para ofrecerlos en el pago del cliente.
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      ) : (
+        <>
+          <div className="hidden overflow-x-auto rounded-lg border border-border lg:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Qué es</TableHead>
+                  <TableHead>Pago al inicio</TableHead>
+                  <TableHead>Cuota diaria</TableHead>
+                  <TableHead>Cuántos días</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead className="w-28">Acciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {productos.map((p) => (
+                  <TableRow key={p.id}>
+                    <TableCell>
+                      <p className="font-medium">{p.nombre}</p>
+                      {p.descripcion ? (
+                        <p className="text-sm text-muted-foreground">
+                          {p.descripcion}
+                        </p>
+                      ) : null}
+                    </TableCell>
+                    <TableCell className="tabular-nums">
+                      {formatCop(p.cuota_inicial)}
+                    </TableCell>
+                    <TableCell className="tabular-nums">
+                      {formatCop(p.cuota_diaria)}
+                    </TableCell>
+                    <TableCell>
+                      {p.plazo_dias != null ? `${p.plazo_dias} días` : "—"}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={p.activo ? "outline" : "secondary"}>
+                        {p.activo ? "Se ofrece" : "Oculto"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="min-h-11 min-w-11"
+                          aria-label={`Editar ${p.nombre}`}
+                          onClick={() => {
+                            setEditing(p);
+                            setOpen(true);
+                          }}
+                        >
+                          <Pencil className="h-4 w-4" aria-hidden="true" />
                         </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent className="bg-background">
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>¿Eliminar producto?</AlertDialogTitle>
-                          <AlertDialogDescription>{p.nombre}</AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                          <AlertDialogAction
-                            onClick={() =>
-                              startTransition(async () => {
-                                try {
-                                  await deleteProductoCredito(p.id);
-                                  toast.success("Producto eliminado.");
-                                  router.refresh();
-                                } catch (e) {
-                                  toast.error(
-                                    e instanceof Error
-                                      ? e.message
-                                      : "Error al eliminar.",
-                                  );
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="min-h-11 min-w-11"
+                              aria-label={`Eliminar ${p.nombre}`}
+                            >
+                              <Trash2 className="h-4 w-4" aria-hidden="true" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent className="bg-background">
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>
+                                ¿Eliminar este extra?
+                              </AlertDialogTitle>
+                              <AlertDialogDescription>
+                                {p.nombre}
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() =>
+                                  startTransition(async () => {
+                                    try {
+                                      await deleteProductoCredito(p.id);
+                                      toast.success("Extra eliminado.");
+                                      router.refresh();
+                                    } catch (e) {
+                                      toast.error(
+                                        e instanceof Error
+                                          ? e.message
+                                          : "Error al eliminar.",
+                                      );
+                                    }
+                                  })
                                 }
-                              })
-                            }
-                          >
-                            Eliminar
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-            {productos.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
-                  No hay productos a crédito. Crea el primero (ej. forro de moto).
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
-
-      <div className="flex flex-col gap-3 lg:hidden">
-        {productos.map((p) => (
-          <div
-            key={p.id}
-            className="rounded-lg border border-border p-4"
-          >
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <p className="font-medium">{p.nombre}</p>
-                {p.descripcion && (
-                  <p className="text-sm text-muted-foreground">{p.descripcion}</p>
-                )}
-              </div>
-              <Badge variant={p.activo ? "outline" : "secondary"}>
-                {p.activo ? "Activo" : "Inactivo"}
-              </Badge>
-            </div>
-            <dl className="mt-3 grid grid-cols-2 gap-2 text-sm">
-              <div>
-                <dt className="text-muted-foreground">Inicial</dt>
-                <dd>{formatCop(p.cuota_inicial)}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Cuota diaria</dt>
-                <dd>{formatCop(p.cuota_diaria)}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Días</dt>
-                <dd>{p.plazo_dias != null ? `${p.plazo_dias} días` : "—"}</dd>
-              </div>
-            </dl>
-            <div className="mt-3 flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setEditing(p);
-                  setOpen(true);
-                }}
-              >
-                Editar
-              </Button>
-            </div>
+                              >
+                                Eliminar
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </div>
-        ))}
-      </div>
+
+          <div className="flex flex-col gap-3 lg:hidden">
+            {productos.map((p) => (
+              <div key={p.id} className="rounded-lg border border-border p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="font-medium">{p.nombre}</p>
+                    {p.descripcion ? (
+                      <p className="text-sm text-muted-foreground">
+                        {p.descripcion}
+                      </p>
+                    ) : null}
+                  </div>
+                  <Badge variant={p.activo ? "outline" : "secondary"}>
+                    {p.activo ? "Se ofrece" : "Oculto"}
+                  </Badge>
+                </div>
+                <dl className="mt-3 grid grid-cols-2 gap-2 text-sm">
+                  <div>
+                    <dt className="text-muted-foreground">Pago al inicio</dt>
+                    <dd className="tabular-nums">
+                      {formatCop(p.cuota_inicial)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">Cuota diaria</dt>
+                    <dd className="tabular-nums">
+                      {formatCop(p.cuota_diaria)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">Cuántos días</dt>
+                    <dd>
+                      {p.plazo_dias != null ? `${p.plazo_dias} días` : "—"}
+                    </dd>
+                  </div>
+                </dl>
+                <div className="mt-3 flex gap-2">
+                  <Button
+                    variant="outline"
+                    className="min-h-11"
+                    onClick={() => {
+                      setEditing(p);
+                      setOpen(true);
+                    }}
+                  >
+                    Editar
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
       <ProductoCreditoDialog
         open={open}
@@ -216,7 +250,7 @@ export function ProductosCreditoManager({
           startTransition(async () => {
             try {
               await saveProductoCredito(data);
-              toast.success(editing ? "Producto actualizado." : "Producto creado.");
+              toast.success(editing ? "Extra actualizado." : "Extra creado.");
               setOpen(false);
               router.refresh();
             } catch (e) {
@@ -277,32 +311,35 @@ function ProductoCreditoDialog({
       <DialogContent className="bg-background sm:max-w-md">
         <DialogHeader>
           <DialogTitle>
-            {editing ? "Editar producto" : "Nuevo producto a crédito"}
+            {editing ? "Editar extra" : "Nuevo extra a cuotas"}
           </DialogTitle>
         </DialogHeader>
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
-            <Label htmlFor="pc-nombre">Nombre</Label>
+            <Label htmlFor="pc-nombre">¿Cómo se llama?</Label>
             <Input
               id="pc-nombre"
+              className="min-h-11"
               value={nombre}
               onChange={(e) => setNombre(e.target.value)}
-              placeholder="Forro de moto"
+              placeholder="Ej. Forro de moto"
             />
           </div>
           <div className="flex flex-col gap-2">
-            <Label htmlFor="pc-desc">Descripción (opcional)</Label>
+            <Label htmlFor="pc-desc">Detalle (opcional)</Label>
             <Input
               id="pc-desc"
+              className="min-h-11"
               value={descripcion}
               onChange={(e) => setDescripcion(e.target.value)}
             />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col gap-2">
-              <Label htmlFor="pc-inicial">Cuota inicial</Label>
+              <Label htmlFor="pc-inicial">Pago al inicio</Label>
               <Input
                 id="pc-inicial"
+                className="min-h-11"
                 type="number"
                 min={0}
                 value={cuotaInicial}
@@ -313,6 +350,7 @@ function ProductoCreditoDialog({
               <Label htmlFor="pc-diaria">Cuota diaria</Label>
               <Input
                 id="pc-diaria"
+                className="min-h-11"
                 type="number"
                 min={1}
                 value={cuotaDiaria}
@@ -321,9 +359,10 @@ function ProductoCreditoDialog({
             </div>
           </div>
           <div className="flex flex-col gap-2">
-            <Label htmlFor="pc-plazo">Días de cuota diaria</Label>
+            <Label htmlFor="pc-plazo">¿Cuántos días de cuota?</Label>
             <Input
               id="pc-plazo"
+              className="min-h-11"
               type="number"
               min={1}
               value={plazoDias}
@@ -341,25 +380,30 @@ function ProductoCreditoDialog({
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col gap-2">
-              <Label htmlFor="pc-orden">Orden</Label>
+              <Label htmlFor="pc-orden">Orden en la lista</Label>
               <Input
                 id="pc-orden"
+                className="min-h-11"
                 type="number"
                 min={0}
                 value={orden}
                 onChange={(e) => setOrden(e.target.value)}
               />
             </div>
-            <div className="flex items-end gap-2 pb-1">
-              <Switch checked={activo} onCheckedChange={setActivo} id="pc-activo" />
-              <Label htmlFor="pc-activo">Activo</Label>
+            <div className="flex min-h-11 items-center gap-3 self-end pb-1">
+              <Switch
+                checked={activo}
+                onCheckedChange={setActivo}
+                id="pc-activo"
+              />
+              <Label htmlFor="pc-activo">Se ofrece al cliente</Label>
             </div>
           </div>
         </div>
         <DialogFooter>
           <Button
             type="button"
-            className="bg-primary text-primary-foreground hover:bg-primary/80"
+            className="min-h-11"
             disabled={
               pending ||
               !nombre.trim() ||

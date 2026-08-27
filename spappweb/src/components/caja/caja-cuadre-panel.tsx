@@ -31,13 +31,6 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -56,13 +49,13 @@ function CuadreEfectivo({ sesion }: { sesion: CajaSesionState }) {
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-border bg-muted/50 p-3">
       <div className="flex items-center justify-between text-sm font-semibold">
-        <span>Efectivo esperado en caja</span>
+        <span>¿Cuánto debería haber?</span>
         <span className="tabular-nums">{formatCop(sesion.efectivoEsperado)}</span>
       </div>
       {sesion.montoCierre != null && sesion.diferencia != null ? (
         <>
           <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">Efectivo contado</span>
+            <span className="text-muted-foreground">Lo que contaste</span>
             <span className="font-medium tabular-nums">
               {formatCop(sesion.montoCierre)}
             </span>
@@ -78,10 +71,10 @@ function CuadreEfectivo({ sesion }: { sesion: CajaSesionState }) {
           >
             <span>
               {sesion.diferencia === 0
-                ? "Cuadre exacto"
+                ? "Cuadra exacto"
                 : sesion.diferencia < 0
-                  ? "Faltante"
-                  : "Sobrante"}
+                  ? "Falta"
+                  : "Sobra"}
             </span>
             <span className="tabular-nums">
               {formatCop(Math.abs(sesion.diferencia))}
@@ -152,7 +145,9 @@ export function CajaCuadrePanel({
         setConfirmAbrirOpen(false);
         toast.success("Caja abierta.");
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "No se pudo abrir la caja.");
+        toast.error(
+          err instanceof Error ? err.message : "No se pudo abrir la caja.",
+        );
       }
     });
   }
@@ -178,12 +173,16 @@ export function CajaCuadrePanel({
         if (diferencia === 0) {
           toast.success("Caja cerrada. Cuadre exacto.");
         } else if (diferencia < 0) {
-          toast.warning(`Caja cerrada. Faltante: ${formatCop(Math.abs(diferencia))}.`);
+          toast.warning(
+            `Caja cerrada. Faltante: ${formatCop(Math.abs(diferencia))}.`,
+          );
         } else {
           toast.warning(`Caja cerrada. Sobrante: ${formatCop(diferencia)}.`);
         }
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "No se pudo cerrar la caja.");
+        toast.error(
+          err instanceof Error ? err.message : "No se pudo cerrar la caja.",
+        );
       }
     });
   }
@@ -210,68 +209,81 @@ export function CajaCuadrePanel({
         setSesion(next);
         setMovMonto("");
         setMovConcepto("");
-        toast.success(movTipo === "entrada" ? "Entrada registrada." : "Salida registrada.");
+        toast.success(
+          movTipo === "entrada" ? "Entrada registrada." : "Salida registrada.",
+        );
       } catch (err) {
         toast.error(
-          err instanceof Error ? err.message : "No se pudo registrar el movimiento.",
+          err instanceof Error
+            ? err.message
+            : "No se pudo registrar el movimiento.",
         );
       }
     });
   }
 
   return (
-    <Card className="border-border">
-      <CardHeader>
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              Cuadre de caja
-              {sesion ? (
-                sesion.abierta ? (
-                  <Badge variant="outline" className="border-green-300 text-green-700">
-                    <Unlock className="mr-1 h-3 w-3" />
-                    Abierta
-                  </Badge>
-                ) : (
-                  <Badge variant="outline" className="border-border text-muted-foreground">
-                    <Lock className="mr-1 h-3 w-3" />
-                    Cerrada
-                  </Badge>
-                )
-              ) : (
-                <Badge variant="outline" className="border-amber-300 text-amber-700">
-                  Sin abrir
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-3 rounded-xl border border-border bg-background p-4">
+        <div className="min-w-0">
+          <h2 className="flex flex-wrap items-center gap-2 text-base font-semibold text-foreground">
+            Dinero del día
+            {sesion ? (
+              sesion.abierta ? (
+                <Badge
+                  variant="outline"
+                  className="border-green-300 text-green-700"
+                >
+                  <Unlock className="mr-1 h-3 w-3" aria-hidden="true" />
+                  Abierta
                 </Badge>
-              )}
-            </CardTitle>
-            <CardDescription>
-              Abre la caja al inicio del día y ciérrala al final para ver el
-              informe de ingresos por medio de pago.
-            </CardDescription>
-          </div>
+              ) : (
+                <Badge
+                  variant="outline"
+                  className="border-border text-muted-foreground"
+                >
+                  <Lock className="mr-1 h-3 w-3" aria-hidden="true" />
+                  Cerrada
+                </Badge>
+              )
+            ) : (
+              <Badge
+                variant="outline"
+                className="border-amber-300 text-amber-700"
+              >
+                Sin abrir
+              </Badge>
+            )}
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            {sesion
+              ? `Apertura: ${formatDate(sesion.openedAt)}${
+                  sesion.closedAt
+                    ? ` · Cierre: ${formatDate(sesion.closedAt)}`
+                    : ""
+                }`
+              : "Cuenta el efectivo y abre la caja para empezar el día."}
+          </p>
         </div>
-      </CardHeader>
 
-      <CardContent className="flex flex-col gap-4">
         {!sesion ? (
           <div className="flex flex-col gap-3">
-            <p className="text-sm text-muted-foreground">
-              Registra cuánto efectivo hay en caja al comenzar el día. El monto
-              debe ser mayor a 0.
-            </p>
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="flex flex-col gap-2">
-                <Label htmlFor="caja-apertura-monto">Efectivo inicial</Label>
+                <Label htmlFor="caja-apertura-monto">
+                  ¿Cuánto efectivo hay ahora?
+                </Label>
                 <Input
                   id="caja-apertura-monto"
+                  className="min-h-11"
                   inputMode="numeric"
-                  placeholder="Ej. 200000"
+                  placeholder="Ej. 200.000"
                   value={montoApertura}
                   onChange={(e) => setMontoApertura(e.target.value)}
                 />
               </div>
               <div className="flex flex-col gap-2 sm:col-span-2">
-                <Label htmlFor="caja-apertura-notas">Notas (opcional)</Label>
+                <Label htmlFor="caja-apertura-notas">Nota (opcional)</Label>
                 <Textarea
                   id="caja-apertura-notas"
                   rows={2}
@@ -282,176 +294,280 @@ export function CajaCuadrePanel({
             </div>
             <Button
               type="button"
-              className="gap-2 bg-primary text-primary-foreground hover:bg-primary/80"
+              className="min-h-11 gap-2"
               disabled={!puedeAbrir || pending}
               onClick={requestAbrir}
             >
-              <Unlock className="h-4 w-4" />
+              <Unlock className="h-4 w-4" aria-hidden="true" />
               {pending ? "Abriendo…" : "Abrir caja"}
             </Button>
           </div>
         ) : (
-          <>
-            <div className="text-xs text-muted-foreground">
-              Apertura: {formatDate(sesion.openedAt)}
-              {sesion.closedAt ? ` · Cierre: ${formatDate(sesion.closedAt)}` : null}
-            </div>
+          <CuadreEfectivo sesion={sesion} />
+        )}
+      </div>
 
+      {sesion ? (
+        <>
+          <section
+            className="flex flex-col gap-3"
+            aria-labelledby="caja-resumen-titulo"
+          >
+            <div>
+              <h3
+                id="caja-resumen-titulo"
+                className="text-sm font-semibold text-foreground"
+              >
+                Resumen
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                Cómo va el dinero del día.
+              </p>
+            </div>
             <CajaInformePanel
               informe={sesion.informe}
               visitasResumen={sesion.visitasResumen}
-              title={sesion.abierta ? "Vista previa del informe" : "Informe de cierre"}
+              title={sesion.abierta ? "Vista previa" : "Informe de cierre"}
             />
-            <CajaVisitasPanel sesion={sesion} onUpdated={setSesion} />
-            <CuadreEfectivo sesion={sesion} />
-
-            {sesion.abierta ? (
-              <CajaPagosPanel sesion={sesion} onUpdated={setSesion} />
-            ) : null}
-
             {!sesion.abierta ? (
               <Button
                 type="button"
                 variant="outline"
-                size="sm"
+                className="min-h-11 w-fit"
                 onClick={() => setInformeOpen(true)}
               >
                 Ver informe completo
               </Button>
             ) : null}
+          </section>
 
-            {sesion.movimientos.length > 0 ? (
-              <div className="flex flex-col gap-1">
-                <p className="text-xs font-medium text-muted-foreground">Movimientos</p>
-                <ul className="max-h-32 flex flex-col gap-1 overflow-y-auto text-sm">
-                  {sesion.movimientos.map((m) => (
-                    <li
-                      key={m.id}
-                      className="flex items-center justify-between rounded border border-border px-2 py-1"
-                    >
-                      <span className="flex items-center gap-1.5 truncate">
-                        {m.tipo === "entrada" ? (
-                          <ArrowDownCircle className="h-3.5 w-3.5 shrink-0 text-green-600" />
-                        ) : (
-                          <ArrowUpCircle className="h-3.5 w-3.5 shrink-0 text-destructive" />
-                        )}
-                        {m.concepto}
-                      </span>
-                      <span className="shrink-0 tabular-nums font-medium">
-                        {m.tipo === "salida" ? "−" : "+"}
-                        {formatCop(m.monto)}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
+          <section
+            className="flex flex-col gap-3"
+            aria-labelledby="caja-visitas-titulo"
+          >
+            <div>
+              <h3
+                id="caja-visitas-titulo"
+                className="text-sm font-semibold text-foreground"
+              >
+                Cobros de visitas
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                Pagos que llegan por visitadores.
+              </p>
+            </div>
+            <CajaVisitasPanel sesion={sesion} onUpdated={setSesion} />
+          </section>
+
+          {sesion.abierta ? (
+            <section
+              className="flex flex-col gap-3"
+              aria-labelledby="caja-egresos-titulo"
+            >
+              <div>
+                <h3
+                  id="caja-egresos-titulo"
+                  className="text-sm font-semibold text-foreground"
+                >
+                  Otros egresos
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  Gastos registrados fuera del cuadre manual.
+                </p>
               </div>
-            ) : null}
+              <CajaPagosPanel sesion={sesion} onUpdated={setSesion} />
+            </section>
+          ) : null}
 
-            {sesion.abierta ? (
-              <>
-                <div className="flex flex-col gap-3 rounded-lg border border-dashed border-border p-3">
-                  <p className="text-sm font-medium">Movimiento manual</p>
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant={movTipo === "entrada" ? "default" : "outline"}
-                      onClick={() => setMovTipo("entrada")}
-                    >
-                      Entrada
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant={movTipo === "salida" ? "default" : "outline"}
-                      onClick={() => setMovTipo("salida")}
-                    >
-                      Salida
-                    </Button>
+          {sesion.movimientos.length > 0 ? (
+            <section
+              className="flex flex-col gap-2"
+              aria-labelledby="caja-movs-titulo"
+            >
+              <h3
+                id="caja-movs-titulo"
+                className="text-sm font-semibold text-foreground"
+              >
+                Movimientos del día
+              </h3>
+              <ul className="flex max-h-40 flex-col gap-1 overflow-y-auto text-sm">
+                {sesion.movimientos.map((m) => (
+                  <li
+                    key={m.id}
+                    className="flex items-center justify-between rounded-lg border border-border px-3 py-2"
+                  >
+                    <span className="flex min-w-0 items-center gap-1.5 truncate">
+                      {m.tipo === "entrada" ? (
+                        <ArrowDownCircle
+                          className="h-3.5 w-3.5 shrink-0 text-green-600"
+                          aria-hidden="true"
+                        />
+                      ) : (
+                        <ArrowUpCircle
+                          className="h-3.5 w-3.5 shrink-0 text-destructive"
+                          aria-hidden="true"
+                        />
+                      )}
+                      {m.concepto}
+                    </span>
+                    <span className="shrink-0 font-medium tabular-nums">
+                      {m.tipo === "salida" ? "−" : "+"}
+                      {formatCop(m.monto)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+
+          {sesion.abierta ? (
+            <>
+              <section
+                className="flex flex-col gap-3 rounded-xl border border-dashed border-border p-4"
+                aria-labelledby="caja-meter-sacar-titulo"
+              >
+                <div>
+                  <h3
+                    id="caja-meter-sacar-titulo"
+                    className="text-sm font-semibold text-foreground"
+                  >
+                    Meter o sacar plata
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    Solo movimientos manuales (cambio, retiro, gasto menor).
+                  </p>
+                </div>
+                <div
+                  role="group"
+                  aria-label="Tipo de movimiento"
+                  className="flex flex-wrap gap-2"
+                >
+                  <Button
+                    type="button"
+                    className="min-h-11"
+                    variant={movTipo === "entrada" ? "default" : "outline"}
+                    aria-pressed={movTipo === "entrada"}
+                    onClick={() => setMovTipo("entrada")}
+                  >
+                    Meter plata
+                  </Button>
+                  <Button
+                    type="button"
+                    className="min-h-11"
+                    variant={movTipo === "salida" ? "default" : "outline"}
+                    aria-pressed={movTipo === "salida"}
+                    onClick={() => setMovTipo("salida")}
+                  >
+                    Sacar plata
+                  </Button>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="caja-mov-monto">¿Cuánto?</Label>
+                    <Input
+                      id="caja-mov-monto"
+                      className="min-h-11"
+                      inputMode="numeric"
+                      value={movMonto}
+                      onChange={(e) => setMovMonto(e.target.value)}
+                    />
                   </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="flex flex-col gap-2">
-                      <Label htmlFor="caja-mov-monto">Monto</Label>
-                      <Input
-                        id="caja-mov-monto"
-                        inputMode="numeric"
-                        value={movMonto}
-                        onChange={(e) => setMovMonto(e.target.value)}
-                      />
-                    </div>
-                    <div className="flex flex-col gap-2 sm:col-span-2">
-                      <Label htmlFor="caja-mov-concepto">Concepto</Label>
-                      <Input
-                        id="caja-mov-concepto"
-                        placeholder="Ej. cambio, retiro, gasto menor…"
-                        value={movConcepto}
-                        onChange={(e) => setMovConcepto(e.target.value)}
-                      />
-                    </div>
+                  <div className="flex flex-col gap-2 sm:col-span-2">
+                    <Label htmlFor="caja-mov-concepto">¿Para qué?</Label>
+                    <Input
+                      id="caja-mov-concepto"
+                      className="min-h-11"
+                      placeholder="Ej. cambio, retiro, gasto menor…"
+                      value={movConcepto}
+                      onChange={(e) => setMovConcepto(e.target.value)}
+                    />
                   </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="min-h-11 w-fit"
+                  disabled={pending}
+                  onClick={handleMovimiento}
+                >
+                  {movTipo === "entrada"
+                    ? "Registrar entrada"
+                    : "Registrar salida"}
+                </Button>
+              </section>
+
+              <section
+                className="flex flex-col gap-3 rounded-xl border border-border bg-background p-4"
+                aria-labelledby="caja-cierre-titulo"
+              >
+                <div>
+                  <h3
+                    id="caja-cierre-titulo"
+                    className="text-sm font-semibold text-foreground"
+                  >
+                    Cerrar el día
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    Cuenta el efectivo y ciérralo al final.
+                  </p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="caja-cierre-monto">
+                      ¿Cuánto efectivo hay ahora?
+                    </Label>
+                    <Input
+                      id="caja-cierre-monto"
+                      className="min-h-11"
+                      inputMode="numeric"
+                      placeholder={String(sesion.efectivoEsperado)}
+                      value={montoCierre}
+                      onChange={(e) => setMontoCierre(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-2 sm:col-span-2">
+                    <Label htmlFor="caja-cierre-notas">Nota (opcional)</Label>
+                    <Textarea
+                      id="caja-cierre-notas"
+                      rows={2}
+                      value={notasCierre}
+                      onChange={(e) => setNotasCierre(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
                   <Button
                     type="button"
                     variant="outline"
-                    size="sm"
-                    disabled={pending}
-                    onClick={handleMovimiento}
+                    className="min-h-11"
+                    onClick={() =>
+                      setMontoCierre(String(sesion.efectivoEsperado))
+                    }
                   >
-                    Registrar {movTipo}
+                    Usar lo esperado
+                  </Button>
+                  <Button
+                    type="button"
+                    className="min-h-11 gap-2"
+                    disabled={!puedeCerrar || pending}
+                    onClick={handleCerrar}
+                  >
+                    <Lock className="h-4 w-4" aria-hidden="true" />
+                    {pending ? "Cerrando…" : "Cerrar caja"}
                   </Button>
                 </div>
-
-                <div className="flex flex-col gap-3 border-t border-border pt-4">
-                  <p className="text-sm font-medium">Cierre del día</p>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="flex flex-col gap-2">
-                      <Label htmlFor="caja-cierre-monto">Efectivo contado</Label>
-                      <Input
-                        id="caja-cierre-monto"
-                        inputMode="numeric"
-                        placeholder={String(sesion.efectivoEsperado)}
-                        value={montoCierre}
-                        onChange={(e) => setMontoCierre(e.target.value)}
-                      />
-                    </div>
-                    <div className="flex flex-col gap-2 sm:col-span-2">
-                      <Label htmlFor="caja-cierre-notas">Notas (opcional)</Label>
-                      <Textarea
-                        id="caja-cierre-notas"
-                        rows={2}
-                        value={notasCierre}
-                        onChange={(e) => setNotasCierre(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setMontoCierre(String(sesion.efectivoEsperado))}
-                    >
-                      Usar efectivo esperado
-                    </Button>
-                    <Button
-                      type="button"
-                      className="gap-2 bg-primary text-primary-foreground hover:bg-primary/80"
-                      disabled={!puedeCerrar || pending}
-                      onClick={handleCerrar}
-                    >
-                      <Lock className="h-4 w-4" />
-                      {pending ? "Cerrando…" : "Cerrar caja"}
-                    </Button>
-                  </div>
-                </div>
-              </>
-            ) : sesion.notasCierre ? (
-              <p className="text-sm text-muted-foreground">
-                <span className="font-medium">Notas de cierre:</span> {sesion.notasCierre}
-              </p>
-            ) : null}
-          </>
-        )}
-      </CardContent>
+              </section>
+            </>
+          ) : sesion.notasCierre ? (
+            <p className="text-sm text-muted-foreground">
+              <span className="font-medium text-foreground">
+                Notas de cierre:
+              </span>{" "}
+              {sesion.notasCierre}
+            </p>
+          ) : null}
+        </>
+      ) : null}
 
       <AlertDialog open={confirmAbrirOpen} onOpenChange={setConfirmAbrirOpen}>
         <AlertDialogContent className="border-2 border-amber-400 bg-amber-50 sm:max-w-md">
@@ -473,7 +589,9 @@ export function CajaCuadrePanel({
             </p>
           </div>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={pending}>Revisar monto</AlertDialogCancel>
+            <AlertDialogCancel disabled={pending}>
+              Revisar monto
+            </AlertDialogCancel>
             <AlertDialogAction
               disabled={pending}
               className="bg-amber-600 text-white hover:bg-amber-700"
@@ -509,6 +627,6 @@ export function CajaCuadrePanel({
           ) : null}
         </DialogContent>
       </Dialog>
-    </Card>
+    </div>
   );
 }

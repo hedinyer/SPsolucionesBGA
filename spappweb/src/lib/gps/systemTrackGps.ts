@@ -1,3 +1,5 @@
+import "server-only";
+
 import {
   extraerPlacasDeTexto,
   normalizarPlaca,
@@ -9,6 +11,7 @@ import type {
 } from "@/lib/gps/ubicacionGps";
 
 export type { AccionMotorGps, UbicacionGpsMoto };
+export { etiquetaEstadoGps } from "@/lib/gps/ubicacionGps";
 
 const SYSTEMTRACK_BASE_URL =
   process.env.SYSTEMTRACK_API_URL?.trim() ||
@@ -419,19 +422,6 @@ export async function enviarComandoMotor(
       ok: false,
       error: "No se pudo contactar System Track. Intenta de nuevo.",
     };
-  }
-}
-
-export function etiquetaEstadoGps(online: string): string {
-  switch (online.toLowerCase()) {
-    case "online":
-      return "En línea";
-    case "ack":
-      return "Conectado";
-    case "offline":
-      return "Sin señal";
-    default:
-      return online || "Desconocido";
   }
 }
 

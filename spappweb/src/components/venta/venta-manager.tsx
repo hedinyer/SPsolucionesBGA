@@ -9,9 +9,8 @@ import {
   useState,
   useTransition,
 } from "react";
-import { Camera, CameraOff, Printer, ScanLine, Send, ShoppingCart } from "lucide-react";
+import { Minus, Package, Plus, Printer, Search, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
-import { publishVentaCarritoDraft } from "@/lib/actions/venta-carrito-draft-actions";
 import { saveVentaProducto } from "@/lib/actions/venta-producto-actions";
 import { printVentaProductoReceipt } from "@/lib/printing/venta-producto-receipt";
 import {
@@ -19,18 +18,15 @@ import {
   searchProductosVenta,
 } from "@/lib/actions/venta-actions";
 import type { InventarioProductoRow } from "@/lib/pipeline/types";
-import { cartTotal, type VentaCartLine } from "@/lib/printing/print-venta-cotizacion-client";
+import {
+  cartTotal,
+  type VentaCartLine,
+} from "@/lib/printing/print-venta-cotizacion-client";
 import { formatCop } from "@/lib/utils/format";
+import { getStoragePublicUrl } from "@/lib/utils/storage-urls";
+import { STORAGE_BUCKETS } from "@/lib/supabase/storage-buckets";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -40,78 +36,87 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  cameraErrorMessage,
-  isMobileTouchDevice,
-  startQrScanner,
-} from "@/lib/venta/start-qr-scanner";
 
-type CartLine = VentaCartLine & { productoId: number };
+type CartLine = VentaCartLine & {
+  productoId: number;
+  stockDisponible: number;
+};
 
 type CartAction =
   | { type: "add"; producto: InventarioProductoRow }
+  | { type: "setQty"; productoId: number; cantidad: number }
+  | { type: "remove"; productoId: number }
   | { type: "clear" };
 
 function cartReducer(state: CartLine[], action: CartAction): CartLine[] {
-  if (action.type === "clear") return [];
-  const existing = state.find((l) => l.productoId === action.producto.id);
-  if (existing) {
-    return state.map((l) =>
-      l.productoId === action.producto.id
-        ? { ...l, cantidad: l.cantidad + 1 }
-        : l,
-    );
+  switch (action.type) {
+    case "clear":
+      return [];
+    case "remove":
+      return state.filter((l) => l.productoId !== action.productoId);
+    case "setQty": {
+      if (action.cantidad <= 0) {
+        return state.filter((l) => l.productoId !== action.productoId);
+      }
+      return state.map((l) => {
+        if (l.productoId !== action.productoId) return l;
+        const qty = Math.min(action.cantidad, l.stockDisponible);
+        return { ...l, cantidad: qty };
+      });
+    }
+    case "add": {
+      if (action.producto.stock <= 0) return state;
+      const existing = state.find((l) => l.productoId === action.producto.id);
+      if (existing) {
+        if (existing.cantidad >= existing.stockDisponible) return state;
+        return state.map((l) =>
+          l.productoId === action.producto.id
+            ? {
+                ...l,
+                cantidad: Math.min(l.cantidad + 1, l.stockDisponible),
+                stockDisponible: action.producto.stock,
+              }
+            : l,
+        );
+      }
+      return [
+        ...state,
+        {
+          productoId: action.producto.id,
+          sku: action.producto.sku,
+          nombre: action.producto.nombre,
+          precioUnitario: Math.max(action.producto.precio, action.producto.costo),
+          cantidad: 1,
+          stockDisponible: action.producto.stock,
+        },
+      ];
+    }
+    default:
+      return state;
   }
-  return [
-    ...state,
-    {
-      productoId: action.producto.id,
-      sku: action.producto.sku,
-      nombre: action.producto.nombre,
-      precioUnitario: Math.max(action.producto.precio, action.producto.costo),
-      cantidad: 1,
-    },
-  ];
 }
 
-const SCAN_COOLDOWN_SEC = 5;
-const SCANNER_ID = "venta-scanner";
+function parseCopInput(raw: string): number | undefined {
+  const n = Number(raw.replace(/\D/g, ""));
+  return Number.isFinite(n) && n >= 0 ? n : undefined;
+}
 
 export function VentaManager() {
   const [lines, dispatch] = useReducer(cartReducer, []);
-  const [cartOpen, setCartOpen] = useState(false);
-  const [cameraOn, setCameraOn] = useState(false);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [busqueda, setBusqueda] = useState("");
   const [resultados, setResultados] = useState<InventarioProductoRow[]>([]);
   const [listaAbierta, setListaAbierta] = useState(false);
-  const [cooldownSec, setCooldownSec] = useState(0);
-  const [cajaCode, setCajaCode] = useState<string | null>(null);
-  const [isPc, setIsPc] = useState(false);
   const [clienteNombre, setClienteNombre] = useState("");
   const [clienteCedula, setClienteCedula] = useState("");
   const [clienteCelular, setClienteCelular] = useState("");
   const [montoPagado, setMontoPagado] = useState("");
   const [notas, setNotas] = useState("");
-  const [pending, startTransition] = useTransition();
   const [searchPending, startSearchTransition] = useTransition();
-  const [publishPending, startPublishTransition] = useTransition();
   const [facturarPending, startFacturarTransition] = useTransition();
 
-  const [scanPending, setScanPending] = useState(false);
-  const scannerContainerRef = useRef<HTMLDivElement>(null);
-  const scanLockRef = useRef(false);
-  const stopScannerRef = useRef<(() => void) | null>(null);
-  const scanOnceRef = useRef<(() => Promise<string | null>) | null>(null);
-  const onCodeRef = useRef<(code: string) => void>(() => {});
-  const cooldownTimerRef = useRef<number | null>(null);
+  const busquedaRef = useRef<HTMLInputElement>(null);
+  const searchSeqRef = useRef(0);
 
   const total = useMemo(() => cartTotal(lines), [lines]);
   const itemCount = useMemo(
@@ -119,167 +124,44 @@ export function VentaManager() {
     [lines],
   );
 
-  const busquedaRef = useRef<HTMLInputElement>(null);
-
   const addProduct = useCallback((producto: InventarioProductoRow) => {
+    if (producto.stock <= 0) {
+      toast.error("No hay unidades de ese producto.");
+      return;
+    }
+    const existing = lines.find((l) => l.productoId === producto.id);
+    if (existing && existing.cantidad >= producto.stock) {
+      toast.error(`Solo hay ${producto.stock} en inventario.`);
+      return;
+    }
     dispatch({ type: "add", producto });
     toast.success(`${producto.nombre} agregado`);
     setBusqueda("");
     setResultados([]);
     setListaAbierta(false);
     busquedaRef.current?.focus();
-  }, []);
+  }, [lines]);
 
-  const startCooldown = useCallback(() => {
-    if (cooldownTimerRef.current) {
-      window.clearInterval(cooldownTimerRef.current);
-    }
-
-    scanLockRef.current = true;
-    setCooldownSec(SCAN_COOLDOWN_SEC);
-
-    cooldownTimerRef.current = window.setInterval(() => {
-      setCooldownSec((prev) => {
-        if (prev <= 1) {
-          if (cooldownTimerRef.current) {
-            window.clearInterval(cooldownTimerRef.current);
-            cooldownTimerRef.current = null;
-          }
-          scanLockRef.current = false;
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-  }, []);
-
-  const lookupAndAdd = useCallback(
-    (sku: string) => {
-      startTransition(async () => {
-        try {
-          const producto = await lookupProductoBySku(sku);
-          addProduct(producto);
-        } catch (e) {
-          toast.error(e instanceof Error ? e.message : "Producto no encontrado.");
-        }
-      });
-    },
-    [addProduct],
-  );
-
-  const resolveSkuFromCamera = useCallback(
-    (raw: string) => {
-      const sku = raw.trim();
-      if (!sku || scanLockRef.current) return;
-      startCooldown();
-      lookupAndAdd(sku);
-    },
-    [lookupAndAdd, startCooldown],
-  );
-  onCodeRef.current = resolveSkuFromCamera;
-
-  const stopCamera = useCallback(() => {
-    stopScannerRef.current?.();
-    stopScannerRef.current = null;
-    scanOnceRef.current = null;
-    setCameraOn(false);
-    setScanPending(false);
-  }, []);
-
-  const startCamera = useCallback(async () => {
-    if (stopScannerRef.current) return;
-
-    busquedaRef.current?.blur();
-    setCameraOn(true);
-
-    const container = scannerContainerRef.current;
-    if (!container) {
-      toast.error("No se pudo acceder a la cámara.");
-      setCameraOn(false);
+  const runSearch = useCallback((q: string) => {
+    const trimmed = q.trim();
+    if (trimmed.length < 2) {
+      setResultados([]);
+      setListaAbierta(false);
       return;
     }
-
-    try {
-      const handle = await startQrScanner(
-        container,
-        (code) => onCodeRef.current(code),
-        () => scanLockRef.current,
-      );
-      stopScannerRef.current = handle.stop;
-      scanOnceRef.current = handle.scanOnce;
-    } catch (err) {
-      toast.error(cameraErrorMessage(err));
-      setCameraOn(false);
-    }
-  }, []);
-
-  const toggleCamera = useCallback(async () => {
-    if (cameraOn) {
-      stopCamera();
-      return;
-    }
-    await startCamera();
-  }, [cameraOn, startCamera, stopCamera]);
-
-  const triggerScan = useCallback(async () => {
-    if (!cameraOn || scanLockRef.current || scanPending) return;
-    const scanOnce = scanOnceRef.current;
-    if (!scanOnce) return;
-
-    setScanPending(true);
-    try {
-      const code = await scanOnce();
-      if (code) {
-        resolveSkuFromCamera(code);
-      } else {
-        toast.error("No se detectó QR. Acerca el código y vuelve a intentar.");
-      }
-    } finally {
-      setScanPending(false);
-    }
-  }, [cameraOn, scanPending, resolveSkuFromCamera]);
-
-  const resolverBusqueda = useCallback(() => {
-    const trimmed = busqueda.trim();
-    if (!trimmed) return;
-
-    startTransition(async () => {
+    const seq = ++searchSeqRef.current;
+    startSearchTransition(async () => {
       try {
-        const producto = await lookupProductoBySku(trimmed);
-        addProduct(producto);
-        return;
+        const rows = await searchProductosVenta(trimmed);
+        if (seq !== searchSeqRef.current) return;
+        setResultados(rows);
+        setListaAbierta(true);
       } catch {
-        // no es SKU exacto
+        if (seq !== searchSeqRef.current) return;
+        setResultados([]);
+        setListaAbierta(true);
       }
-
-      try {
-        const items = await searchProductosVenta(trimmed);
-        if (items.length === 1) {
-          addProduct(items[0]);
-          return;
-        }
-        if (items.length > 1) {
-          setResultados(items);
-          setListaAbierta(true);
-          toast.error("Selecciona un producto de la lista.");
-          return;
-        }
-      } catch {
-        // sigue sin resultados
-      }
-
-      toast.error("Sin resultados.");
     });
-  }, [busqueda, addProduct]);
-
-  useEffect(() => {
-    setIsPc(!isMobileTouchDevice());
-    return () => {
-      if (cooldownTimerRef.current) {
-        window.clearInterval(cooldownTimerRef.current);
-      }
-      stopScannerRef.current?.();
-    };
   }, []);
 
   useEffect(() => {
@@ -289,67 +171,63 @@ export function VentaManager() {
       setListaAbierta(false);
       return;
     }
+    const t = window.setTimeout(() => runSearch(q), 250);
+    return () => window.clearTimeout(t);
+  }, [busqueda, runSearch]);
 
-    const timer = window.setTimeout(() => {
-      startSearchTransition(async () => {
-        try {
-          const items = await searchProductosVenta(q);
-          setResultados(items);
-          setListaAbierta(true);
-        } catch {
-          setResultados([]);
-        }
-      });
-    }, 250);
-
-    return () => window.clearTimeout(timer);
-  }, [busqueda]);
-
-  function formatCajaCode(code: string): string {
-    return `${code.slice(0, 3)} ${code.slice(3)}`;
-  }
-
-  function sendToPc() {
-    if (lines.length === 0) {
-      toast.error("Agrega al menos un producto.");
+  async function resolverBusqueda() {
+    const q = busqueda.trim();
+    if (!q) {
+      toast.message("Escribe el nombre o el código del producto.");
       return;
     }
-    startPublishTransition(async () => {
+
+    startSearchTransition(async () => {
       try {
-        const { code } = await publishVentaCarritoDraft(
-          lines.map((l) => ({
-            productoId: l.productoId,
-            cantidad: l.cantidad,
-          })),
-        );
-        setCajaCode(code);
-        setCartOpen(false);
+        try {
+          const bySku = await lookupProductoBySku(q);
+          addProduct(bySku);
+          return;
+        } catch {
+          /* fall through to search */
+        }
+        const rows = await searchProductosVenta(q);
+        if (rows.length === 0) {
+          toast.error("No encontramos ese producto.");
+          setResultados([]);
+          setListaAbierta(false);
+          return;
+        }
+        if (rows.length === 1) {
+          addProduct(rows[0]);
+          return;
+        }
+        setResultados(rows);
+        setListaAbierta(true);
       } catch (err) {
         toast.error(
-          err instanceof Error ? err.message : "No se pudo enviar a PC.",
+          err instanceof Error ? err.message : "No se pudo buscar.",
         );
       }
     });
   }
 
-  function facturarEnPc() {
+  function facturar() {
     if (lines.length === 0) {
       toast.error("Agrega al menos un producto.");
       return;
     }
     if (!clienteNombre.trim()) {
-      toast.error("Indica el nombre del cliente.");
+      toast.error("Escribe el nombre del cliente.");
       return;
     }
     if (clienteCelular.trim().length < 10) {
-      toast.error("Indica un celular válido.");
+      toast.error("Escribe un celular válido (10 dígitos o más).");
       return;
     }
-    const pagado = montoPagado.trim()
-      ? Number(montoPagado.replace(/\D/g, ""))
-      : total;
+    const pagado = parseCopInput(montoPagado) ?? total;
     if (pagado > total) {
-      toast.error("El pago no puede superar el total.");
+      toast.error("El pago no puede ser mayor que el total.");
       return;
     }
 
@@ -367,391 +245,377 @@ export function VentaManager() {
           })),
         });
         await printVentaProductoReceipt(venta);
-        toast.success("Venta facturada e impresa.");
+        toast.success("Venta hecha. Inventario actualizado.");
         dispatch({ type: "clear" });
         setClienteNombre("");
         setClienteCedula("");
         setClienteCelular("");
         setMontoPagado("");
         setNotas("");
-        setCartOpen(false);
+        setCheckoutOpen(false);
+        busquedaRef.current?.focus();
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "No se pudo facturar.");
+        toast.error(
+          err instanceof Error ? err.message : "No se pudo facturar.",
+        );
       }
     });
   }
 
-  function closeCajaDialog() {
-    setCajaCode(null);
-    dispatch({ type: "clear" });
-  }
-
   return (
-    <div className="flex flex-col pb-24">
-      <div className="flex items-center justify-between gap-2">
+    <div className="flex flex-col gap-6 pb-28">
+      <div className="flex flex-col gap-2">
+        <Label htmlFor="venta-buscar-producto" className="text-base font-semibold">
+          ¿Qué vas a vender?
+        </Label>
         <p className="text-sm text-muted-foreground">
-          Escanea el QR de la etiqueta, busca por nombre o ingresa el SKU.
+          Escribe el nombre o el código. Elige en la lista o pulsa Agregar.
         </p>
-        <Button
-          type="button"
-          variant={cameraOn ? "default" : "outline"}
-          size="sm"
-          onClick={() => void toggleCamera()}
-        >
-          {cameraOn ? (
-            <>
-              <CameraOff className="mr-1.5 h-4 w-4" />
-              Apagar cámara
-            </>
-          ) : (
-            <>
-              <Camera className="mr-1.5 h-4 w-4" />
-              Cámara
-            </>
-          )}
-        </Button>
-      </div>
-
-      <div className="relative mx-auto mt-4 w-full max-w-[320px]">
-        <div className="relative aspect-[4/3] w-full overflow-hidden rounded-lg border border-border bg-black">
-          <div
-            id={SCANNER_ID}
-            ref={scannerContainerRef}
-            className="absolute inset-0 [&_#qr-shaded-region]:hidden [&_video]:!absolute [&_video]:!inset-0 [&_video]:!h-full [&_video]:!w-full [&_video]:!object-cover"
-          />
-          {!cameraOn ? (
-            <button
-              type="button"
-              className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-muted p-4 text-muted-foreground active:bg-neutral-200/80"
-              onClick={() => void startCamera()}
-            >
-              <Camera className="h-10 w-10" />
-              <span className="text-sm font-medium">
-                Toca para activar la cámara
-              </span>
-            </button>
-          ) : null}
-          {cooldownSec > 0 && (
-            <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/60 text-white">
-              <span className="text-5xl font-bold tabular-nums">{cooldownSec}</span>
-              <span className="mt-1 text-sm">Espera para escanear de nuevo</span>
-            </div>
-          )}
-          {pending && cooldownSec === 0 && cameraOn && (
-            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-black/30 text-xs text-white">
-              Buscando producto…
-            </div>
-          )}
-          {scanPending && cooldownSec === 0 && cameraOn && (
-            <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-black/30 text-xs text-white">
-              Escaneando…
-            </div>
-          )}
-        </div>
-        {cameraOn && isMobileTouchDevice() ? (
-          <Button
-            type="button"
-            className="mt-3 w-full gap-2 bg-background text-foreground hover:bg-muted"
-            size="lg"
-            disabled={scanPending || cooldownSec > 0 || pending}
-            onClick={() => void triggerScan()}
-          >
-            <ScanLine className="h-5 w-5" />
-            Escanear
-          </Button>
-        ) : null}
-        {cameraOn && !isMobileTouchDevice() ? (
-          <p className="mt-2 text-center text-xs text-muted-foreground">
-            Apunta al QR desde cualquier ángulo o distancia; no hace falta centrarlo perfecto.
-          </p>
-        ) : null}
-        {cameraOn && isMobileTouchDevice() ? (
-          <p className="mt-2 text-center text-xs text-muted-foreground">
-            Apunta al QR y pulsa Escanear.
-          </p>
-        ) : null}
-      </div>
-
-      <div className="relative mt-3">
         <div className="flex gap-2">
-          <Input
-            ref={busquedaRef}
-            type="search"
-            value={busqueda}
-            onChange={(e) => setBusqueda(e.target.value)}
-            placeholder="SKU, nombre o pistola lectora"
-            autoComplete="off"
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                resolverBusqueda();
-              }
-              if (e.key === "Escape") {
-                setListaAbierta(false);
-              }
-            }}
-            onFocus={() => {
-              if (cameraOn) stopCamera();
-              if (resultados.length > 0) setListaAbierta(true);
-            }}
-          />
+          <div className="relative min-w-0 flex-1">
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <Input
+              id="venta-buscar-producto"
+              ref={busquedaRef}
+              type="search"
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+              placeholder="Ej. aceite, bombillo, SKU…"
+              className="min-h-11 pl-9 pr-9"
+              autoComplete="off"
+              spellCheck={false}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void resolverBusqueda();
+                }
+                if (e.key === "Escape") {
+                  setListaAbierta(false);
+                  setBusqueda("");
+                  setResultados([]);
+                }
+              }}
+              onFocus={() => {
+                if (resultados.length > 0) setListaAbierta(true);
+              }}
+            />
+            {busqueda ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2"
+                aria-label="Borrar búsqueda"
+                onClick={() => {
+                  setBusqueda("");
+                  setResultados([]);
+                  setListaAbierta(false);
+                  busquedaRef.current?.focus();
+                }}
+              >
+                <X aria-hidden="true" />
+              </Button>
+            ) : null}
+          </div>
           <Button
             type="button"
-            variant="outline"
-            onClick={resolverBusqueda}
-            disabled={pending || searchPending}
+            className="min-h-11 shrink-0"
+            onClick={() => void resolverBusqueda()}
+            disabled={searchPending}
           >
             Agregar
           </Button>
         </div>
 
         {listaAbierta && busqueda.trim().length >= 2 ? (
-          <div className="absolute z-20 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-border bg-background shadow-lg">
+          <ul
+            className="max-h-[min(28rem,55dvh)] overflow-y-auto rounded-xl border border-border bg-background"
+            role="listbox"
+            aria-label="Resultados de búsqueda"
+          >
             {searchPending && resultados.length === 0 ? (
-              <p className="px-3 py-2 text-sm text-muted-foreground">Buscando…</p>
+              <li className="px-4 py-3 text-sm text-muted-foreground">
+                Buscando…
+              </li>
             ) : null}
             {!searchPending && resultados.length === 0 ? (
-              <p className="px-3 py-2 text-sm text-muted-foreground">Sin resultados</p>
+              <li className="px-4 py-3 text-sm text-muted-foreground">
+                No hay productos con ese nombre.
+              </li>
             ) : null}
-            {resultados.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                className={cn(
-                  "flex w-full flex-col gap-0.5 border-b border-border px-3 py-2.5 text-left last:border-0 hover:bg-muted/50",
-                  p.stock <= 0 && "opacity-50",
-                )}
-                disabled={p.stock <= 0}
-                onClick={() => addProduct(p)}
-              >
-                <span className="text-sm font-medium">{p.nombre}</span>
-                <span className="text-xs text-muted-foreground">
-                  {p.sku} · {formatCop(Math.max(p.precio, p.costo))} · stock{" "}
-                  {p.stock}
-                </span>
-              </button>
-            ))}
-          </div>
+            {resultados.map((p) => {
+              const sinStock = p.stock <= 0;
+              const precio = Math.max(p.precio, p.costo);
+              const img = getStoragePublicUrl(
+                STORAGE_BUCKETS.inventarioImagenes,
+                p.imagen_url,
+              );
+              return (
+                <li key={p.id} role="option" aria-selected={false}>
+                  <button
+                    type="button"
+                    className={cn(
+                      "flex w-full items-center gap-4 border-b border-border px-3 py-3 text-left last:border-0 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+                      sinStock
+                        ? "cursor-not-allowed opacity-50"
+                        : "hover:bg-muted/50",
+                    )}
+                    disabled={sinStock}
+                    onClick={() => addProduct(p)}
+                  >
+                    <div className="relative h-28 w-28 shrink-0 overflow-hidden rounded-lg bg-muted outline outline-1 outline-black/10 sm:h-32 sm:w-32">
+                      {img ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={img}
+                          alt=""
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <div
+                          className="flex h-full w-full items-center justify-center text-muted-foreground"
+                          aria-hidden="true"
+                        >
+                          <Package className="h-10 w-10" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <span className="block text-base font-medium">
+                        {p.nombre}
+                      </span>
+                      <span className="mt-1 block text-sm text-muted-foreground">
+                        {formatCop(precio)}
+                        {" · "}
+                        {sinStock ? "Sin existencias" : `Hay ${p.stock}`}
+                        {p.sku ? ` · ${p.sku}` : null}
+                      </span>
+                    </div>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
         ) : null}
       </div>
 
-      <div className="mt-6 flex-1 flex flex-col gap-2">
+      <section className="flex flex-col gap-3" aria-labelledby="venta-carrito-titulo">
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <div>
+            <h2
+              id="venta-carrito-titulo"
+              className="text-base font-semibold text-foreground"
+            >
+              Carrito
+            </h2>
+            <p className="text-sm text-muted-foreground" role="status">
+              {itemCount === 0
+                ? "Vacío"
+                : `${itemCount} ${itemCount === 1 ? "unidad" : "unidades"} · ${formatCop(total)}`}
+            </p>
+          </div>
+          {lines.length > 0 ? (
+            <Button
+              type="button"
+              variant="ghost"
+              className="min-h-11"
+              onClick={() => dispatch({ type: "clear" })}
+            >
+              Vaciar
+            </Button>
+          ) : null}
+        </div>
+
         {lines.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
-            El carrito está vacío. Busca por nombre, escanea QR o ingresa el SKU.
+          <p className="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
+            Aún no hay nada. Busca el nombre del producto.
           </p>
         ) : (
-          lines.map((line) => (
-            <div
-              key={line.productoId}
-              className="flex items-center justify-between gap-3 rounded-lg border border-border bg-background px-4 py-3"
-            >
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-medium text-foreground">
-                  {line.nombre}
+          <ul className="flex flex-col gap-2">
+            {lines.map((line) => (
+              <li
+                key={line.productoId}
+                className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-background px-3 py-3 sm:flex-nowrap"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium">{line.nombre}</p>
+                  <p className="text-xs text-muted-foreground tabular-nums">
+                    {formatCop(line.precioUnitario)} c/u
+                  </p>
+                </div>
+                <div
+                  className="flex items-center gap-1"
+                  role="group"
+                  aria-label={`Cantidad de ${line.nombre}`}
+                >
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="min-h-11 min-w-11"
+                    aria-label={`Quitar una de ${line.nombre}`}
+                    onClick={() =>
+                      dispatch({
+                        type: "setQty",
+                        productoId: line.productoId,
+                        cantidad: line.cantidad - 1,
+                      })
+                    }
+                  >
+                    <Minus className="h-4 w-4" aria-hidden="true" />
+                  </Button>
+                  <span
+                    className="min-w-10 text-center text-base font-semibold tabular-nums"
+                    aria-live="polite"
+                  >
+                    {line.cantidad}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="min-h-11 min-w-11"
+                    aria-label={`Agregar una de ${line.nombre}`}
+                    disabled={line.cantidad >= line.stockDisponible}
+                    onClick={() =>
+                      dispatch({
+                        type: "setQty",
+                        productoId: line.productoId,
+                        cantidad: line.cantidad + 1,
+                      })
+                    }
+                  >
+                    <Plus className="h-4 w-4" aria-hidden="true" />
+                  </Button>
+                </div>
+                <p className="w-24 shrink-0 text-right font-semibold tabular-nums">
+                  {formatCop(line.precioUnitario * line.cantidad)}
                 </p>
-                <p className="text-xs text-muted-foreground">
-                  {line.cantidad} × {formatCop(line.precioUnitario)}
-                </p>
-              </div>
-              <p className="shrink-0 font-semibold text-foreground">
-                {formatCop(line.precioUnitario * line.cantidad)}
-              </p>
-            </div>
-          ))
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="min-h-11 min-w-11"
+                  aria-label={`Quitar ${line.nombre} del carrito`}
+                  onClick={() =>
+                    dispatch({ type: "remove", productoId: line.productoId })
+                  }
+                >
+                  <Trash2 className="h-4 w-4" aria-hidden="true" />
+                </Button>
+              </li>
+            ))}
+          </ul>
         )}
-      </div>
+      </section>
 
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background px-4 py-3 shadow-[0_-4px_12px_rgba(0,0,0,0.06)]">
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background px-4 py-3">
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-4">
           <div>
             <p className="text-xs text-muted-foreground">Total</p>
-            <p className="text-xl font-bold text-foreground">
+            <p className="text-2xl font-bold tabular-nums text-foreground">
               {formatCop(total)}
             </p>
           </div>
           <Button
             type="button"
             size="lg"
-            className="relative"
-            onClick={() => setCartOpen(true)}
+            className="min-h-12 min-w-36"
+            disabled={lines.length === 0}
+            onClick={() => setCheckoutOpen(true)}
           >
-            <ShoppingCart className="mr-2 h-5 w-5" />
-            Carrito
-            {itemCount > 0 && (
-              <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-xs font-bold text-white">
-                {itemCount}
-              </span>
-            )}
+            Cobrar
           </Button>
         </div>
       </div>
 
-      <Sheet open={cartOpen} onOpenChange={setCartOpen}>
-        <SheetContent side="bottom" className="max-h-[85dvh] overflow-y-auto">
+      <Sheet open={checkoutOpen} onOpenChange={setCheckoutOpen}>
+        <SheetContent side="bottom" className="max-h-[90dvh] overflow-y-auto">
           <SheetHeader>
-            <SheetTitle>Detalle del carrito</SheetTitle>
+            <SheetTitle>Cobrar {formatCop(total)}</SheetTitle>
           </SheetHeader>
 
-          {lines.length === 0 ? (
-            <p className="px-4 text-sm text-muted-foreground">Sin productos.</p>
-          ) : (
-            <>
-              <div className="hidden px-4 sm:block">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Producto</TableHead>
-                      <TableHead>SKU</TableHead>
-                      <TableHead className="text-center">Cant.</TableHead>
-                      <TableHead className="text-right">P. unit.</TableHead>
-                      <TableHead className="text-right">Subtotal</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {lines.map((line) => (
-                      <TableRow key={line.productoId}>
-                        <TableCell>{line.nombre}</TableCell>
-                        <TableCell className="font-mono text-xs">
-                          {line.sku}
-                        </TableCell>
-                        <TableCell className="text-center">
-                          {line.cantidad}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {formatCop(line.precioUnitario)}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {formatCop(line.precioUnitario * line.cantidad)}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-
-              <div className="flex flex-col gap-3 px-4 sm:hidden">
-                {lines.map((line) => (
-                  <div
-                    key={line.productoId}
-                    className="rounded-lg border border-border p-3 text-sm"
-                  >
-                    <p className="font-medium">{line.nombre}</p>
-                    <p className="text-xs text-muted-foreground">{line.sku}</p>
-                    <p className="mt-1">
-                      {line.cantidad} × {formatCop(line.precioUnitario)} ={" "}
-                      {formatCop(line.precioUnitario * line.cantidad)}
-                    </p>
-                  </div>
-                ))}
-              </div>
-
-              <div className="px-4 text-right">
-                <p className="text-lg font-bold">Total: {formatCop(total)}</p>
-              </div>
-            </>
-          )}
-
-          {isPc && lines.length > 0 ? (
-            <div className="grid gap-3 px-4 sm:grid-cols-2">
-              <div className="flex flex-col gap-2 sm:col-span-2">
-                <Label htmlFor="venta-cliente-nombre">Nombre</Label>
-                <Input
-                  id="venta-cliente-nombre"
-                  value={clienteNombre}
-                  onChange={(e) => setClienteNombre(e.target.value)}
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="venta-cliente-cedula">Cédula</Label>
-                <Input
-                  id="venta-cliente-cedula"
-                  inputMode="numeric"
-                  value={clienteCedula}
-                  onChange={(e) => setClienteCedula(e.target.value)}
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="venta-cliente-celular">Celular</Label>
-                <Input
-                  id="venta-cliente-celular"
-                  inputMode="tel"
-                  value={clienteCelular}
-                  onChange={(e) => setClienteCelular(e.target.value)}
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="venta-monto-pagado">Pagado hoy</Label>
-                <Input
-                  id="venta-monto-pagado"
-                  inputMode="numeric"
-                  placeholder={String(total)}
-                  value={montoPagado}
-                  onChange={(e) => setMontoPagado(e.target.value)}
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="venta-notas">Notas</Label>
-                <Input
-                  id="venta-notas"
-                  value={notas}
-                  onChange={(e) => setNotas(e.target.value)}
-                />
-              </div>
+          <div className="grid gap-3 px-4 sm:grid-cols-2">
+            <div className="flex flex-col gap-2 sm:col-span-2">
+              <Label htmlFor="venta-cliente-nombre">Nombre del cliente</Label>
+              <Input
+                id="venta-cliente-nombre"
+                className="min-h-11"
+                value={clienteNombre}
+                onChange={(e) => setClienteNombre(e.target.value)}
+                autoComplete="name"
+              />
             </div>
-          ) : null}
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="venta-cliente-celular">Celular</Label>
+              <Input
+                id="venta-cliente-celular"
+                className="min-h-11"
+                inputMode="tel"
+                value={clienteCelular}
+                onChange={(e) => setClienteCelular(e.target.value)}
+                autoComplete="tel"
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="venta-cliente-cedula">Cédula (opcional)</Label>
+              <Input
+                id="venta-cliente-cedula"
+                className="min-h-11"
+                inputMode="numeric"
+                value={clienteCedula}
+                onChange={(e) => setClienteCedula(e.target.value)}
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="venta-monto-pagado">¿Cuánto pagó?</Label>
+              <Input
+                id="venta-monto-pagado"
+                className="min-h-11"
+                inputMode="numeric"
+                placeholder={String(total)}
+                value={montoPagado}
+                onChange={(e) => setMontoPagado(e.target.value)}
+              />
+            </div>
+            <div className="flex flex-col gap-2 sm:col-span-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="min-h-11 w-fit"
+                disabled={total <= 0}
+                onClick={() => setMontoPagado(String(total))}
+              >
+                Pagó todo
+              </Button>
+            </div>
+            <div className="flex flex-col gap-2 sm:col-span-2">
+              <Label htmlFor="venta-notas">Nota (opcional)</Label>
+              <Input
+                id="venta-notas"
+                className="min-h-11"
+                value={notas}
+                onChange={(e) => setNotas(e.target.value)}
+              />
+            </div>
+          </div>
 
           <SheetFooter>
-            {isPc ? (
-              <Button
-                type="button"
-                className="w-full gap-2 bg-primary text-primary-foreground hover:bg-primary/80"
-                disabled={lines.length === 0 || facturarPending}
-                onClick={facturarEnPc}
-              >
-                <Printer className="h-4 w-4" />
-                {facturarPending ? "Facturando…" : "Facturar e imprimir"}
-              </Button>
-            ) : (
-              <Button
-                type="button"
-                className="w-full gap-2 bg-primary text-primary-foreground hover:bg-primary/80"
-                disabled={lines.length === 0 || publishPending}
-                onClick={sendToPc}
-              >
-                <Send className="h-4 w-4" />
-                {publishPending ? "Enviando…" : "Enviar a PC"}
-              </Button>
-            )}
+            <Button
+              type="button"
+              className="min-h-12 w-full gap-2"
+              disabled={facturarPending || lines.length === 0}
+              onClick={facturar}
+            >
+              <Printer className="h-4 w-4" aria-hidden="true" />
+              {facturarPending ? "Facturando…" : "Facturar e imprimir"}
+            </Button>
           </SheetFooter>
         </SheetContent>
       </Sheet>
-
-      <Dialog
-        open={cajaCode !== null}
-        onOpenChange={(next) => {
-          if (!next) closeCajaDialog();
-        }}
-      >
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Código para caja</DialogTitle>
-            <DialogDescription>
-              Ingresa este código en el escritorio (/caja) para facturar.
-            </DialogDescription>
-          </DialogHeader>
-          {cajaCode ? (
-            <p className="py-4 text-center text-5xl font-bold tracking-widest tabular-nums">
-              {formatCajaCode(cajaCode)}
-            </p>
-          ) : null}
-          <DialogFooter>
-            <Button type="button" className="w-full" onClick={closeCajaDialog}>
-              Listo
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

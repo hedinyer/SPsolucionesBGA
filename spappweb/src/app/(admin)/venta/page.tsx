@@ -13,15 +13,15 @@ export default async function VentaPage() {
     <div className="flex flex-col gap-6">
       <AdminHubSubnav hubId="tienda" />
       <PageHeader
-        title="Repuestos y accesorios"
-        description="Escanea repuestos, arma el carrito y envía la cotización por WhatsApp."
+        title="Vender"
+        description="Busca el producto, arma el carrito y cobra."
       />
       {!cajaAbierta ? (
         <Link href="/caja" className="block">
           <Alert className="caja-monto-blink border-transparent">
             <AlertTitle>Caja aún no abierta</AlertTitle>
             <AlertDescription>
-              Abre la caja para empezar a vender.
+              Abre la caja para vender.
             </AlertDescription>
           </Alert>
         </Link>

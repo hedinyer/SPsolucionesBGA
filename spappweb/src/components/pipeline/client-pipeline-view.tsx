@@ -1,7 +1,6 @@
 import type { BikeRow, ClientPipeline, ProductoCreditoRow, VisitadorRow } from "@/lib/pipeline/types";
 import { motoListo } from "@/lib/pipeline/step-logic";
 import { ClientStepper } from "@/components/pipeline/client-stepper";
-import { FlowOrderPrompt } from "@/components/pipeline/flow-order-prompt";
 import { CreditReviewPanel } from "@/components/pipeline/credit-review-panel";
 import { ContractReadonlyPanel } from "@/components/pipeline/contract-readonly-panel";
 import { ContractSharePanel } from "@/components/pipeline/contract-share-panel";
@@ -47,15 +46,22 @@ export function ClientPipelineView({
     !contractSigned;
   const legacyClientMoto =
     contractSigned && !pipeline.compra && contractId;
+  const retiroListo =
+    pipeline.compra?.estado === "lista_retiro" ||
+    pipeline.compra?.estado === "entregada" ||
+    pipeline.compra?.estado === "saldada";
+  const showDeliveryMain = adminStep === "entrega" || retiroListo;
+  const showVisitaMain =
+    adminStep === "visita" ||
+    Boolean(
+      retiroListo &&
+        pipeline.visita &&
+        pipeline.visita.estado !== "completada",
+    );
 
   return (
     <div className="flex flex-col gap-8">
       <ClientStepper steps={pipeline.steps} />
-      <FlowOrderPrompt
-        compra={pipeline.compra}
-        visita={pipeline.visita}
-        userId={userId}
-      />
       <MoraSummaryBanner pipeline={pipeline} />
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -117,9 +123,7 @@ export function ClientPipelineView({
               />
             </>
           )}
-          {(adminStep === "entrega" ||
-            pipeline.compra?.estado === "entregada" ||
-            pipeline.compra?.estado === "saldada") && (
+          {showDeliveryMain && (
             <>
               {(pipeline.compra?.estado === "entregada" ||
                 pipeline.compra?.estado === "saldada") &&
@@ -143,12 +147,11 @@ export function ClientPipelineView({
               />
             </>
           )}
-          {adminStep === "visita" && (
+          {showVisitaMain && (
             <VisitActionPanel
               visita={pipeline.visita}
               visitadores={visitadores}
               userId={userId}
-              compra={pipeline.compra}
               referralSource={pipeline.document?.referral_source}
             />
           )}
@@ -157,6 +160,8 @@ export function ClientPipelineView({
           )}
 
           {!adminStep &&
+            !showDeliveryMain &&
+            !showVisitaMain &&
             pipeline.compra?.estado !== "entregada" &&
             pipeline.compra?.estado !== "saldada" &&
             !showContractShare &&
@@ -209,9 +214,7 @@ export function ClientPipelineView({
                   />
                 </>
               )}
-              {adminStep !== "entrega" &&
-                pipeline.compra?.estado !== "entregada" &&
-                pipeline.compra?.estado !== "saldada" && (
+              {!showDeliveryMain && (
                 <DeliveryPanel
                   compra={pipeline.compra}
                   userId={userId}
@@ -219,12 +222,11 @@ export function ClientPipelineView({
                   clienteNombre={pipeline.displayName}
                 />
               )}
-              {adminStep !== "visita" && (
+              {!showVisitaMain && (
                 <VisitActionPanel
                   visita={pipeline.visita}
                   visitadores={visitadores}
                   userId={userId}
-                  compra={pipeline.compra}
                   referralSource={pipeline.document?.referral_source}
                 />
               )}

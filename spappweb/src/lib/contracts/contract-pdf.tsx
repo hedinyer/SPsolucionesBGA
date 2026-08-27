@@ -201,6 +201,7 @@ export async function generateHojaVidaPdf(args: {
     cuotaInicial: string;
     valorCuota: string;
     frecuenciaPago: string;
+    estado?: string;
   };
 }): Promise<Buffer> {
   const form: HojaVidaFormData = parseHojaVidaForm(args.hoja);
@@ -223,7 +224,9 @@ export async function generateHojaVidaPdf(args: {
         <Image style={styles.logo} src={logo} fixed />
         <Footer />
         <Text style={styles.title}>HOJA DE VIDA VENTA A CREDITO</Text>
-        <Line>NUEVA _____ USADA ______</Line>
+        <Line>
+          {`NUEVA ${(c?.estado ?? "").toLowerCase() === "nueva" ? "X" : "_____"} USADA ${(c?.estado ?? "").toLowerCase() === "usada" ? "X" : "______"}`}
+        </Line>
         <Line>{`FECHA: ${now.getDate()}/${now.getMonth() + 1}/${now.getFullYear()}`}</Line>
         <Line>{`NOMBRE COMPLETO: ${form.nombre_completo}`}</Line>
         <Line>
@@ -327,6 +330,9 @@ export async function generateContratoPdf(args: {
             lines={[
               contrato.nombreContratante,
               `${contrato.tipoDocumentoContratante || "C.C."} ${contrato.cedulaContratante}`,
+              contrato.celularContratante.trim()
+                ? `Celular: ${contrato.celularContratante.trim()}`
+                : "Celular: ________________",
             ]}
           />
         </View>

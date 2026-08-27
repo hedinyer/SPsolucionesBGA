@@ -470,7 +470,8 @@ export const AGENT_TOOLS = {
   }),
   mark_delivered: tool({
     category: "entrega",
-    description: "Marca la compra como entregada (dispara generación de tarifas).",
+    description:
+      "Marca la compra como entregada (dispara generación de tarifas). No exige visita previa: visita y entrega son independientes.",
     input: z.object({
       compraId: z.string().uuid(),
       userId: z.number().int().positive(),

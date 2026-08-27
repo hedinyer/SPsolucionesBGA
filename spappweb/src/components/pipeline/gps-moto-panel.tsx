@@ -10,12 +10,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  etiquetaEstadoGps,
-  etiquetaProveedorGps,
-} from "@/lib/gps/gpsMoto";
-import {
   etiquetaIntervaloPollGps,
   intervaloPollGpsEnVivo,
+  etiquetaEstadoGps,
+  etiquetaProveedorGps,
+  gpsMotoDesdeProveedor,
   type UbicacionGpsMoto,
 } from "@/lib/gps/ubicacionGps";
 
@@ -81,6 +80,9 @@ export function GpsMotoPanel({
         params.set("device_id", String(deviceIdRef.current));
       }
       if (imeiRef.current) params.set("imei", imeiRef.current);
+      if (gpsRef.current?.proveedor) {
+        params.set("gps_moto", gpsMotoDesdeProveedor(gpsRef.current.proveedor));
+      }
 
       const res = await fetch(`/api/gps/live?${params}`, {
         cache: "no-store",
@@ -172,7 +174,12 @@ export function GpsMotoPanel({
         const res = await fetch("/api/gps/comando", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ placa, userId, accion }),
+          body: JSON.stringify({
+            placa,
+            userId,
+            accion,
+            gps_moto: gpsMotoDesdeProveedor(gps.proveedor),
+          }),
         });
         const data = await res.json();
         if (!res.ok) {

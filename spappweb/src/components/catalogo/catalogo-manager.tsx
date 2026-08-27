@@ -116,10 +116,10 @@ export function CatalogoManager({
           <TableHeader>
             <TableRow>
               <TableHead className="w-[72px]">Foto</TableHead>
-              <TableHead>Modelo</TableHead>
+              <TableHead>Referencia</TableHead>
               <TableHead>Color</TableHead>
               <TableHead>Stock nuevo</TableHead>
-              <TableHead>2ª mano</TableHead>
+              <TableHead>Usadas</TableHead>
               <TableHead>Precio venta</TableHead>
               <TableHead>Cuota inicial</TableHead>
               <TableHead>Cuota diaria</TableHead>
@@ -269,7 +269,7 @@ export function CatalogoManager({
                 <dd>{bike.stock}</dd>
               </div>
               <div className="flex justify-between gap-2">
-                <dt className="text-muted-foreground">2ª mano</dt>
+                <dt className="text-muted-foreground">Usadas</dt>
                 <dd>
                   {stockSegunda[bikeStockKey(bike.modelo, bike.color)] ?? 0}
                 </dd>
@@ -384,10 +384,10 @@ export function CatalogoManager({
             id="segunda-sin-modelo-title"
             className="text-sm font-semibold text-foreground"
           >
-            Segunda mano sin modelo en catálogo
+            Segunda mano sin referencia en catálogo
           </h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            Unidades en patio cuyo modelo/color no coincide con una fila de
+            Unidades en patio cuya referencia/color no coincide con una fila de
             arriba. Créalas en catálogo o corrige el texto en garaje.
           </p>
           <ul className="mt-3 flex flex-col gap-2">
@@ -536,7 +536,7 @@ function BikeDialog({
           <DialogTitle>{editing ? "Editar moto" : "Nueva moto"}</DialogTitle>
         </DialogHeader>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Modelo" value={modelo} onChange={setModelo} />
+          <Field label="Referencia" value={modelo} onChange={setModelo} />
           <Field label="Color" value={color} onChange={setColor} />
           <Field
             label="Stock"

@@ -19,7 +19,7 @@ export default async function HistorialVentasPage() {
       <AdminHubSubnav hubId="tienda" />
       <PageHeader
         title="Historial"
-        description="Productos de inventario y motos (contado o crédito liquidado)."
+        description="Ventas hechas: ver e imprimir de nuevo."
       />
       <HistorialVentasClient
         ventas={ventas}

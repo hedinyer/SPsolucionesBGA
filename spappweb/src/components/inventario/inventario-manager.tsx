@@ -1,16 +1,34 @@
 "use client";
 
-import { useState, useTransition, useEffect, useId, useMemo } from "react";
+import {
+  useState,
+  useTransition,
+  useEffect,
+  useId,
+  useMemo,
+  useCallback,
+  useRef,
+} from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { usePollingRefresh } from "@/hooks/use-polling-refresh";
-import { ChevronDown, Eye, Pencil, Plus, Search, Trash2, X } from "lucide-react";
+import {
+  ChevronDown,
+  Eye,
+  ListFilter,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+  X,
+} from "lucide-react";
 import {
   deleteCategoria,
   deleteProducto,
   saveCategoria,
   saveProducto,
 } from "@/lib/actions/admin-actions";
+import { refreshInventarioData } from "@/lib/actions/inventario-actions";
+import { createAnonClient } from "@/lib/supabase/anon";
 import type {
   InventarioCategoriaRow,
   InventarioProductoRow,
@@ -115,14 +133,131 @@ function formatUbicacionProducto(
   return base;
 }
 
+/** Firma liviana: solo se considera “cambio” si afecta listado o totales. */
+function inventarioFingerprint(
+  categorias: InventarioCategoriaRow[],
+  productos: InventarioProductoRow[],
+): string {
+  const cats = categorias
+    .map((c) => `${c.id}:${c.nombre}:${Number(c.activo)}:${c.orden}`)
+    .join("|");
+  const prods = productos
+    .map(
+      (p) =>
+        `${p.id}:${p.stock}:${p.costo}:${p.precio}:${p.nombre}:${p.categoria_id}:${p.ubicacion ?? ""}:${p.gaveta ?? ""}:${p.imagen_url ?? ""}:${Number(p.activo)}`,
+    )
+    .join("|");
+  return `${cats}#${prods}`;
+}
+
+type StockPreset = "all" | "bajo" | "sin" | "con";
+
+const STOCK_PRESETS: {
+  value: StockPreset;
+  label: string;
+  hint: string;
+}[] = [
+  { value: "all", label: "Todos", hint: "Sin filtro de cantidad" },
+  { value: "bajo", label: "Casi no hay", hint: "Quedan pocas unidades" },
+  { value: "sin", label: "No hay", hint: "Cero unidades" },
+  { value: "con", label: "Sí hay", hint: "Al menos una unidad" },
+];
+
+function parseOptionalMiles(raw: string): number | null {
+  const digits = raw.replace(/\D/g, "");
+  if (!digits) return null;
+  const n = Number(digits);
+  return Number.isFinite(n) ? n : null;
+}
+
+function inInclusiveRange(
+  value: number,
+  min: number | null,
+  max: number | null,
+): boolean {
+  if (min != null && value < min) return false;
+  if (max != null && value > max) return false;
+  return true;
+}
+
+function SimpleRangeRow({
+  idPrefix,
+  question,
+  tip,
+  min,
+  max,
+  onMinChange,
+  onMaxChange,
+  inputMode = "numeric",
+  minPlaceholder,
+  maxPlaceholder,
+}: {
+  idPrefix: string;
+  question: string;
+  tip: string;
+  min: string;
+  max: string;
+  onMinChange: (value: string) => void;
+  onMaxChange: (value: string) => void;
+  inputMode?: "numeric" | "decimal";
+  minPlaceholder: string;
+  maxPlaceholder: string;
+}) {
+  const minId = `${idPrefix}-desde`;
+  const maxId = `${idPrefix}-hasta`;
+  const tipId = `${idPrefix}-tip`;
+  return (
+    <fieldset className="min-w-0 rounded-lg border border-border bg-background p-3">
+      <legend className="px-1 text-sm font-medium text-foreground">
+        {question}
+      </legend>
+      <p id={tipId} className="mb-3 text-xs text-muted-foreground">
+        {tip}
+      </p>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor={minId}>Desde</Label>
+          <Input
+            id={minId}
+            value={min}
+            onChange={(e) => onMinChange(e.target.value)}
+            placeholder={minPlaceholder}
+            className="min-h-11"
+            inputMode={inputMode}
+            autoComplete="off"
+            spellCheck={false}
+            aria-describedby={tipId}
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor={maxId}>Hasta</Label>
+          <Input
+            id={maxId}
+            value={max}
+            onChange={(e) => onMaxChange(e.target.value)}
+            placeholder={maxPlaceholder}
+            className="min-h-11"
+            inputMode={inputMode}
+            autoComplete="off"
+            spellCheck={false}
+            aria-describedby={tipId}
+          />
+        </div>
+      </div>
+    </fieldset>
+  );
+}
+
 export function InventarioManager({
-  categorias,
-  productos,
+  categorias: categoriasInitial,
+  productos: productosInitial,
 }: {
   categorias: InventarioCategoriaRow[];
   productos: InventarioProductoRow[];
 }) {
   const router = useRouter();
+  const [categorias, setCategorias] = useState(categoriasInitial);
+  const [productos, setProductos] = useState(productosInitial);
   const [catOpen, setCatOpen] = useState(false);
   const [prodOpen, setProdOpen] = useState(false);
   const [editingCat, setEditingCat] = useState<InventarioCategoriaRow | null>(
@@ -140,7 +275,109 @@ export function InventarioManager({
   const [novedadesProd, setNovedadesProd] =
     useState<InventarioProductoRow | null>(null);
   const [nombreQuery, setNombreQuery] = useState("");
+  const [filtrosOpen, setFiltrosOpen] = useState(false);
+  const [numerosOpen, setNumerosOpen] = useState(false);
+  const [categoriaFiltro, setCategoriaFiltro] = useState("all");
+  const [ubicacionFiltro, setUbicacionFiltro] = useState("all");
+  const [stockPreset, setStockPreset] = useState<StockPreset>("all");
+  const [stockMin, setStockMin] = useState("");
+  const [stockMax, setStockMax] = useState("");
+  const [costoMin, setCostoMin] = useState("");
+  const [costoMax, setCostoMax] = useState("");
+  const [precioMin, setPrecioMin] = useState("");
+  const [precioMax, setPrecioMax] = useState("");
   const [pending, startTransition] = useTransition();
+  const refreshDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshingRef = useRef(false);
+  const pendingRefreshRef = useRef(false);
+  const fingerprintRef = useRef(
+    inventarioFingerprint(categoriasInitial, productosInitial),
+  );
+
+  useEffect(() => {
+    const next = inventarioFingerprint(categoriasInitial, productosInitial);
+    if (next === fingerprintRef.current) return;
+    fingerprintRef.current = next;
+    setCategorias(categoriasInitial);
+    setProductos(productosInitial);
+  }, [categoriasInitial, productosInitial]);
+
+  const applyInventarioData = useCallback(
+    (data: {
+      categorias: InventarioCategoriaRow[];
+      productos: InventarioProductoRow[];
+    }) => {
+      const next = inventarioFingerprint(data.categorias, data.productos);
+      if (next === fingerprintRef.current) return;
+      fingerprintRef.current = next;
+      setCategorias(data.categorias);
+      setProductos(data.productos);
+    },
+    [],
+  );
+
+  const refreshInventarioLive = useCallback(
+    (immediate = false) => {
+      if (refreshDebounceRef.current) clearTimeout(refreshDebounceRef.current);
+
+      const run = () => {
+        if (refreshingRef.current) {
+          pendingRefreshRef.current = true;
+          return;
+        }
+        refreshingRef.current = true;
+        void refreshInventarioData()
+          .then(applyInventarioData)
+          .catch(() => undefined)
+          .finally(() => {
+            refreshingRef.current = false;
+            if (pendingRefreshRef.current) {
+              pendingRefreshRef.current = false;
+              run();
+            }
+          });
+      };
+
+      if (immediate) {
+        run();
+        return;
+      }
+      refreshDebounceRef.current = setTimeout(run, 300);
+    },
+    [applyInventarioData],
+  );
+
+  // Solo socket (Supabase Realtime): sin polling periódico.
+  useEffect(() => {
+    const supabase = createAnonClient();
+    const channel = supabase
+      .channel("inventario_live")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "inventario_productos" },
+        () => refreshInventarioLive(),
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "inventario_categorias" },
+        () => refreshInventarioLive(),
+      );
+
+    void channel.subscribe();
+
+    return () => {
+      if (refreshDebounceRef.current) clearTimeout(refreshDebounceRef.current);
+      void supabase.removeChannel(channel);
+    };
+  }, [refreshInventarioLive]);
+
+  const categoriasActivas = useMemo(
+    () =>
+      [...categorias]
+        .filter((c) => c.activo)
+        .sort((a, b) => a.orden - b.orden || a.nombre.localeCompare(b.nombre)),
+    [categorias],
+  );
 
   const productosIndex = useMemo(
     () =>
@@ -151,25 +388,197 @@ export function InventarioManager({
     [productos],
   );
 
+  const filtrosAvanzadosActivos = useMemo(() => {
+    let n = 0;
+    if (categoriaFiltro !== "all") n += 1;
+    if (ubicacionFiltro !== "all") n += 1;
+    if (stockPreset !== "all") n += 1;
+    if (stockMin.trim() || stockMax.trim()) n += 1;
+    if (costoMin.trim() || costoMax.trim()) n += 1;
+    if (precioMin.trim() || precioMax.trim()) n += 1;
+    return n;
+  }, [
+    categoriaFiltro,
+    ubicacionFiltro,
+    stockPreset,
+    stockMin,
+    stockMax,
+    costoMin,
+    costoMax,
+    precioMin,
+    precioMax,
+  ]);
+
+  const hayFiltros =
+    Boolean(nombreQuery.trim()) || filtrosAvanzadosActivos > 0;
+
   const productosFiltrados = useMemo(() => {
     const q = normalizeSearch(nombreQuery.trim());
-    if (!q) return productos;
-    const terms = q.split(/\s+/).filter(Boolean);
-    return productosIndex
-      .filter(({ haystack }) => terms.every((term) => haystack.includes(term)))
-      .map(({ producto }) => producto);
-  }, [nombreQuery, productos, productosIndex]);
+    const terms = q ? q.split(/\s+/).filter(Boolean) : [];
+    const sMin = parseOptionalMiles(stockMin);
+    const sMax = parseOptionalMiles(stockMax);
+    const cMin = parseOptionalMiles(costoMin);
+    const cMax = parseOptionalMiles(costoMax);
+    const pMin = parseOptionalMiles(precioMin);
+    const pMax = parseOptionalMiles(precioMax);
+    const categoriaId =
+      categoriaFiltro === "all" ? null : Number(categoriaFiltro);
 
-  const { secondsAgo } = usePollingRefresh({
-    intervalMs: 30_000,
-    enabled:
-      !catOpen &&
-      !prodOpen &&
-      !photoPreview &&
-      !deletingProd &&
-      !novedadesProd &&
-      !pending,
-  });
+    return productosIndex
+      .filter(({ producto, haystack }) => {
+        if (
+          terms.length > 0 &&
+          !terms.every((term) => haystack.includes(term))
+        ) {
+          return false;
+        }
+        if (categoriaId != null && producto.categoria_id !== categoriaId) {
+          return false;
+        }
+        if (
+          ubicacionFiltro !== "all" &&
+          (producto.ubicacion ?? "Soluciones") !== ubicacionFiltro
+        ) {
+          return false;
+        }
+        if (stockPreset === "sin" && producto.stock !== 0) return false;
+        if (stockPreset === "con" && producto.stock <= 0) return false;
+        if (
+          stockPreset === "bajo" &&
+          producto.stock > producto.stock_minimo
+        ) {
+          return false;
+        }
+        if (!inInclusiveRange(producto.stock, sMin, sMax)) return false;
+        if (!inInclusiveRange(producto.costo, cMin, cMax)) return false;
+        if (!inInclusiveRange(producto.precio, pMin, pMax)) return false;
+        return true;
+      })
+      .map(({ producto }) => producto);
+  }, [
+    nombreQuery,
+    productosIndex,
+    categoriaFiltro,
+    ubicacionFiltro,
+    stockPreset,
+    stockMin,
+    stockMax,
+    costoMin,
+    costoMax,
+    precioMin,
+    precioMax,
+  ]);
+
+  function clearFiltrosAvanzados() {
+    setCategoriaFiltro("all");
+    setUbicacionFiltro("all");
+    setStockPreset("all");
+    setStockMin("");
+    setStockMax("");
+    setCostoMin("");
+    setCostoMax("");
+    setPrecioMin("");
+    setPrecioMax("");
+    setNumerosOpen(false);
+  }
+
+  function clearTodosLosFiltros() {
+    setNombreQuery("");
+    clearFiltrosAvanzados();
+  }
+
+  const hayRangosNumericos =
+    Boolean(stockMin.trim() || stockMax.trim()) ||
+    Boolean(costoMin.trim() || costoMax.trim()) ||
+    Boolean(precioMin.trim() || precioMax.trim());
+
+  const filtrosActivosChips = useMemo(() => {
+    const chips: { key: string; label: string; onClear: () => void }[] = [];
+    if (nombreQuery.trim()) {
+      chips.push({
+        key: "nombre",
+        label: `Nombre: ${nombreQuery.trim()}`,
+        onClear: () => setNombreQuery(""),
+      });
+    }
+    if (stockPreset !== "all") {
+      const preset = STOCK_PRESETS.find((p) => p.value === stockPreset);
+      chips.push({
+        key: "stock",
+        label: preset?.label ?? "Cantidad",
+        onClear: () => setStockPreset("all"),
+      });
+    }
+    if (categoriaFiltro !== "all") {
+      const cat = categorias.find((c) => String(c.id) === categoriaFiltro);
+      chips.push({
+        key: "categoria",
+        label: `Tipo: ${cat?.nombre ?? "categoría"}`,
+        onClear: () => setCategoriaFiltro("all"),
+      });
+    }
+    if (ubicacionFiltro !== "all") {
+      chips.push({
+        key: "ubicacion",
+        label: `Lugar: ${ubicacionFiltro}`,
+        onClear: () => setUbicacionFiltro("all"),
+      });
+    }
+    if (stockMin.trim() || stockMax.trim()) {
+      chips.push({
+        key: "stock-rango",
+        label: `Unidades ${stockMin || "…"} a ${stockMax || "…"}`,
+        onClear: () => {
+          setStockMin("");
+          setStockMax("");
+        },
+      });
+    }
+    if (costoMin.trim() || costoMax.trim()) {
+      chips.push({
+        key: "costo",
+        label: `Costo ${costoMin || "…"} a ${costoMax || "…"}`,
+        onClear: () => {
+          setCostoMin("");
+          setCostoMax("");
+        },
+      });
+    }
+    if (precioMin.trim() || precioMax.trim()) {
+      chips.push({
+        key: "precio",
+        label: `Venta ${precioMin || "…"} a ${precioMax || "…"}`,
+        onClear: () => {
+          setPrecioMin("");
+          setPrecioMax("");
+        },
+      });
+    }
+    return chips;
+  }, [
+    nombreQuery,
+    stockPreset,
+    categoriaFiltro,
+    ubicacionFiltro,
+    stockMin,
+    stockMax,
+    costoMin,
+    costoMax,
+    precioMin,
+    precioMax,
+    categorias,
+  ]);
+
+  const valorInventario = useMemo(() => {
+    let costo = 0;
+    let venta = 0;
+    for (const p of productos) {
+      const qty = p.stock > 0 ? p.stock : 0;
+      costo += qty * p.costo;
+      venta += qty * p.precio;
+    }
+    return { costo, venta };
+  }, [productos]);
 
   function openPhoto(p: InventarioProductoRow) {
     const img = getStoragePublicUrl(
@@ -185,9 +594,23 @@ export function InventarioManager({
 
   return (
     <div className="flex flex-col gap-2">
-      <p className="text-xs text-muted-foreground">
-        Inventario actualizado hace {secondsAgo}s
-      </p>
+      <div
+        className="ml-auto text-right tabular-nums"
+        aria-label="Valor total del inventario"
+      >
+        <p className="text-xs text-muted-foreground">
+          Costo{" "}
+          <span className="font-medium text-foreground">
+            {formatCop(valorInventario.costo)}
+          </span>
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Venta{" "}
+          <span className="font-medium text-foreground">
+            {formatCop(valorInventario.venta)}
+          </span>
+        </p>
+      </div>
       <Tabs defaultValue="productos">
         <TabsList className="w-full max-w-full overflow-x-auto">
           <TabsTrigger value="productos">Productos</TabsTrigger>
@@ -200,7 +623,10 @@ export function InventarioManager({
               <label htmlFor="inventario-buscar-nombre" className="sr-only">
                 Buscar producto por nombre
               </label>
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Search
+                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden="true"
+              />
               <Input
                 id="inventario-buscar-nombre"
                 value={nombreQuery}
@@ -227,29 +653,255 @@ export function InventarioManager({
                   aria-label="Borrar búsqueda"
                   onClick={() => setNombreQuery("")}
                 >
-                  <X />
+                  <X aria-hidden="true" />
                 </Button>
               ) : null}
             </div>
-            <Button
-              className="shrink-0"
-              onClick={() => {
-                setEditingProd(null);
-                setProdOpen(true);
-              }}
-            >
-              <Plus data-icon="inline-start" />
-              Nuevo producto
-            </Button>
+            <div className="flex shrink-0 flex-wrap gap-2">
+              <Button
+                type="button"
+                variant={filtrosOpen || filtrosAvanzadosActivos > 0 ? "default" : "outline"}
+                className="min-h-11"
+                aria-expanded={filtrosOpen}
+                aria-controls="inventario-filtros-avanzados"
+                onClick={() => setFiltrosOpen((open) => !open)}
+              >
+                <ListFilter data-icon="inline-start" aria-hidden="true" />
+                {filtrosOpen ? "Ocultar filtros" : "Filtrar"}
+                {filtrosAvanzadosActivos > 0 ? (
+                  <Badge
+                    variant="secondary"
+                    className="ml-1 tabular-nums"
+                  >
+                    {filtrosAvanzadosActivos}
+                    <span className="sr-only"> activos</span>
+                  </Badge>
+                ) : null}
+              </Button>
+              <Button
+                className="min-h-11"
+                onClick={() => {
+                  setEditingProd(null);
+                  setProdOpen(true);
+                }}
+              >
+                <Plus data-icon="inline-start" aria-hidden="true" />
+                Nuevo producto
+              </Button>
+            </div>
           </div>
-          <p className="sr-only" role="status">
-            {nombreQuery.trim()
-              ? `${productosFiltrados.length} ${
-                  productosFiltrados.length === 1
-                    ? "producto encontrado"
-                    : "productos encontrados"
-                }`
-              : ""}
+
+          {filtrosActivosChips.length > 0 ? (
+            <div className="flex flex-col gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-sm text-muted-foreground">Estás viendo:</p>
+                {filtrosActivosChips.map((chip) => (
+                  <Button
+                    key={chip.key}
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    className="min-h-11 max-w-full gap-1.5"
+                    onClick={chip.onClear}
+                    aria-label={`Quitar filtro ${chip.label}`}
+                  >
+                    <span className="truncate">{chip.label}</span>
+                    <X className="size-3.5 shrink-0" aria-hidden="true" />
+                  </Button>
+                ))}
+                {filtrosActivosChips.length > 1 ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="min-h-11"
+                    onClick={clearTodosLosFiltros}
+                  >
+                    Quitar todo
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+
+          <div
+            id="inventario-filtros-avanzados"
+            hidden={!filtrosOpen}
+            className="flex flex-col gap-5 rounded-xl border border-border bg-background p-4"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="text-base font-semibold text-foreground">
+                  Mostrar solo…
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  Elige una opción. Si no sabes, deja “Todos”.
+                </p>
+              </div>
+              {filtrosAvanzadosActivos > 0 ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="min-h-11"
+                  onClick={clearFiltrosAvanzados}
+                >
+                  Quitar filtros
+                </Button>
+              ) : null}
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <p
+                id="inventario-filtro-stock-label"
+                className="text-sm font-medium text-foreground"
+              >
+                1. ¿Cuántos quedan?
+              </p>
+              <div
+                role="group"
+                aria-labelledby="inventario-filtro-stock-label"
+                className="grid grid-cols-2 gap-2 sm:grid-cols-4"
+              >
+                {STOCK_PRESETS.map((preset) => {
+                  const pressed = stockPreset === preset.value;
+                  return (
+                    <Button
+                      key={preset.value}
+                      type="button"
+                      variant={pressed ? "default" : "outline"}
+                      className="min-h-12 flex-col gap-0.5 px-2 py-2 text-sm whitespace-normal"
+                      aria-pressed={pressed}
+                      title={preset.hint}
+                      onClick={() => setStockPreset(preset.value)}
+                    >
+                      <span>{preset.label}</span>
+                    </Button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="flex flex-col gap-2">
+                <Label
+                  htmlFor="inventario-filtro-categoria"
+                  className="text-sm font-medium text-foreground"
+                >
+                  2. ¿Qué tipo de producto?
+                </Label>
+                <TouchSelect
+                  id="inventario-filtro-categoria"
+                  aria-label="Qué tipo de producto"
+                  value={categoriaFiltro}
+                  onChange={setCategoriaFiltro}
+                  options={[
+                    { value: "all", label: "Todos los tipos" },
+                    ...categoriasActivas.map((c) => ({
+                      value: String(c.id),
+                      label: c.nombre,
+                    })),
+                  ]}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label
+                  htmlFor="inventario-filtro-ubicacion"
+                  className="text-sm font-medium text-foreground"
+                >
+                  3. ¿Dónde está?
+                </Label>
+                <TouchSelect
+                  id="inventario-filtro-ubicacion"
+                  aria-label="Dónde está el producto"
+                  value={ubicacionFiltro}
+                  onChange={setUbicacionFiltro}
+                  options={[
+                    { value: "all", label: "En cualquier lugar" },
+                    ...INVENTARIO_UBICACIONES.map((u) => ({
+                      value: u,
+                      label: u,
+                    })),
+                  ]}
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-3 border-t border-border pt-4">
+              <Button
+                type="button"
+                variant="ghost"
+                className="min-h-11 justify-between px-0 hover:bg-transparent"
+                aria-expanded={numerosOpen}
+                aria-controls="inventario-filtros-numeros"
+                onClick={() => setNumerosOpen((open) => !open)}
+              >
+                <span className="text-left text-sm font-medium">
+                  {numerosOpen
+                    ? "Ocultar cantidad y precios"
+                    : "También filtrar por cantidad o precios"}
+                  {hayRangosNumericos && !numerosOpen ? (
+                    <span className="ml-1 text-muted-foreground">(activos)</span>
+                  ) : null}
+                </span>
+                <ChevronDown
+                  className={`size-4 shrink-0 transition-transform ${
+                    numerosOpen ? "rotate-180" : ""
+                  }`}
+                  aria-hidden="true"
+                />
+              </Button>
+
+              <div
+                id="inventario-filtros-numeros"
+                hidden={!numerosOpen}
+                className="flex flex-col gap-3"
+              >
+                <p className="text-sm text-muted-foreground">
+                  Solo si lo necesitas. Si no, déjalos vacíos.
+                </p>
+                <SimpleRangeRow
+                  idPrefix="inventario-filtro-cantidad"
+                  question="¿Cuántas unidades?"
+                  tip="Ejemplo: desde 1 hasta 5"
+                  min={stockMin}
+                  max={stockMax}
+                  onMinChange={(v) => setStockMin(v.replace(/\D/g, ""))}
+                  onMaxChange={(v) => setStockMax(v.replace(/\D/g, ""))}
+                  minPlaceholder="Ej. 1"
+                  maxPlaceholder="Ej. 5"
+                />
+                <SimpleRangeRow
+                  idPrefix="inventario-filtro-costo"
+                  question="¿Cuánto te costó?"
+                  tip="En pesos. Déjalos vacíos si no importa."
+                  min={costoMin}
+                  max={costoMax}
+                  onMinChange={(v) => setCostoMin(formatMilesInput(v))}
+                  onMaxChange={(v) => setCostoMax(formatMilesInput(v))}
+                  inputMode="decimal"
+                  minPlaceholder="Ej. 10.000"
+                  maxPlaceholder="Ej. 50.000"
+                />
+                <SimpleRangeRow
+                  idPrefix="inventario-filtro-precio"
+                  question="¿A cuánto lo vendes?"
+                  tip="En pesos. Déjalos vacíos si no importa."
+                  min={precioMin}
+                  max={precioMax}
+                  onMinChange={(v) => setPrecioMin(formatMilesInput(v))}
+                  onMaxChange={(v) => setPrecioMax(formatMilesInput(v))}
+                  inputMode="decimal"
+                  minPlaceholder="Ej. 20.000"
+                  maxPlaceholder="Ej. 80.000"
+                />
+              </div>
+            </div>
+          </div>
+
+          <p className="text-sm text-muted-foreground" role="status">
+            {hayFiltros
+              ? `Quedan ${productosFiltrados.length} de ${productos.length} productos`
+              : `${productos.length} productos`}
           </p>
           {productos.length === 0 ? (
             <Empty className="border border-dashed border-border">
@@ -263,10 +915,17 @@ export function InventarioManager({
           ) : productosFiltrados.length === 0 ? (
             <Empty className="border border-dashed border-border">
               <EmptyHeader>
-                <EmptyTitle>Ningún producto coincide</EmptyTitle>
+                <EmptyTitle>No aparece nada</EmptyTitle>
                 <EmptyDescription>
-                  No hay productos con ese nombre. Prueba otra búsqueda o
-                  bórrala para ver todo el inventario.
+                  Con lo que elegiste no hay productos.{" "}
+                  <button
+                    type="button"
+                    className="font-medium text-foreground underline underline-offset-2 focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                    onClick={clearTodosLosFiltros}
+                  >
+                    Quitar todos los filtros
+                  </button>
+                  .
                 </EmptyDescription>
               </EmptyHeader>
             </Empty>
@@ -582,6 +1241,7 @@ export function InventarioManager({
                                     try {
                                       await deleteCategoria(c.id);
                                       toast.success("Categoría eliminada.");
+                                      refreshInventarioLive(true);
                                       router.refresh();
                                     } catch (e) {
                                       toast.error(
@@ -663,6 +1323,7 @@ export function InventarioManager({
                               try {
                                 await deleteCategoria(c.id);
                                 toast.success("Categoría eliminada.");
+                                refreshInventarioLive(true);
                                 router.refresh();
                               } catch (e) {
                                 toast.error(
@@ -697,6 +1358,7 @@ export function InventarioManager({
                 toast.success(
                   editingCat ? "Categoría actualizada." : "Categoría creada.",
                 );
+                refreshInventarioLive(true);
                 router.refresh();
                 setCatOpen(false);
               } catch (e) {
@@ -729,6 +1391,7 @@ export function InventarioManager({
                 toast.success(
                   editingProd ? "Producto actualizado." : "Producto creado.",
                 );
+                refreshInventarioLive(true);
                 router.refresh();
                 setProdOpen(false);
               } catch (e) {
@@ -775,6 +1438,7 @@ export function InventarioManager({
                 await deleteProducto(form);
                 toast.success("Producto eliminado.");
                 setDeletingProd(null);
+                refreshInventarioLive(true);
                 router.refresh();
               } catch (e) {
                 toast.error(

@@ -180,6 +180,7 @@ export interface UserMotoCompraRow {
   admin_data?: {
     entrega_antes_visita?: boolean;
     cobra_cuota_adelantada?: boolean;
+    condicion?: "nueva" | "segunda_mano" | "recuperada";
   };
 }
 

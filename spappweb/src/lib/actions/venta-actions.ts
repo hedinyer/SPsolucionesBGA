@@ -19,5 +19,5 @@ export async function searchProductosVenta(
   q: string,
 ): Promise<InventarioProductoRow[]> {
   await requireAdminSession();
-  return searchProductos(q);
+  return searchProductos(q, 20);
 }
