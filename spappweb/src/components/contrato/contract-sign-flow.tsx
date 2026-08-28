@@ -156,6 +156,7 @@ export function ContractSignFlow({
     nombreContratante: nombre,
     cedulaContratante: cedula,
     tipoDocumentoContratante: prefill.tipoDocumento || "C.C.",
+    celularContratante: resumen.celular,
     direccionNotificaciones: direccion,
     ciudadContratante: ciudad,
     departamentoContratante: departamento,
