@@ -462,6 +462,7 @@ export async function abrirCaja(input: z.infer<typeof aperturaSchema>) {
   if (error || !data) throw new Error(error?.message ?? "No se pudo abrir la caja.");
 
   revalidatePath("/caja");
+  revalidatePath("/venta");
   return getCajaSesionHoy();
 }
 
@@ -513,6 +514,7 @@ export async function cerrarCaja(input: z.infer<typeof cierreSchema>) {
   if (error) throw new Error(error.message);
 
   revalidatePath("/caja");
+  revalidatePath("/venta");
 
   const state = await getCajaSesionHoy();
   return {

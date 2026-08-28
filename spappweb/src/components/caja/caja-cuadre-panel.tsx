@@ -10,10 +10,14 @@ import {
 import { toast } from "sonner";
 import {
   abrirCaja,
-  cerrarCaja,
   registrarMovimientoCaja,
   type CajaSesionState,
 } from "@/lib/actions/caja-actions";
+import {
+  CajaArqueoDialog,
+  CajaCerrarDialog,
+  CuadreEfectivo,
+} from "@/components/caja/caja-cerrar-dialog";
 import { CajaInformePanel } from "@/components/caja/caja-informe-panel";
 import { CajaPagosPanel } from "@/components/caja/caja-pagos-panel";
 import { CajaVisitasPanel } from "@/components/caja/caja-visitas-panel";
@@ -30,12 +34,6 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -43,47 +41,6 @@ import { Textarea } from "@/components/ui/textarea";
 function parseCopInput(raw: string): number | undefined {
   const n = Number(raw.replace(/\D/g, ""));
   return Number.isFinite(n) && n >= 0 ? n : undefined;
-}
-
-function CuadreEfectivo({ sesion }: { sesion: CajaSesionState }) {
-  return (
-    <div className="flex flex-col gap-2 rounded-lg border border-border bg-muted/50 p-3">
-      <div className="flex items-center justify-between text-sm font-semibold">
-        <span>¿Cuánto debería haber?</span>
-        <span className="tabular-nums">{formatCop(sesion.efectivoEsperado)}</span>
-      </div>
-      {sesion.montoCierre != null && sesion.diferencia != null ? (
-        <>
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">Lo que contaste</span>
-            <span className="font-medium tabular-nums">
-              {formatCop(sesion.montoCierre)}
-            </span>
-          </div>
-          <div
-            className={`flex items-center justify-between text-sm font-semibold ${
-              sesion.diferencia === 0
-                ? "text-green-700"
-                : sesion.diferencia < 0
-                  ? "text-destructive"
-                  : "text-amber-700"
-            }`}
-          >
-            <span>
-              {sesion.diferencia === 0
-                ? "Cuadra exacto"
-                : sesion.diferencia < 0
-                  ? "Falta"
-                  : "Sobra"}
-            </span>
-            <span className="tabular-nums">
-              {formatCop(Math.abs(sesion.diferencia))}
-            </span>
-          </div>
-        </>
-      ) : null}
-    </div>
-  );
 }
 
 export function CajaCuadrePanel({
@@ -94,12 +51,11 @@ export function CajaCuadrePanel({
   const [sesion, setSesion] = useState(initialSesion);
   const [montoApertura, setMontoApertura] = useState("");
   const [notasApertura, setNotasApertura] = useState("");
-  const [montoCierre, setMontoCierre] = useState("");
-  const [notasCierre, setNotasCierre] = useState("");
   const [movTipo, setMovTipo] = useState<"entrada" | "salida">("entrada");
   const [movMonto, setMovMonto] = useState("");
   const [movConcepto, setMovConcepto] = useState("");
-  const [informeOpen, setInformeOpen] = useState(false);
+  const [arqueoOpen, setArqueoOpen] = useState(false);
+  const [cerrarOpen, setCerrarOpen] = useState(false);
   const [confirmAbrirOpen, setConfirmAbrirOpen] = useState(false);
   const [pending, startTransition] = useTransition();
 
@@ -113,11 +69,6 @@ export function CajaCuadrePanel({
   );
 
   const puedeAbrir = montoAperturaNum != null && montoAperturaNum > 0;
-
-  const puedeCerrar = useMemo(
-    () => sesion?.abierta && parseCopInput(montoCierre) != null,
-    [sesion, montoCierre],
-  );
 
   function requestAbrir() {
     if (montoAperturaNum == null || montoAperturaNum <= 0) {
@@ -147,41 +98,6 @@ export function CajaCuadrePanel({
       } catch (err) {
         toast.error(
           err instanceof Error ? err.message : "No se pudo abrir la caja.",
-        );
-      }
-    });
-  }
-
-  function handleCerrar() {
-    if (!sesion) return;
-    const monto = parseCopInput(montoCierre);
-    if (monto == null) {
-      toast.error("Indica cuánto efectivo hay en caja.");
-      return;
-    }
-    startTransition(async () => {
-      try {
-        const { state, diferencia } = await cerrarCaja({
-          sesionId: sesion.id,
-          montoCierre: monto,
-          notas: notasCierre.trim() || undefined,
-        });
-        setSesion(state);
-        setMontoCierre("");
-        setNotasCierre("");
-        setInformeOpen(true);
-        if (diferencia === 0) {
-          toast.success("Caja cerrada. Cuadre exacto.");
-        } else if (diferencia < 0) {
-          toast.warning(
-            `Caja cerrada. Faltante: ${formatCop(Math.abs(diferencia))}.`,
-          );
-        } else {
-          toast.warning(`Caja cerrada. Sobrante: ${formatCop(diferencia)}.`);
-        }
-      } catch (err) {
-        toast.error(
-          err instanceof Error ? err.message : "No se pudo cerrar la caja.",
         );
       }
     });
@@ -223,51 +139,69 @@ export function CajaCuadrePanel({
   }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-3 rounded-xl border border-border bg-background p-4">
-        <div className="min-w-0">
-          <h2 className="flex flex-wrap items-center gap-2 text-base font-semibold text-foreground">
-            Dinero del día
-            {sesion ? (
-              sesion.abierta ? (
-                <Badge
-                  variant="outline"
-                  className="border-green-300 text-green-700"
-                >
-                  <Unlock className="mr-1 h-3 w-3" aria-hidden="true" />
-                  Abierta
-                </Badge>
+    <div className="flex flex-col gap-8">
+      <section
+        className="flex flex-col gap-4 rounded-2xl border border-border bg-background p-4 shadow-sm sm:p-5"
+        aria-labelledby="caja-dinero-titulo"
+      >
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2
+              id="caja-dinero-titulo"
+              className="flex flex-wrap items-center gap-2 text-lg font-semibold tracking-tight text-foreground"
+            >
+              Dinero del día
+              {sesion ? (
+                sesion.abierta ? (
+                  <Badge
+                    variant="outline"
+                    className="border-green-300 text-green-700"
+                  >
+                    <Unlock className="mr-1 h-3 w-3" aria-hidden="true" />
+                    Abierta
+                  </Badge>
+                ) : (
+                  <Badge
+                    variant="outline"
+                    className="border-border text-muted-foreground"
+                  >
+                    <Lock className="mr-1 h-3 w-3" aria-hidden="true" />
+                    Cerrada
+                  </Badge>
+                )
               ) : (
                 <Badge
                   variant="outline"
-                  className="border-border text-muted-foreground"
+                  className="border-amber-300 text-amber-700"
                 >
-                  <Lock className="mr-1 h-3 w-3" aria-hidden="true" />
-                  Cerrada
+                  Sin abrir
                 </Badge>
-              )
-            ) : (
-              <Badge
-                variant="outline"
-                className="border-amber-300 text-amber-700"
-              >
-                Sin abrir
-              </Badge>
-            )}
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            {sesion
-              ? `Apertura: ${formatDate(sesion.openedAt)}${
-                  sesion.closedAt
-                    ? ` · Cierre: ${formatDate(sesion.closedAt)}`
-                    : ""
-                }`
-              : "Cuenta el efectivo y abre la caja para empezar el día."}
-          </p>
+              )}
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground text-pretty">
+              {sesion
+                ? `Apertura: ${formatDate(sesion.openedAt)}${
+                    sesion.closedAt
+                      ? ` · Cierre: ${formatDate(sesion.closedAt)}`
+                      : ""
+                  }`
+                : "Cuenta el efectivo y abre la caja para empezar el día."}
+            </p>
+          </div>
+          {sesion?.abierta ? (
+            <div className="rounded-xl border border-border bg-muted/30 px-4 py-3 text-right">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Esperado en caja
+              </p>
+              <p className="text-2xl font-bold tabular-nums tracking-tight">
+                {formatCop(sesion.efectivoEsperado)}
+              </p>
+            </div>
+          ) : null}
         </div>
 
         {!sesion ? (
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-3 rounded-xl border border-dashed border-amber-300/70 bg-amber-50/60 p-4">
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="flex flex-col gap-2">
                 <Label htmlFor="caja-apertura-monto">
@@ -275,7 +209,7 @@ export function CajaCuadrePanel({
                 </Label>
                 <Input
                   id="caja-apertura-monto"
-                  className="min-h-11"
+                  className="min-h-11 bg-background"
                   inputMode="numeric"
                   placeholder="Ej. 200.000"
                   value={montoApertura}
@@ -287,6 +221,7 @@ export function CajaCuadrePanel({
                 <Textarea
                   id="caja-apertura-notas"
                   rows={2}
+                  className="bg-background"
                   value={notasApertura}
                   onChange={(e) => setNotasApertura(e.target.value)}
                 />
@@ -294,7 +229,7 @@ export function CajaCuadrePanel({
             </div>
             <Button
               type="button"
-              className="min-h-11 gap-2"
+              className="min-h-11 gap-2 active:scale-[0.96] motion-reduce:active:scale-100"
               disabled={!puedeAbrir || pending}
               onClick={requestAbrir}
             >
@@ -305,7 +240,7 @@ export function CajaCuadrePanel({
         ) : (
           <CuadreEfectivo sesion={sesion} />
         )}
-      </div>
+      </section>
 
       {sesion ? (
         <>
@@ -316,7 +251,7 @@ export function CajaCuadrePanel({
             <div>
               <h3
                 id="caja-resumen-titulo"
-                className="text-sm font-semibold text-foreground"
+                className="text-base font-semibold text-foreground"
               >
                 Resumen
               </h3>
@@ -324,112 +259,116 @@ export function CajaCuadrePanel({
                 Cómo va el dinero del día.
               </p>
             </div>
-            <CajaInformePanel
-              informe={sesion.informe}
-              visitasResumen={sesion.visitasResumen}
-              title={sesion.abierta ? "Vista previa" : "Informe de cierre"}
-            />
+            <div className="rounded-2xl border border-border bg-background p-4 shadow-sm">
+              <CajaInformePanel
+                informe={sesion.informe}
+                visitasResumen={sesion.visitasResumen}
+                title={sesion.abierta ? "Vista previa" : "Informe de cierre"}
+              />
+            </div>
             {!sesion.abierta ? (
               <Button
                 type="button"
                 variant="outline"
                 className="min-h-11 w-fit"
-                onClick={() => setInformeOpen(true)}
+                onClick={() => setArqueoOpen(true)}
               >
-                Ver informe completo
+                Ver e imprimir arqueo
               </Button>
             ) : null}
           </section>
 
-          <section
-            className="flex flex-col gap-3"
-            aria-labelledby="caja-visitas-titulo"
-          >
-            <div>
-              <h3
-                id="caja-visitas-titulo"
-                className="text-sm font-semibold text-foreground"
-              >
-                Cobros de visitas
-              </h3>
-              <p className="text-sm text-muted-foreground">
-                Pagos que llegan por visitadores.
-              </p>
-            </div>
-            <CajaVisitasPanel sesion={sesion} onUpdated={setSesion} />
-          </section>
-
-          {sesion.abierta ? (
+          <div className="flex flex-col gap-8">
             <section
               className="flex flex-col gap-3"
-              aria-labelledby="caja-egresos-titulo"
+              aria-labelledby="caja-visitas-titulo"
             >
               <div>
                 <h3
-                  id="caja-egresos-titulo"
-                  className="text-sm font-semibold text-foreground"
+                  id="caja-visitas-titulo"
+                  className="text-base font-semibold text-foreground"
                 >
-                  Otros egresos
+                  Cobros de visitas
                 </h3>
                 <p className="text-sm text-muted-foreground">
-                  Gastos registrados fuera del cuadre manual.
+                  Pagos que llegan por visitadores.
                 </p>
               </div>
-              <CajaPagosPanel sesion={sesion} onUpdated={setSesion} />
+              <CajaVisitasPanel sesion={sesion} onUpdated={setSesion} />
             </section>
-          ) : null}
 
-          {sesion.movimientos.length > 0 ? (
-            <section
-              className="flex flex-col gap-2"
-              aria-labelledby="caja-movs-titulo"
-            >
-              <h3
-                id="caja-movs-titulo"
-                className="text-sm font-semibold text-foreground"
+            {sesion.abierta ? (
+              <section
+                className="flex flex-col gap-3"
+                aria-labelledby="caja-egresos-titulo"
               >
-                Movimientos del día
-              </h3>
-              <ul className="flex max-h-40 flex-col gap-1 overflow-y-auto text-sm">
-                {sesion.movimientos.map((m) => (
-                  <li
-                    key={m.id}
-                    className="flex items-center justify-between rounded-lg border border-border px-3 py-2"
+                <div>
+                  <h3
+                    id="caja-egresos-titulo"
+                    className="text-base font-semibold text-foreground"
                   >
-                    <span className="flex min-w-0 items-center gap-1.5 truncate">
-                      {m.tipo === "entrada" ? (
-                        <ArrowDownCircle
-                          className="h-3.5 w-3.5 shrink-0 text-green-600"
-                          aria-hidden="true"
-                        />
-                      ) : (
-                        <ArrowUpCircle
-                          className="h-3.5 w-3.5 shrink-0 text-destructive"
-                          aria-hidden="true"
-                        />
-                      )}
-                      {m.concepto}
-                    </span>
-                    <span className="shrink-0 font-medium tabular-nums">
-                      {m.tipo === "salida" ? "−" : "+"}
-                      {formatCop(m.monto)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ) : null}
+                    Otros egresos
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    Gastos registrados fuera del cuadre manual.
+                  </p>
+                </div>
+                <CajaPagosPanel sesion={sesion} onUpdated={setSesion} />
+              </section>
+            ) : null}
+
+            {sesion.movimientos.length > 0 ? (
+              <section
+                className="flex flex-col gap-2"
+                aria-labelledby="caja-movs-titulo"
+              >
+                <h3
+                  id="caja-movs-titulo"
+                  className="text-base font-semibold text-foreground"
+                >
+                  Movimientos del día
+                </h3>
+                <ul className="flex max-h-48 flex-col gap-1.5 overflow-y-auto rounded-2xl border border-border bg-background p-2">
+                  {sesion.movimientos.map((m) => (
+                    <li
+                      key={m.id}
+                      className="flex items-center justify-between rounded-lg px-3 py-2.5 text-sm hover:bg-muted/40"
+                    >
+                      <span className="flex min-w-0 items-center gap-1.5 truncate">
+                        {m.tipo === "entrada" ? (
+                          <ArrowDownCircle
+                            className="h-3.5 w-3.5 shrink-0 text-green-600"
+                            aria-hidden="true"
+                          />
+                        ) : (
+                          <ArrowUpCircle
+                            className="h-3.5 w-3.5 shrink-0 text-destructive"
+                            aria-hidden="true"
+                          />
+                        )}
+                        {m.concepto}
+                      </span>
+                      <span className="shrink-0 font-medium tabular-nums">
+                        {m.tipo === "salida" ? "−" : "+"}
+                        {formatCop(m.monto)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
+          </div>
 
           {sesion.abierta ? (
             <>
               <section
-                className="flex flex-col gap-3 rounded-xl border border-dashed border-border p-4"
+                className="flex flex-col gap-3 rounded-2xl border border-dashed border-border bg-muted/15 p-4 sm:p-5"
                 aria-labelledby="caja-meter-sacar-titulo"
               >
                 <div>
                   <h3
                     id="caja-meter-sacar-titulo"
-                    className="text-sm font-semibold text-foreground"
+                    className="text-base font-semibold text-foreground"
                   >
                     Meter o sacar plata
                   </h3>
@@ -466,7 +405,7 @@ export function CajaCuadrePanel({
                     <Label htmlFor="caja-mov-monto">¿Cuánto?</Label>
                     <Input
                       id="caja-mov-monto"
-                      className="min-h-11"
+                      className="min-h-11 bg-background"
                       inputMode="numeric"
                       value={movMonto}
                       onChange={(e) => setMovMonto(e.target.value)}
@@ -476,7 +415,7 @@ export function CajaCuadrePanel({
                     <Label htmlFor="caja-mov-concepto">¿Para qué?</Label>
                     <Input
                       id="caja-mov-concepto"
-                      className="min-h-11"
+                      className="min-h-11 bg-background"
                       placeholder="Ej. cambio, retiro, gasto menor…"
                       value={movConcepto}
                       onChange={(e) => setMovConcepto(e.target.value)}
@@ -497,63 +436,34 @@ export function CajaCuadrePanel({
               </section>
 
               <section
-                className="flex flex-col gap-3 rounded-xl border border-border bg-background p-4"
+                className="flex flex-col gap-3 rounded-2xl border border-border bg-background p-4 shadow-sm sm:p-5"
                 aria-labelledby="caja-cierre-titulo"
               >
                 <div>
                   <h3
                     id="caja-cierre-titulo"
-                    className="text-sm font-semibold text-foreground"
+                    className="text-base font-semibold text-foreground"
                   >
                     Cerrar el día
                   </h3>
-                  <p className="text-sm text-muted-foreground">
-                    Cuenta el efectivo y ciérralo al final.
+                  <p className="text-sm text-muted-foreground text-pretty">
+                    Cuenta el efectivo, cierra la caja e imprime el arqueo.
                   </p>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="caja-cierre-monto">
-                      ¿Cuánto efectivo hay ahora?
-                    </Label>
-                    <Input
-                      id="caja-cierre-monto"
-                      className="min-h-11"
-                      inputMode="numeric"
-                      placeholder={String(sesion.efectivoEsperado)}
-                      value={montoCierre}
-                      onChange={(e) => setMontoCierre(e.target.value)}
-                    />
-                  </div>
-                  <div className="flex flex-col gap-2 sm:col-span-2">
-                    <Label htmlFor="caja-cierre-notas">Nota (opcional)</Label>
-                    <Textarea
-                      id="caja-cierre-notas"
-                      rows={2}
-                      value={notasCierre}
-                      onChange={(e) => setNotasCierre(e.target.value)}
-                    />
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap items-center gap-3">
+                  <p className="text-sm text-muted-foreground">
+                    Esperado:{" "}
+                    <span className="font-semibold tabular-nums text-foreground">
+                      {formatCop(sesion.efectivoEsperado)}
+                    </span>
+                  </p>
                   <Button
                     type="button"
-                    variant="outline"
-                    className="min-h-11"
-                    onClick={() =>
-                      setMontoCierre(String(sesion.efectivoEsperado))
-                    }
-                  >
-                    Usar lo esperado
-                  </Button>
-                  <Button
-                    type="button"
-                    className="min-h-11 gap-2"
-                    disabled={!puedeCerrar || pending}
-                    onClick={handleCerrar}
+                    className="min-h-11 gap-2 active:scale-[0.96] motion-reduce:active:scale-100"
+                    onClick={() => setCerrarOpen(true)}
                   >
                     <Lock className="h-4 w-4" aria-hidden="true" />
-                    {pending ? "Cerrando…" : "Cerrar caja"}
+                    Cerrar caja
                   </Button>
                 </div>
               </section>
@@ -606,27 +516,20 @@ export function CajaCuadrePanel({
         </AlertDialogContent>
       </AlertDialog>
 
-      <Dialog open={informeOpen} onOpenChange={setInformeOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto bg-background sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Informe de cierre</DialogTitle>
-          </DialogHeader>
-          {sesion ? (
-            <>
-              <p className="text-sm text-muted-foreground">
-                {formatDate(sesion.openedAt)}
-                {sesion.closedAt ? ` — ${formatDate(sesion.closedAt)}` : null}
-              </p>
-              <CajaInformePanel
-                informe={sesion.informe}
-                visitasResumen={sesion.visitasResumen}
-                title=""
-              />
-              <CuadreEfectivo sesion={sesion} />
-            </>
-          ) : null}
-        </DialogContent>
-      </Dialog>
+      <CajaCerrarDialog
+        open={cerrarOpen}
+        onOpenChange={setCerrarOpen}
+        sesion={sesion}
+        onClosed={(state) => {
+          setSesion(state);
+          setArqueoOpen(true);
+        }}
+      />
+      <CajaArqueoDialog
+        open={arqueoOpen}
+        onOpenChange={setArqueoOpen}
+        sesion={sesion}
+      />
     </div>
   );
 }

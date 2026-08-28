@@ -101,7 +101,11 @@ function parseCopInput(raw: string): number | undefined {
   return Number.isFinite(n) && n >= 0 ? n : undefined;
 }
 
-export function VentaManager() {
+export function VentaManager({
+  cajaAbierta,
+}: {
+  cajaAbierta: boolean;
+}) {
   const [lines, dispatch] = useReducer(cartReducer, []);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [busqueda, setBusqueda] = useState("");
@@ -213,6 +217,10 @@ export function VentaManager() {
   }
 
   function facturar() {
+    if (!cajaAbierta) {
+      toast.error("Abre la caja para cobrar.");
+      return;
+    }
     if (lines.length === 0) {
       toast.error("Agrega al menos un producto.");
       return;
@@ -264,13 +272,21 @@ export function VentaManager() {
 
   return (
     <div className="flex flex-col gap-6 pb-28">
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="venta-buscar-producto" className="text-base font-semibold">
-          ¿Qué vas a vender?
-        </Label>
-        <p className="text-sm text-muted-foreground">
-          Escribe el nombre o el código. Elige en la lista o pulsa Agregar.
-        </p>
+      <section
+        className="flex flex-col gap-3 rounded-2xl border border-border bg-background p-4 shadow-sm sm:p-5"
+        aria-labelledby="venta-buscar-titulo"
+      >
+        <div>
+          <h2
+            id="venta-buscar-titulo"
+            className="text-base font-semibold text-foreground"
+          >
+            ¿Qué vas a vender?
+          </h2>
+          <p className="text-sm text-muted-foreground text-pretty">
+            Escribe el nombre o el código. Elige en la lista o pulsa Agregar.
+          </p>
+        </div>
         <div className="flex gap-2">
           <div className="relative min-w-0 flex-1">
             <Search
@@ -287,6 +303,7 @@ export function VentaManager() {
               className="min-h-11 pl-9 pr-9"
               autoComplete="off"
               spellCheck={false}
+              aria-labelledby="venta-buscar-titulo"
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
@@ -322,7 +339,7 @@ export function VentaManager() {
           </div>
           <Button
             type="button"
-            className="min-h-11 shrink-0"
+            className="min-h-11 shrink-0 active:scale-[0.96] motion-reduce:active:scale-100"
             onClick={() => void resolverBusqueda()}
             disabled={searchPending}
           >
@@ -332,7 +349,7 @@ export function VentaManager() {
 
         {listaAbierta && busqueda.trim().length >= 2 ? (
           <ul
-            className="max-h-[min(28rem,55dvh)] overflow-y-auto rounded-xl border border-border bg-background"
+            className="max-h-[min(28rem,55dvh)] overflow-y-auto rounded-xl border border-border bg-muted/20"
             role="listbox"
             aria-label="Resultados de búsqueda"
           >
@@ -343,7 +360,7 @@ export function VentaManager() {
             ) : null}
             {!searchPending && resultados.length === 0 ? (
               <li className="px-4 py-3 text-sm text-muted-foreground">
-                No hay productos con ese nombre.
+                No hay productos con ese nombre. Prueba otro término.
               </li>
             ) : null}
             {resultados.map((p) => {
@@ -361,7 +378,7 @@ export function VentaManager() {
                       "flex w-full items-center gap-4 border-b border-border px-3 py-3 text-left last:border-0 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
                       sinStock
                         ? "cursor-not-allowed opacity-50"
-                        : "hover:bg-muted/50",
+                        : "hover:bg-background",
                     )}
                     disabled={sinStock}
                     onClick={() => addProduct(p)}
@@ -400,9 +417,12 @@ export function VentaManager() {
             })}
           </ul>
         ) : null}
-      </div>
+      </section>
 
-      <section className="flex flex-col gap-3" aria-labelledby="venta-carrito-titulo">
+      <section
+        className="flex flex-col gap-3 rounded-2xl border border-border bg-background p-4 shadow-sm sm:p-5"
+        aria-labelledby="venta-carrito-titulo"
+      >
         <div className="flex flex-wrap items-end justify-between gap-2">
           <div>
             <h2
@@ -413,7 +433,7 @@ export function VentaManager() {
             </h2>
             <p className="text-sm text-muted-foreground" role="status">
               {itemCount === 0
-                ? "Vacío"
+                ? "Vacío — busca un producto arriba"
                 : `${itemCount} ${itemCount === 1 ? "unidad" : "unidades"} · ${formatCop(total)}`}
             </p>
           </div>
@@ -430,15 +450,15 @@ export function VentaManager() {
         </div>
 
         {lines.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
-            Aún no hay nada. Busca el nombre del producto.
+          <p className="rounded-xl border border-dashed border-border bg-muted/20 px-4 py-10 text-center text-sm text-muted-foreground text-pretty">
+            Aún no hay nada. Busca el nombre del producto para empezar.
           </p>
         ) : (
           <ul className="flex flex-col gap-2">
             {lines.map((line) => (
               <li
                 key={line.productoId}
-                className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-background px-3 py-3 sm:flex-nowrap"
+                className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-muted/15 px-3 py-3 sm:flex-nowrap"
               >
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium">{line.nombre}</p>
@@ -512,27 +532,52 @@ export function VentaManager() {
         )}
       </section>
 
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background px-4 py-3">
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur-sm supports-[backdrop-filter]:bg-background/85">
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-4">
           <div>
             <p className="text-xs text-muted-foreground">Total</p>
-            <p className="text-2xl font-bold tabular-nums text-foreground">
+            <p className="text-3xl font-bold tracking-tight tabular-nums text-foreground">
               {formatCop(total)}
             </p>
+            {!cajaAbierta ? (
+              <p className="mt-0.5 text-xs text-amber-800" role="status">
+                Abre la caja para cobrar.
+              </p>
+            ) : null}
           </div>
           <Button
             type="button"
             size="lg"
-            className="min-h-12 min-w-36"
-            disabled={lines.length === 0}
-            onClick={() => setCheckoutOpen(true)}
+            className="min-h-12 min-w-36 active:scale-[0.96] motion-reduce:active:scale-100"
+            disabled={lines.length === 0 || !cajaAbierta}
+            aria-disabled={lines.length === 0 || !cajaAbierta}
+            title={
+              !cajaAbierta
+                ? "Abre la caja para cobrar"
+                : lines.length === 0
+                  ? "Agrega productos al carrito"
+                  : undefined
+            }
+            onClick={() => {
+              if (!cajaAbierta) {
+                toast.error("Abre la caja para cobrar.");
+                return;
+              }
+              setCheckoutOpen(true);
+            }}
           >
             Cobrar
           </Button>
         </div>
       </div>
 
-      <Sheet open={checkoutOpen} onOpenChange={setCheckoutOpen}>
+      <Sheet
+        open={checkoutOpen && cajaAbierta}
+        onOpenChange={(open) => {
+          if (!cajaAbierta && open) return;
+          setCheckoutOpen(open);
+        }}
+      >
         <SheetContent side="bottom" className="max-h-[90dvh] overflow-y-auto">
           <SheetHeader>
             <SheetTitle>Cobrar {formatCop(total)}</SheetTitle>
@@ -606,8 +651,8 @@ export function VentaManager() {
           <SheetFooter>
             <Button
               type="button"
-              className="min-h-12 w-full gap-2"
-              disabled={facturarPending || lines.length === 0}
+              className="min-h-12 w-full gap-2 active:scale-[0.96] motion-reduce:active:scale-100"
+              disabled={facturarPending || lines.length === 0 || !cajaAbierta}
               onClick={facturar}
             >
               <Printer className="h-4 w-4" aria-hidden="true" />

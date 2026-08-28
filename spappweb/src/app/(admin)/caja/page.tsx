@@ -11,7 +11,7 @@ export default async function CajaPage() {
       <AdminHubSubnav hubId="tienda" />
       <PageHeader
         title="Caja"
-        description="Abrir, cerrar y cuadrar el dinero del día."
+        description="Abrir, cerrar y cuadrar el dinero del día. Al cerrar puedes imprimir el arqueo."
       />
       <CajaCuadrePanel initialSesion={sesion} />
     </div>

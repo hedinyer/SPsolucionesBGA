@@ -312,6 +312,11 @@ export async function saveVentaProducto(
   input: VentaProductoInput,
 ): Promise<VentaProductoRow> {
   await requireAdminSession();
+  const { getCajaSesionHoy } = await import("@/lib/actions/caja-actions");
+  const caja = await getCajaSesionHoy();
+  if (!caja?.abierta) {
+    throw new Error("Abre la caja para cobrar.");
+  }
   const parsed = ventaProductoSchema.parse(input);
   const supabase = createAdminClient();
 
