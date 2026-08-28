@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { toast } from "sonner";
-import { Pencil, Plus, Trash2, X } from "lucide-react";
+import { Pencil, Plus, Search, Trash2, X } from "lucide-react";
 import {
   deleteGarajeMoto,
   deleteGarajeParqueadero,
@@ -116,6 +116,7 @@ export function GarajeManager({
   const [filtroFotoPendiente, setFiltroFotoPendiente] = useState(
     initialFotoPendiente,
   );
+  const [busquedaPlaca, setBusquedaPlaca] = useState("");
 
   function openMotoEditor(moto: GarajeMotoRow) {
     setEditingMoto(moto);
@@ -139,7 +140,15 @@ export function GarajeManager({
   const parqueaderosActivos = parqueaderos.filter((p) => p.activo);
 
   const motosFiltradas = useMemo(() => {
+    const placaQuery = busquedaPlaca.trim().toUpperCase().replace(/\s+/g, "");
     return motos.filter((m) => {
+      if (placaQuery) {
+        const placa = (m.placa ?? "")
+          .trim()
+          .toUpperCase()
+          .replace(/\s+/g, "");
+        if (!placa.includes(placaQuery)) return false;
+      }
       if (filtroParqueadero !== "all") {
         if (filtroParqueadero === "none" && m.parqueadero_id != null) return false;
         if (
@@ -155,7 +164,13 @@ export function GarajeManager({
       if (filtroFotoPendiente && m.placa_foto_url) return false;
       return true;
     });
-  }, [motos, filtroParqueadero, filtroCondicion, filtroFotoPendiente]);
+  }, [
+    motos,
+    busquedaPlaca,
+    filtroParqueadero,
+    filtroCondicion,
+    filtroFotoPendiente,
+  ]);
 
   const pendientesFoto = motos.filter((m) => !m.placa_foto_url).length;
 
@@ -273,6 +288,26 @@ export function GarajeManager({
             </p>
           </div>
           <div className="grid w-full gap-3 sm:flex sm:flex-wrap sm:items-end">
+            <div className="flex flex-col gap-1 sm:min-w-[12rem] sm:flex-1">
+              <Label htmlFor="garaje-buscar-placa" className="text-xs text-muted-foreground">
+                Placa
+              </Label>
+              <div className="relative">
+                <Search
+                  className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                  aria-hidden="true"
+                />
+                <Input
+                  id="garaje-buscar-placa"
+                  value={busquedaPlaca}
+                  onChange={(e) => setBusquedaPlaca(e.target.value)}
+                  placeholder="Buscar por placa…"
+                  className="min-h-11 pl-9 touch-manipulation text-base md:text-sm"
+                  inputMode="search"
+                  autoComplete="off"
+                />
+              </div>
+            </div>
             <div className="flex flex-col gap-1">
               <Label className="text-xs text-muted-foreground">Parqueadero</Label>
               <TouchSelect
