@@ -275,6 +275,7 @@ export function InventarioManager({
   const [novedadesProd, setNovedadesProd] =
     useState<InventarioProductoRow | null>(null);
   const [nombreQuery, setNombreQuery] = useState("");
+  const [categoriaQuery, setCategoriaQuery] = useState("");
   const [filtrosOpen, setFiltrosOpen] = useState(false);
   const [numerosOpen, setNumerosOpen] = useState(false);
   const [categoriaFiltro, setCategoriaFiltro] = useState("all");
@@ -380,6 +381,19 @@ export function InventarioManager({
         ),
     [categorias],
   );
+
+  const categoriasFiltradas = useMemo(() => {
+    const q = normalizeSearch(categoriaQuery.trim());
+    const list = [...categorias].sort((a, b) =>
+      a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base" }),
+    );
+    if (!q) return list;
+    return list.filter(
+      (c) =>
+        normalizeSearch(c.nombre).includes(q) ||
+        normalizeSearch(c.slug).includes(q),
+    );
+  }, [categorias, categoriaQuery]);
 
   const productosIndex = useMemo(
     () =>
@@ -1173,8 +1187,47 @@ export function InventarioManager({
         </TabsContent>
 
         <TabsContent value="categorias" className="flex flex-col gap-4">
-          <div className="flex justify-end">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="relative min-w-0 flex-1" role="search">
+              <label htmlFor="inventario-buscar-categoria" className="sr-only">
+                Buscar categoría por nombre
+              </label>
+              <Search
+                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <Input
+                id="inventario-buscar-categoria"
+                value={categoriaQuery}
+                onChange={(e) => setCategoriaQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape" && categoriaQuery) {
+                    e.preventDefault();
+                    setCategoriaQuery("");
+                  }
+                }}
+                placeholder="Buscar categoría…"
+                className="min-h-11 pl-9 pr-9"
+                inputMode="search"
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck={false}
+              />
+              {categoriaQuery ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2"
+                  aria-label="Borrar búsqueda"
+                  onClick={() => setCategoriaQuery("")}
+                >
+                  <X aria-hidden="true" />
+                </Button>
+              ) : null}
+            </div>
             <Button
+              className="min-h-11 shrink-0"
               onClick={() => {
                 setEditingCat(null);
                 setCatOpen(true);
@@ -1184,6 +1237,24 @@ export function InventarioManager({
               Nueva categoría
             </Button>
           </div>
+
+          {categoriasFiltradas.length === 0 ? (
+            <Empty>
+              <EmptyHeader>
+                <EmptyTitle>
+                  {categoriaQuery.trim()
+                    ? "Sin categorías con ese nombre"
+                    : "Aún no hay categorías"}
+                </EmptyTitle>
+                <EmptyDescription>
+                  {categoriaQuery.trim()
+                    ? "Prueba otro término o borra la búsqueda."
+                    : "Crea la primera con Nueva categoría."}
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          ) : (
+            <>
           <div className="hidden overflow-x-auto rounded-lg border border-border lg:block">
             <Table>
               <TableHeader>
@@ -1196,7 +1267,7 @@ export function InventarioManager({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {categorias.map((c) => (
+                {categoriasFiltradas.map((c) => (
                   <TableRow key={c.id}>
                     <TableCell className="font-medium">{c.nombre}</TableCell>
                     <TableCell>{c.slug}</TableCell>
@@ -1272,7 +1343,7 @@ export function InventarioManager({
           </div>
 
           <div className="flex flex-col gap-3 lg:hidden">
-            {categorias.map((c) => (
+            {categoriasFiltradas.map((c) => (
               <div
                 key={c.id}
                 className="rounded-lg border border-border p-4 text-sm"
@@ -1349,6 +1420,8 @@ export function InventarioManager({
               </div>
             ))}
           </div>
+            </>
+          )}
         </TabsContent>
 
         <CategoriaDialog
