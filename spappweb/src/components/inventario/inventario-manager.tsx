@@ -2131,7 +2131,7 @@ function ProductoDialog({
                 error={errors.gaveta}
               />
             ) : null}
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-2 sm:col-span-2 md:col-span-1">
               <Label htmlFor={categoriaFieldId}>Categoría</Label>
               <TouchSelect
                 id={categoriaFieldId}
@@ -2139,6 +2139,8 @@ function ProductoDialog({
                 aria-invalid={!!errors.categoriaId}
                 value={categoriaId}
                 onChange={setCategoriaId}
+                searchable
+                searchPlaceholder="Buscar categoría…"
                 options={categoriasOrdenadas.map((c) => ({
                   value: String(c.id),
                   label: c.nombre,
