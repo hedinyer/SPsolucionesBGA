@@ -25,11 +25,11 @@ export function PrintPriceLabelButton({
         <Button
           type="button"
           variant="outline"
-          size="sm"
-          className={className}
+          className={className ?? "min-h-11"}
+          aria-label={`Imprimir etiqueta de ${product.nombre}`}
           onClick={() => setOpen(true)}
         >
-          <Printer className="mr-1 h-4 w-4" />
+          <Printer className="size-4" aria-hidden="true" />
           Imprimir
         </Button>
         <PrintPriceLabelDialog

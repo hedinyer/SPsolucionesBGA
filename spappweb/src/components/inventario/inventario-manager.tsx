@@ -13,7 +13,6 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   ChevronDown,
-  Eye,
   ListFilter,
   Pencil,
   Plus,
@@ -35,6 +34,10 @@ import type {
   InventarioUbicacion,
 } from "@/lib/pipeline/types";
 import { INVENTARIO_UBICACIONES } from "@/lib/pipeline/types";
+import {
+  normalizeSearch,
+  rankBySimilarity,
+} from "@/lib/search/fuzzy-text";
 import { formatCop } from "@/lib/utils/format";
 import { getStoragePublicUrl } from "@/lib/utils/storage-urls";
 import { Button } from "@/components/ui/button";
@@ -84,11 +87,8 @@ import {
 import { STORAGE_BUCKETS } from "@/lib/supabase/storage-buckets";
 import { Textarea } from "@/components/ui/textarea";
 import { TouchSelect } from "@/components/ui/touch-select";
-import { PrintPriceLabelButton } from "@/components/inventario/print-price-label-button";
-import {
-  ProductoNovedadesButton,
-  ProductoNovedadesDialog,
-} from "@/components/inventario/producto-novedades-dialog";
+import { ProductoInventarioCard } from "@/components/inventario/producto-inventario-card";
+import { ProductoNovedadesDialog } from "@/components/inventario/producto-novedades-dialog";
 
 function skuFromNombre(nombre: string): string {
   return nombre
@@ -98,13 +98,6 @@ function skuFromNombre(nombre: string): string {
     .replace(/[^A-Z0-9]+/g, "-")
     .replace(/^-|-$/g, "")
     .slice(0, 40);
-}
-
-function normalizeSearch(value: string): string {
-  return value
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
 }
 
 function formatMilesInput(raw: string): string {
@@ -120,17 +113,6 @@ function parseMilesInput(raw: string): number {
 function formatMilesFromNumber(n: number): string {
   if (!Number.isFinite(n)) return "";
   return n.toLocaleString("es-CO");
-}
-
-function formatUbicacionProducto(
-  ubicacion: InventarioUbicacion | undefined,
-  gaveta?: string | null,
-): string {
-  const base = ubicacion ?? "Soluciones";
-  if (base === "Bodega" && gaveta?.trim()) {
-    return `Bodega · Gaveta ${gaveta.trim()}`;
-  }
-  return base;
 }
 
 /** Firma liviana: solo se considera “cambio” si afecta listado o totales. */
@@ -428,7 +410,7 @@ export function InventarioManager({
   const hayFiltros =
     Boolean(nombreQuery.trim()) || filtrosAvanzadosActivos > 0;
 
-  const productosFiltrados = useMemo(() => {
+  const { productosFiltrados, busquedaAproximada } = useMemo(() => {
     const q = normalizeSearch(nombreQuery.trim());
     const terms = q ? q.split(/\s+/).filter(Boolean) : [];
     const sMin = parseOptionalMiles(stockMin);
@@ -440,40 +422,67 @@ export function InventarioManager({
     const categoriaId =
       categoriaFiltro === "all" ? null : Number(categoriaFiltro);
 
-    return productosIndex
-      .filter(({ producto, haystack }) => {
-        if (
-          terms.length > 0 &&
-          !terms.every((term) => haystack.includes(term))
-        ) {
-          return false;
-        }
-        if (categoriaId != null && producto.categoria_id !== categoriaId) {
-          return false;
-        }
-        if (
-          ubicacionFiltro !== "all" &&
-          (producto.ubicacion ?? "Soluciones") !== ubicacionFiltro
-        ) {
-          return false;
-        }
-        if (stockPreset === "sin" && producto.stock !== 0) return false;
-        if (stockPreset === "con" && producto.stock <= 0) return false;
-        if (
-          stockPreset === "bajo" &&
-          producto.stock > producto.stock_minimo
-        ) {
-          return false;
-        }
-        if (!inInclusiveRange(producto.stock, sMin, sMax)) return false;
-        if (!inInclusiveRange(producto.costo, cMin, cMax)) return false;
-        if (!inInclusiveRange(producto.precio, pMin, pMax)) return false;
-        return true;
-      })
+    function matchesAdvanced(producto: InventarioProductoRow): boolean {
+      if (categoriaId != null && producto.categoria_id !== categoriaId) {
+        return false;
+      }
+      if (
+        ubicacionFiltro !== "all" &&
+        (producto.ubicacion ?? "Soluciones") !== ubicacionFiltro
+      ) {
+        return false;
+      }
+      if (stockPreset === "sin" && producto.stock !== 0) return false;
+      if (stockPreset === "con" && producto.stock <= 0) return false;
+      if (stockPreset === "bajo" && producto.stock > producto.stock_minimo) {
+        return false;
+      }
+      if (!inInclusiveRange(producto.stock, sMin, sMax)) return false;
+      if (!inInclusiveRange(producto.costo, cMin, cMax)) return false;
+      if (!inInclusiveRange(producto.precio, pMin, pMax)) return false;
+      return true;
+    }
+
+    const afterAdvanced = productosIndex.filter(({ producto }) =>
+      matchesAdvanced(producto),
+    );
+
+    const exactos = afterAdvanced
+      .filter(
+        ({ haystack }) =>
+          terms.length === 0 || terms.every((term) => haystack.includes(term)),
+      )
       .map(({ producto }) => producto)
       .sort((a, b) =>
         a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base" }),
       );
+
+    if (terms.length === 0 || exactos.length > 0) {
+      return { productosFiltrados: exactos, busquedaAproximada: false };
+    }
+
+    const ranked = rankBySimilarity(
+      nombreQuery.trim(),
+      afterAdvanced,
+      (row) => row.haystack,
+      { threshold: 0.45, limit: 20 },
+    );
+
+    const aproximadosOrdered = [...ranked]
+      .sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        return a.item.producto.nombre.localeCompare(
+          b.item.producto.nombre,
+          "es",
+          { sensitivity: "base" },
+        );
+      })
+      .map(({ item }) => item.producto);
+
+    return {
+      productosFiltrados: aproximadosOrdered,
+      busquedaAproximada: aproximadosOrdered.length > 0,
+    };
   }, [
     nombreQuery,
     productosIndex,
@@ -662,6 +671,9 @@ export function InventarioManager({
                 autoComplete="off"
                 autoCorrect="off"
                 spellCheck={false}
+                aria-describedby={
+                  busquedaAproximada ? "inventario-buscar-status" : undefined
+                }
               />
               {nombreQuery ? (
                 <Button
@@ -917,11 +929,31 @@ export function InventarioManager({
             </div>
           </div>
 
-          <p className="text-sm text-muted-foreground" role="status">
-            {hayFiltros
-              ? `Quedan ${productosFiltrados.length} de ${productos.length} productos`
-              : `${productos.length} productos`}
+          <p
+            id="inventario-buscar-status"
+            className="text-sm text-muted-foreground"
+            role="status"
+          >
+            {busquedaAproximada
+              ? `No hay coincidencia exacta. Mostrando ${productosFiltrados.length} productos parecidos`
+              : hayFiltros
+                ? `Quedan ${productosFiltrados.length} de ${productos.length} productos`
+                : `${productos.length} productos`}
           </p>
+          {busquedaAproximada ? (
+            <p className="text-sm text-muted-foreground">
+              Parecidos a lo que escribiste. Si no es el producto, prueba otra
+              palabra o{" "}
+              <button
+                type="button"
+                className="font-medium text-foreground underline underline-offset-2 focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                onClick={clearTodosLosFiltros}
+              >
+                quita los filtros
+              </button>
+              .
+            </p>
+          ) : null}
           {productos.length === 0 ? (
             <Empty className="border border-dashed border-border">
               <EmptyHeader>
@@ -949,240 +981,25 @@ export function InventarioManager({
               </EmptyHeader>
             </Empty>
           ) : (
-            <>
-              <div className="hidden overflow-x-auto rounded-lg border border-border lg:block">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>ID</TableHead>
-                      <TableHead>Nombre</TableHead>
-                      <TableHead>Cantidad</TableHead>
-                      <TableHead>Costo</TableHead>
-                      <TableHead>Precio venta</TableHead>
-                      <TableHead>Foto</TableHead>
-                      <TableHead>Ubicación</TableHead>
-                      <TableHead className="min-w-[28rem]">Acciones</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {productosFiltrados.map((p) => {
-                      const img = getStoragePublicUrl(
-                        STORAGE_BUCKETS.inventarioImagenes,
-                        p.imagen_url,
-                      );
-                      const lowStock = p.stock <= p.stock_minimo;
-                      const ubicacionLabel = formatUbicacionProducto(
-                        p.ubicacion,
-                        p.gaveta,
-                      );
-                      return (
-                        <TableRow key={p.id}>
-                          <TableCell className="text-muted-foreground">
-                            {p.id}
-                          </TableCell>
-                          <TableCell className="font-medium">{p.nombre}</TableCell>
-                          <TableCell>
-                            <span
-                              className={
-                                lowStock ? "font-medium text-red-700" : ""
-                              }
-                            >
-                              {p.stock}
-                            </span>
-                            {lowStock && (
-                              <Badge variant="destructive" className="ml-2">
-                                Bajo
-                              </Badge>
-                            )}
-                          </TableCell>
-                          <TableCell>{formatCop(p.costo ?? 0)}</TableCell>
-                          <TableCell>{formatCop(p.precio)}</TableCell>
-                          <TableCell>
-                            {img ? (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img
-                                src={img}
-                                alt={`Foto de ${p.nombre}`}
-                                className="h-10 w-10 rounded object-cover"
-                              />
-                            ) : (
-                              <span className="text-muted-foreground">—</span>
-                            )}
-                          </TableCell>
-                          <TableCell>{ubicacionLabel}</TableCell>
-                          <TableCell>
-                            <div className="flex flex-nowrap items-center gap-1 whitespace-nowrap">
-                              <PrintPriceLabelButton product={p} />
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                aria-label={`Editar ${p.nombre}`}
-                                onClick={() => {
-                                  setEditingProd(p);
-                                  setProdOpen(true);
-                                }}
-                              >
-                                <Pencil className="h-4 w-4" />
-                                Editar
-                              </Button>
-                              <ProductoNovedadesButton
-                                product={p}
-                                onClick={() => setNovedadesProd(p)}
-                              />
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                aria-label={
-                                  img
-                                    ? `Ver foto de ${p.nombre}`
-                                    : `${p.nombre} no tiene foto`
-                                }
-                                disabled={!img}
-                                onClick={() => openPhoto(p)}
-                              >
-                                <Eye className="h-4 w-4" />
-                                Ver foto
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                aria-label={`Eliminar ${p.nombre}`}
-                                onClick={() => setDeletingProd(p)}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                                Eliminar
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-
-              <div className="flex flex-col gap-3 lg:hidden">
-                {productosFiltrados.map((p) => {
-                  const img = getStoragePublicUrl(
-                    STORAGE_BUCKETS.inventarioImagenes,
-                    p.imagen_url,
-                  );
-                  const lowStock = p.stock <= p.stock_minimo;
-                  const ubicacionLabel = formatUbicacionProducto(
-                    p.ubicacion,
-                    p.gaveta,
-                  );
-                  return (
-                    <div
-                      key={p.id}
-                      className="rounded-lg border border-border p-4 text-sm"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="text-xs text-muted-foreground">
-                            ID {p.id}
-                          </p>
-                          <p className="font-medium">{p.nombre}</p>
-                        </div>
-                        {img ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={img}
-                            alt={`Foto de ${p.nombre}`}
-                            className="h-12 w-12 shrink-0 rounded object-cover"
-                          />
-                        ) : (
-                          <div
-                            className="h-12 w-12 shrink-0 rounded bg-muted"
-                            aria-hidden
-                          />
-                        )}
-                      </div>
-                      <dl className="mt-3 flex flex-col gap-1.5">
-                        <div className="flex justify-between gap-2">
-                          <dt className="text-muted-foreground">Cantidad</dt>
-                          <dd
-                            className={
-                              lowStock ? "font-medium text-red-700" : ""
-                            }
-                          >
-                            {p.stock}
-                            {lowStock && (
-                              <Badge variant="destructive" className="ml-2">
-                                Bajo
-                              </Badge>
-                            )}
-                          </dd>
-                        </div>
-                        <div className="flex justify-between gap-2">
-                          <dt className="text-muted-foreground">Costo</dt>
-                          <dd>{formatCop(p.costo ?? 0)}</dd>
-                        </div>
-                        <div className="flex justify-between gap-2">
-                          <dt className="text-muted-foreground">Precio venta</dt>
-                          <dd>{formatCop(p.precio)}</dd>
-                        </div>
-                        <div className="flex justify-between gap-2">
-                          <dt className="text-muted-foreground">Ubicación</dt>
-                          <dd>{ubicacionLabel}</dd>
-                        </div>
-                      </dl>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <PrintPriceLabelButton
-                          product={p}
-                          variant="outline"
-                          className="flex-1"
-                        />
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="flex-1"
-                          aria-label={`Editar ${p.nombre}`}
-                          onClick={() => {
-                            setEditingProd(p);
-                            setProdOpen(true);
-                          }}
-                        >
-                          <Pencil className="mr-1 h-4 w-4" />
-                          Editar
-                        </Button>
-                        <ProductoNovedadesButton
-                          product={p}
-                          variant="outline"
-                          className="flex-1"
-                          onClick={() => setNovedadesProd(p)}
-                        />
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="flex-1"
-                          aria-label={
-                            img
-                              ? `Ver foto de ${p.nombre}`
-                              : `${p.nombre} no tiene foto`
-                          }
-                          disabled={!img}
-                          onClick={() => openPhoto(p)}
-                        >
-                          <Eye className="mr-1 h-4 w-4" />
-                          Ver foto
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="flex-1"
-                          aria-label={`Eliminar ${p.nombre}`}
-                          onClick={() => setDeletingProd(p)}
-                        >
-                          <Trash2 className="mr-1 h-4 w-4" />
-                          Eliminar
-                        </Button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </>
+            <ul className="flex flex-col gap-4">
+              {productosFiltrados.map((p) => (
+                <li key={p.id}>
+                  <ProductoInventarioCard
+                    product={p}
+                    categoriaNombre={
+                      categorias.find((c) => c.id === p.categoria_id)?.nombre
+                    }
+                    onEdit={() => {
+                      setEditingProd(p);
+                      setProdOpen(true);
+                    }}
+                    onDelete={() => setDeletingProd(p)}
+                    onNovedades={() => setNovedadesProd(p)}
+                    onPhoto={() => openPhoto(p)}
+                  />
+                </li>
+              ))}
+            </ul>
           )}
         </TabsContent>
 
@@ -2054,7 +1871,21 @@ function ProductoDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90dvh] overflow-y-auto bg-background sm:max-w-2xl md:max-w-3xl">
+      <DialogContent
+        className="max-h-[90dvh] overflow-y-auto bg-background sm:max-w-2xl md:max-w-3xl"
+        onPointerDownOutside={(e) => {
+          const target = e.target as Element | null;
+          if (target?.closest?.("[data-touch-select-portal]")) {
+            e.preventDefault();
+          }
+        }}
+        onInteractOutside={(e) => {
+          const target = e.target as Element | null;
+          if (target?.closest?.("[data-touch-select-portal]")) {
+            e.preventDefault();
+          }
+        }}
+      >
         <DialogHeader>
           <DialogTitle>
             {editing ? "Editar producto" : "Nuevo producto"}

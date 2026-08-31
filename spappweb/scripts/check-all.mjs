@@ -15,6 +15,7 @@ const checks = [
   "src/lib/moto-payment.check.ts",
   "src/lib/utils/format.check.ts",
   "src/lib/gps/ubicacionGps.check.ts",
+  "src/lib/search/fuzzy-text.check.ts",
 ];
 
 function run(file) {

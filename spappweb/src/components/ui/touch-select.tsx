@@ -1,7 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
+import { rankBySimilarity } from "@/lib/search/fuzzy-text";
 import { Input } from "@/components/ui/input";
 
 type TouchSelectOption = {
@@ -25,13 +27,6 @@ type TouchSelectProps = {
   "aria-invalid"?: boolean;
 };
 
-function normalizeLabel(value: string): string {
-  return value
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
-}
-
 export function TouchSelect({
   value,
   onChange,
@@ -48,14 +43,49 @@ export function TouchSelect({
   "aria-invalid": ariaInvalid,
 }: TouchSelectProps) {
   const [query, setQuery] = useState("");
+  const [menuRect, setMenuRect] = useState<{
+    top: number;
+    left: number;
+    width: number;
+  } | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const filtered = useMemo(() => {
-    const q = normalizeLabel(query.trim());
-    if (!q) return options;
-    return options.filter((option) =>
-      normalizeLabel(option.label).includes(q),
-    );
+    const q = query.trim();
+    if (!q) return [];
+    return rankBySimilarity(q, options, (option) => option.label, {
+      threshold: 0.4,
+      limit: 12,
+    }).map(({ item }) => item);
   }, [options, query]);
+
+  const showSuggestions = searchable && query.trim().length > 0;
+
+  useEffect(() => {
+    if (!showSuggestions) {
+      setMenuRect(null);
+      return;
+    }
+
+    function updatePosition() {
+      const el = inputRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      setMenuRect({
+        top: rect.bottom + 4,
+        left: rect.left,
+        width: rect.width,
+      });
+    }
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [showSuggestions, query, filtered.length]);
 
   if (!searchable) {
     return (
@@ -86,63 +116,97 @@ export function TouchSelect({
   }
 
   const selected = options.find((option) => option.value === value);
+  const listboxId = id ? `${id}-sugerencias` : undefined;
+
+  const suggestions =
+    showSuggestions && menuRect
+      ? createPortal(
+          <div
+            data-touch-select-portal=""
+            id={listboxId}
+            role="listbox"
+            aria-label={ariaLabel}
+            className="fixed z-[140] max-h-44 overflow-y-auto rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10"
+            style={{
+              top: menuRect.top,
+              left: menuRect.left,
+              width: menuRect.width,
+            }}
+          >
+            {filtered.length === 0 ? (
+              <p className="px-3 py-3 text-sm text-muted-foreground">
+                Sin resultados
+              </p>
+            ) : (
+              filtered.map((option) => {
+                const isSelected = option.value === value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    role="option"
+                    aria-selected={isSelected}
+                    disabled={disabled}
+                    onMouseDown={(e) => {
+                      // Evita que el dialog interprete el clic como “fuera”.
+                      e.preventDefault();
+                    }}
+                    onClick={() => {
+                      onChange(option.value);
+                      setQuery("");
+                    }}
+                    className={cn(
+                      "flex min-h-11 w-full items-center px-3 text-left text-base touch-manipulation outline-none hover:bg-muted focus-visible:bg-muted disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
+                      isSelected && "bg-muted font-medium",
+                    )}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })
+            )}
+          </div>,
+          document.body,
+        )
+      : null;
 
   return (
     <div className={cn("flex flex-col gap-2", className)}>
       <Input
+        ref={inputRef}
         id={id}
         type="search"
         value={query}
         disabled={disabled}
         aria-label={ariaLabel ? `${ariaLabel}: buscar` : searchPlaceholder}
         aria-invalid={ariaInvalid}
+        aria-expanded={showSuggestions}
+        aria-controls={showSuggestions ? listboxId : undefined}
+        aria-autocomplete="list"
+        role="combobox"
         placeholder={searchPlaceholder}
         autoComplete="off"
         spellCheck={false}
         onChange={(e) => setQuery(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape" && query) {
+            e.preventDefault();
+            setQuery("");
+          }
+        }}
         className="min-h-11 touch-manipulation text-base md:text-sm"
       />
       {selected ? (
-        <p className="text-xs text-muted-foreground">
-          Elegida: <span className="font-medium text-foreground">{selected.label}</span>
+        <p className="text-sm text-muted-foreground">
+          Elegida:{" "}
+          <span className="font-medium text-foreground">{selected.label}</span>
         </p>
-      ) : placeholder ? (
-        <p className="text-xs text-muted-foreground">{placeholder}</p>
-      ) : null}
-      <div
-        role="listbox"
-        aria-label={ariaLabel}
-        className="max-h-44 overflow-y-auto rounded-lg border border-input bg-background"
-      >
-        {filtered.length === 0 ? (
-          <p className="px-3 py-3 text-sm text-muted-foreground">
-            Sin resultados
-          </p>
-        ) : (
-          filtered.map((option) => {
-            const isSelected = option.value === value;
-            return (
-              <button
-                key={option.value}
-                type="button"
-                role="option"
-                aria-selected={isSelected}
-                disabled={disabled}
-                onClick={() => {
-                  onChange(option.value);
-                  setQuery("");
-                }}
-                className={cn(
-                  "flex min-h-11 w-full items-center px-3 text-left text-base touch-manipulation outline-none hover:bg-muted focus-visible:bg-muted disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
-                  isSelected && "bg-muted font-medium",
-                )}
-              >
-                {option.label}
-              </button>
-            );
-          })
-        )}
-      </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          {placeholder ?? "Escribe para ver sugerencias"}
+        </p>
+      )}
+      {suggestions}
       {name ? <input type="hidden" name={name} value={value} /> : null}
     </div>
   );
