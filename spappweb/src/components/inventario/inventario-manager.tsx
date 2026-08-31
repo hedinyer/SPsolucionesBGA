@@ -1874,14 +1874,18 @@ function ProductoDialog({
       <DialogContent
         className="max-h-[90dvh] overflow-y-auto bg-background sm:max-w-2xl md:max-w-3xl"
         onPointerDownOutside={(e) => {
-          const target = e.target as Element | null;
-          if (target?.closest?.("[data-touch-select-portal]")) {
+          const node = e.target as Node | null;
+          const el =
+            node instanceof Element ? node : node?.parentElement ?? null;
+          if (el?.closest("[data-touch-select-portal]")) {
             e.preventDefault();
           }
         }}
         onInteractOutside={(e) => {
-          const target = e.target as Element | null;
-          if (target?.closest?.("[data-touch-select-portal]")) {
+          const node = e.target as Node | null;
+          const el =
+            node instanceof Element ? node : node?.parentElement ?? null;
+          if (el?.closest("[data-touch-select-portal]")) {
             e.preventDefault();
           }
         }}

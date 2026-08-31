@@ -118,6 +118,11 @@ export function TouchSelect({
   const selected = options.find((option) => option.value === value);
   const listboxId = id ? `${id}-sugerencias` : undefined;
 
+  function selectOption(optionValue: string) {
+    onChange(optionValue);
+    setQuery("");
+  }
+
   const suggestions =
     showSuggestions && menuRect
       ? createPortal(
@@ -126,7 +131,9 @@ export function TouchSelect({
             id={listboxId}
             role="listbox"
             aria-label={ariaLabel}
-            className="fixed z-[140] max-h-44 overflow-y-auto rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10"
+            // pointer-events-auto: el Dialog modal pone pointer-events:none en body;
+            // sin esto el menú se ve pero no recibe clics.
+            className="pointer-events-auto fixed z-[140] max-h-44 overflow-y-auto rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10"
             style={{
               top: menuRect.top,
               left: menuRect.left,
@@ -147,13 +154,13 @@ export function TouchSelect({
                     role="option"
                     aria-selected={isSelected}
                     disabled={disabled}
-                    onMouseDown={(e) => {
-                      // Evita que el dialog interprete el clic como “fuera”.
+                    onPointerDown={(e) => {
+                      // Selecciona en pointerdown (antes de que el Dialog trague el click)
+                      // y evita que el input pierda el foco de forma rara.
                       e.preventDefault();
-                    }}
-                    onClick={() => {
-                      onChange(option.value);
-                      setQuery("");
+                      e.stopPropagation();
+                      if (disabled) return;
+                      selectOption(option.value);
                     }}
                     className={cn(
                       "flex min-h-11 w-full items-center px-3 text-left text-base touch-manipulation outline-none hover:bg-muted focus-visible:bg-muted disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
