@@ -5,7 +5,7 @@ import {
   MIN_CUOTA_INICIAL,
 } from "./moto-payment.ts";
 
-assert.equal(MIN_CUOTA_INICIAL, 300_000);
+assert.equal(MIN_CUOTA_INICIAL, 200_000);
 
 const bike = {
   cuota_inicial: 400_000,

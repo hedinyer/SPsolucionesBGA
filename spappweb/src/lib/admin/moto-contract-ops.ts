@@ -136,7 +136,7 @@ const assignMotoSchema = z.object({
   placa: z.string().trim().min(1).optional(),
   chasis: z.string().trim().min(1).optional(),
   referencia: z.string().trim().optional(),
-  cuotaInicial: z.number().int().min(MIN_CUOTA_INICIAL).optional(),
+  cuotaInicial: z.number().int().min(MIN_CUOTA_INICIAL),
   cuotaDiaria: z.number().int().positive().optional(),
   montoVisita: z.number().int().min(0).optional(),
   cobraCuotaAdelantada: z.boolean().optional(),
@@ -171,7 +171,7 @@ export async function assignMotoByAdminOp(
     throw new Error("La moto seleccionada no está disponible.");
   }
 
-  const cuotaInicial = parsed.cuotaInicial ?? (bike.cuota_inicial as number);
+  const cuotaInicial = parsed.cuotaInicial;
   const cuotaDiaria = parsed.cuotaDiaria ?? (bike.cuota_diaria as number);
   const montoVisita = parsed.montoVisita ?? (bike.monto_visita as number);
 

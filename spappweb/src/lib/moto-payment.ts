@@ -1,7 +1,7 @@
 import type { BikeRow, FrecuenciaPago } from "@/lib/pipeline/types";
 
 /** Piso negociable de cuota inicial (COP). */
-export const MIN_CUOTA_INICIAL = 300_000;
+export const MIN_CUOTA_INICIAL = 200_000;
 
 export function cobraCuotaAdelantada(
   compra?: { admin_data?: { cobra_cuota_adelantada?: boolean } } | null,

@@ -193,7 +193,7 @@ const assignMotoSchema = z.object({
   placa: z.string().trim().optional(),
   chasis: z.string().trim().min(1),
   referencia: z.string().trim().optional(),
-  cuotaInicial: z.number().int().min(MIN_CUOTA_INICIAL).optional(),
+  cuotaInicial: z.number().int().min(MIN_CUOTA_INICIAL),
   cuotaDiaria: z.number().int().positive().optional(),
   montoVisita: z.number().int().min(0).optional(),
   cobraCuotaAdelantada: z.boolean().optional(),

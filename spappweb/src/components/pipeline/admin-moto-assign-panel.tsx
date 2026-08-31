@@ -76,7 +76,7 @@ export function AdminMotoAssignPanel({
       setCobraAdelantada(cobraCuotaAdelantada(compra));
       return;
     }
-    setCuotaInicial(String(selectedBike.cuota_inicial));
+    setCuotaInicial("");
     setCuotaDiaria(String(selectedBike.cuota_diaria));
     setMontoVisita(String(selectedBike.monto_visita ?? MONTO_VISITA_DEFAULT));
   }, [bikeId, selectedBike, compra]);
@@ -104,9 +104,9 @@ export function AdminMotoAssignPanel({
       <CardHeader>
         <CardTitle>Asignar moto y placa</CardTitle>
         <p className="text-sm text-muted-foreground">
-          Elige la moto, negocia cuotas si el cliente paga más inicial o acordaron
-          otra cuota diaria, y registra el chasis. Algunos clientes no pagan la
-          cuota adelantada: desactívala en ese caso.
+          Elige la moto e indica la cuota inicial acordada con el cliente (el
+          catálogo es solo referencia). Ajusta diaria o visita si negociaron otro
+          valor, y registra el chasis. Si no pagan adelantada, desactívala.
         </p>
       </CardHeader>
       <CardContent>
@@ -120,7 +120,11 @@ export function AdminMotoAssignPanel({
               toast.error("Selecciona una moto.");
               return;
             }
-            if (!Number.isFinite(parsedInicial) || parsedInicial < MIN_CUOTA_INICIAL) {
+            if (cuotaInicial.trim() === "" || !Number.isFinite(parsedInicial)) {
+              toast.error("Indica la cuota inicial acordada.");
+              return;
+            }
+            if (parsedInicial < MIN_CUOTA_INICIAL) {
               toast.error(
                 `La cuota inicial mínima es ${formatCop(MIN_CUOTA_INICIAL)}.`,
               );
@@ -213,11 +217,21 @@ export function AdminMotoAssignPanel({
                     inputMode="numeric"
                     value={cuotaInicial}
                     onChange={(e) => setCuotaInicial(e.target.value)}
-                    placeholder={String(selectedBike.cuota_inicial)}
+                    placeholder="Acordado con el cliente"
+                    required
                   />
                   <p className="text-xs text-muted-foreground">
-                    Mínimo {formatCop(MIN_CUOTA_INICIAL)}. Puede ser mayor si el
-                    cliente aporta más inicial.
+                    Catálogo sugiere {formatCop(selectedBike.cuota_inicial)} ·
+                    mínimo {formatCop(MIN_CUOTA_INICIAL)}.{" "}
+                    <button
+                      type="button"
+                      className="underline underline-offset-2 hover:text-foreground"
+                      onClick={() =>
+                        setCuotaInicial(String(selectedBike.cuota_inicial))
+                      }
+                    >
+                      Usar precio catálogo
+                    </button>
                   </p>
                 </div>
                 <div className="flex flex-col gap-2">
