@@ -1048,82 +1048,113 @@ function buildProductoEditDetalle(
   return { cambios };
 }
 
-export async function saveProducto(input: z.infer<typeof productoSchema>) {
-  const parsed = productoSchema.parse(input);
-  const supabase = await assertAdmin();
-  const payload: Record<string, unknown> = {
-    categoria_id: parsed.categoriaId,
-    sku: parsed.sku.trim().toUpperCase(),
-    nombre: parsed.nombre.trim(),
-    descripcion: parsed.descripcion?.trim() || null,
-    precio: parsed.precio,
-    costo: parsed.costo,
-    stock: parsed.stock,
-    stock_minimo: parsed.stockMinimo,
-    ubicacion: parsed.ubicacion,
-    gaveta:
-      parsed.ubicacion === "Bodega"
-        ? parsed.gaveta?.trim() || null
-        : null,
-    imagen_url: parsed.imagenUrl?.trim() || null,
-    compatible_modelos: parsed.compatibleModelos ?? [],
-    activo: parsed.activo,
-  };
-  if (parsed.id) {
-    payload.editado_por = parsed.editadoPor?.trim() || null;
-    payload.motivo_edicion = parsed.motivoEdicion?.trim() || null;
-    payload.editado_at = new Date().toISOString();
-    const { data: prev, error: prevError } = await supabase
-      .from("inventario_productos")
-      .select(
-        "nombre, sku, precio, costo, stock, stock_minimo, ubicacion, gaveta, descripcion, activo, categoria_id, imagen_url",
-      )
-      .eq("id", parsed.id)
-      .single();
-    if (prevError) throw new Error(prevError.message);
-    const { error } = await supabase
-      .from("inventario_productos")
-      .update(payload)
-      .eq("id", parsed.id);
-    if (error) {
-      if (error.code === "23505") {
-        throw new Error(
-          "Ya existe un producto con ese SKU. Cámbialo en Más opciones o ajusta el nombre.",
-        );
-      }
-      throw new Error(error.message);
-    }
-    await logInventarioProductoNovedad(supabase, {
-      productoId: parsed.id,
-      tipo: "edicion",
-      autor: parsed.editadoPor!.trim(),
-      contenido: parsed.motivoEdicion!.trim(),
-      detalle: buildProductoEditDetalle(prev, parsed),
-    });
-  } else {
-    const session = await getSession();
-    const { data: created, error } = await supabase
-      .from("inventario_productos")
-      .insert(payload)
-      .select("id")
-      .single();
-    if (error) {
-      if (error.code === "23505") {
-        throw new Error(
-          "Ya existe un producto con ese SKU. Cámbialo en Más opciones o ajusta el nombre.",
-        );
-      }
-      throw new Error(error.message);
-    }
-    await logInventarioProductoNovedad(supabase, {
-      productoId: created.id as number,
-      tipo: "creacion",
-      autor: session.username?.trim() || "Administración",
-      contenido: `Producto creado: ${parsed.nombre.trim()} (${parsed.sku.trim().toUpperCase()}).`,
-    });
+async function skuDuplicadoMessage(
+  supabase: SupabaseClient,
+  sku: string,
+): Promise<string> {
+  const { data } = await supabase
+    .from("inventario_productos")
+    .select("nombre, sku")
+    .eq("sku", sku)
+    .maybeSingle();
+  if (data?.nombre) {
+    return `Ya existe «${data.nombre}» con el código ${data.sku}. Ábrelo o cámbiale el SKU en Más opciones.`;
   }
-  revalidatePath("/inventario");
-  return { ok: true };
+  return "Ya existe un producto con ese SKU. Cámbialo en Más opciones o ajusta el nombre.";
+}
+
+export async function saveProducto(input: z.infer<typeof productoSchema>) {
+  try {
+    const parsed = productoSchema.parse(input);
+    const supabase = await assertAdmin();
+    const sku = parsed.sku.trim().toUpperCase();
+    const payload: Record<string, unknown> = {
+      categoria_id: parsed.categoriaId,
+      sku,
+      nombre: parsed.nombre.trim(),
+      descripcion: parsed.descripcion?.trim() || null,
+      precio: parsed.precio,
+      costo: parsed.costo,
+      stock: parsed.stock,
+      stock_minimo: parsed.stockMinimo,
+      ubicacion: parsed.ubicacion,
+      gaveta:
+        parsed.ubicacion === "Bodega"
+          ? parsed.gaveta?.trim() || null
+          : null,
+      imagen_url: parsed.imagenUrl?.trim() || null,
+      compatible_modelos: parsed.compatibleModelos ?? [],
+      activo: parsed.activo,
+    };
+    if (parsed.id) {
+      payload.editado_por = parsed.editadoPor?.trim() || null;
+      payload.motivo_edicion = parsed.motivoEdicion?.trim() || null;
+      payload.editado_at = new Date().toISOString();
+      const { data: prev, error: prevError } = await supabase
+        .from("inventario_productos")
+        .select(
+          "nombre, sku, precio, costo, stock, stock_minimo, ubicacion, gaveta, descripcion, activo, categoria_id, imagen_url",
+        )
+        .eq("id", parsed.id)
+        .single();
+      if (prevError) return { ok: false as const, error: prevError.message };
+      const { error } = await supabase
+        .from("inventario_productos")
+        .update(payload)
+        .eq("id", parsed.id);
+      if (error) {
+        if (error.code === "23505") {
+          return {
+            ok: false as const,
+            error: await skuDuplicadoMessage(supabase, sku),
+          };
+        }
+        return { ok: false as const, error: error.message };
+      }
+      await logInventarioProductoNovedad(supabase, {
+        productoId: parsed.id,
+        tipo: "edicion",
+        autor: parsed.editadoPor!.trim(),
+        contenido: parsed.motivoEdicion!.trim(),
+        detalle: buildProductoEditDetalle(prev, parsed),
+      });
+    } else {
+      const session = await getSession();
+      const { data: created, error } = await supabase
+        .from("inventario_productos")
+        .insert(payload)
+        .select("id")
+        .single();
+      if (error) {
+        if (error.code === "23505") {
+          return {
+            ok: false as const,
+            error: await skuDuplicadoMessage(supabase, sku),
+          };
+        }
+        return { ok: false as const, error: error.message };
+      }
+      await logInventarioProductoNovedad(supabase, {
+        productoId: created.id as number,
+        tipo: "creacion",
+        autor: session.username?.trim() || "Administración",
+        contenido: `Producto creado: ${parsed.nombre.trim()} (${sku}).`,
+      });
+    }
+    revalidatePath("/inventario");
+    return { ok: true as const };
+  } catch (e) {
+    if (e instanceof z.ZodError) {
+      return {
+        ok: false as const,
+        error: e.issues[0]?.message ?? "Datos inválidos.",
+      };
+    }
+    return {
+      ok: false as const,
+      error: e instanceof Error ? e.message : "Error al guardar.",
+    };
+  }
 }
 
 const deleteProductoSchema = z.object({

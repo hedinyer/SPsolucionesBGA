@@ -1270,6 +1270,7 @@ export function InventarioManager({
           onOpenChange={setProdOpen}
           editing={editingProd}
           categorias={categorias}
+          productos={productos}
           pending={pending}
           onSave={(form) =>
             startTransition(async () => {
@@ -1282,7 +1283,11 @@ export function InventarioManager({
                     form.imageFile,
                   );
                 }
-                await saveProducto({ ...form, imagenUrl });
+                const result = await saveProducto({ ...form, imagenUrl });
+                if (!result.ok) {
+                  toast.error(result.error);
+                  return;
+                }
                 toast.success(
                   editingProd ? "Producto actualizado." : "Producto creado.",
                 );
@@ -1671,6 +1676,7 @@ function ProductoDialog({
   onOpenChange,
   editing,
   categorias,
+  productos,
   pending,
   onSave,
 }: {
@@ -1678,6 +1684,7 @@ function ProductoDialog({
   onOpenChange: (v: boolean) => void;
   editing: InventarioProductoRow | null;
   categorias: InventarioCategoriaRow[];
+  productos: InventarioProductoRow[];
   pending: boolean;
   onSave: (form: {
     id?: number;
@@ -1708,6 +1715,14 @@ function ProductoDialog({
         a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base" }),
       ),
     [categorias],
+  );
+
+  const otrosProductos = useMemo(
+    () =>
+      editing
+        ? productos.filter((p) => p.id !== editing.id)
+        : productos,
+    [productos, editing],
   );
 
   const [categoriaId, setCategoriaId] = useState("");
@@ -1773,16 +1788,62 @@ function ProductoDialog({
     if (open) load();
   }, [open, editing]);
 
+  const resolvedSkuPreview = useMemo(
+    () => (sku.trim() || skuFromNombre(nombre)).toUpperCase(),
+    [sku, nombre],
+  );
+
+  const nombreExactoExistente = useMemo(() => {
+    const key = normalizeSearch(nombre.trim());
+    if (!key) return null;
+    return (
+      otrosProductos.find((p) => normalizeSearch(p.nombre) === key) ?? null
+    );
+  }, [nombre, otrosProductos]);
+
+  const skuExistente = useMemo(() => {
+    if (!resolvedSkuPreview) return null;
+    return (
+      otrosProductos.find(
+        (p) => p.sku.trim().toUpperCase() === resolvedSkuPreview,
+      ) ?? null
+    );
+  }, [resolvedSkuPreview, otrosProductos]);
+
+  const nombreSugerencias = useMemo(() => {
+    const q = nombre.trim();
+    if (q.length < 2) return [];
+    return rankBySimilarity(q, otrosProductos, (p) => p.nombre, {
+      threshold: 0.4,
+      limit: 6,
+    }).map((r) => r.item);
+  }, [nombre, otrosProductos]);
+
+  const nombreBloqueado =
+    nombreExactoExistente != null || skuExistente != null;
+
   function handleNombreChange(value: string) {
     setNombre(value);
     if (!skuTouched) {
       setSku(skuFromNombre(value));
+    }
+    if (errors.nombre) {
+      setErrors((prev) => {
+        const next = { ...prev };
+        delete next.nombre;
+        return next;
+      });
     }
   }
 
   function validate(): ProductoFormErrors {
     const next: ProductoFormErrors = {};
     if (!nombre.trim()) next.nombre = "Escribe el nombre del producto.";
+    else if (nombreExactoExistente) {
+      next.nombre = `Ya existe «${nombreExactoExistente.nombre}». Usa otro nombre.`;
+    } else if (skuExistente) {
+      next.nombre = `Ese nombre genera el mismo código que «${skuExistente.nombre}». Cámbialo un poco.`;
+    }
     const stockNum = Number(stock.replace(/\D/g, ""));
     if (stock.trim() === "" || !Number.isFinite(stockNum) || stockNum < 0) {
       next.stock = "Indica cuántas unidades hay (0 o más).";
@@ -1860,6 +1921,7 @@ function ProductoDialog({
 
   const basicosCompletos =
     nombre.trim().length > 0 &&
+    !nombreBloqueado &&
     stock.trim() !== "" &&
     costo.trim() !== "" &&
     precio.trim() !== "" &&
@@ -1958,14 +2020,77 @@ function ProductoDialog({
             >
               Datos del producto
             </h3>
-            <Field
-              id={nombreId}
-              label="Nombre"
-              value={nombre}
-              onChange={handleNombreChange}
-              error={errors.nombre}
-              className="sm:col-span-2 md:col-span-3"
-            />
+            <div className="flex flex-col gap-2 sm:col-span-2 md:col-span-3">
+              <Label htmlFor={nombreId}>Nombre</Label>
+              <Input
+                id={nombreId}
+                value={nombre}
+                onChange={(e) => handleNombreChange(e.target.value)}
+                autoComplete="off"
+                aria-invalid={!!errors.nombre || nombreBloqueado}
+                aria-describedby={
+                  errors.nombre || nombreBloqueado
+                    ? `${nombreId}-aviso`
+                    : nombreSugerencias.length > 0
+                      ? `${nombreId}-sugerencias`
+                      : undefined
+                }
+                className="min-h-11 touch-manipulation text-base md:text-sm"
+              />
+              {nombreExactoExistente ? (
+                <p
+                  id={`${nombreId}-aviso`}
+                  className="text-sm font-medium text-destructive"
+                  role="alert"
+                >
+                  Ya existe «{nombreExactoExistente.nombre}». Pon un nombre
+                  diferente o edita ese producto.
+                </p>
+              ) : skuExistente ? (
+                <p
+                  id={`${nombreId}-aviso`}
+                  className="text-sm font-medium text-destructive"
+                  role="alert"
+                >
+                  Ese nombre genera el mismo código que «{skuExistente.nombre}».
+                  Cámbialo un poco (color, lado, modelo…) para distinguirlo.
+                </p>
+              ) : errors.nombre ? (
+                <p
+                  id={`${nombreId}-aviso`}
+                  className="text-sm text-destructive"
+                  role="alert"
+                >
+                  {errors.nombre}
+                </p>
+              ) : null}
+              {!nombreExactoExistente && nombreSugerencias.length > 0 ? (
+                <div
+                  id={`${nombreId}-sugerencias`}
+                  className="rounded-md border border-border bg-muted/40 px-3 py-2"
+                >
+                  <p className="mb-1.5 text-xs font-medium text-muted-foreground">
+                    Productos parecidos en inventario
+                  </p>
+                  <ul className="flex flex-col gap-1">
+                    {nombreSugerencias.map((p) => (
+                      <li
+                        key={p.id}
+                        className="text-sm leading-snug text-foreground"
+                      >
+                        <span className="font-medium">{p.nombre}</span>
+                        <span className="text-muted-foreground">
+                          {" "}
+                          · {p.stock} und
+                          {p.ubicacion ? ` · ${p.ubicacion}` : ""}
+                          {p.gaveta ? ` gav. ${p.gaveta}` : ""}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </div>
             <Field
               id={stockId}
               label="Cuántas hay"
