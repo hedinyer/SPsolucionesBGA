@@ -139,7 +139,12 @@ export function RentingPanel({ pipeline, userId }: RentingPanelProps) {
     });
   }, [currentTarifaId, visibleTarifas]);
 
-  if (!compra || (compra.estado !== "entregada" && compra.estado !== "saldada")) {
+  if (
+    !compra ||
+    (compra.estado !== "lista_retiro" &&
+      compra.estado !== "entregada" &&
+      compra.estado !== "saldada")
+  ) {
     return null;
   }
 
@@ -361,8 +366,8 @@ export function RentingPanel({ pipeline, userId }: RentingPanelProps) {
 
           {tarifas.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              Aún no hay calendario de tarifas. Se genera al marcar la moto como
-              entregada.
+              Aún no hay calendario de tarifas. Se genera al confirmar el pago
+              (lista para retiro).
             </p>
           ) : (
             <>

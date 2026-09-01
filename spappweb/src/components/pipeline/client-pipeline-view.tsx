@@ -155,7 +155,8 @@ export function ClientPipelineView({
               referralSource={pipeline.document?.referral_source}
             />
           )}
-          {pipeline.compra?.estado === "entregada" && (
+          {(pipeline.compra?.estado === "lista_retiro" ||
+            pipeline.compra?.estado === "entregada") && (
             <RentingPanel pipeline={pipeline} userId={userId} />
           )}
 
