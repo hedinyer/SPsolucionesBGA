@@ -90,14 +90,14 @@ import { TouchSelect } from "@/components/ui/touch-select";
 import { ProductoInventarioCard } from "@/components/inventario/producto-inventario-card";
 import { ProductoNovedadesDialog } from "@/components/inventario/producto-novedades-dialog";
 
+/** Genera SKU desde el nombre completo (sin truncar). */
 function skuFromNombre(nombre: string): string {
   return nombre
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toUpperCase()
     .replace(/[^A-Z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 40);
+    .replace(/^-|-$/g, "");
 }
 
 function formatMilesInput(raw: string): string {

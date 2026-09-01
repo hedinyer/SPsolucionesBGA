@@ -1085,7 +1085,14 @@ export async function saveProducto(input: z.infer<typeof productoSchema>) {
       .from("inventario_productos")
       .update(payload)
       .eq("id", parsed.id);
-    if (error) throw new Error(error.message);
+    if (error) {
+      if (error.code === "23505") {
+        throw new Error(
+          "Ya existe un producto con ese SKU. Cámbialo en Más opciones o ajusta el nombre.",
+        );
+      }
+      throw new Error(error.message);
+    }
     await logInventarioProductoNovedad(supabase, {
       productoId: parsed.id,
       tipo: "edicion",
@@ -1100,7 +1107,14 @@ export async function saveProducto(input: z.infer<typeof productoSchema>) {
       .insert(payload)
       .select("id")
       .single();
-    if (error) throw new Error(error.message);
+    if (error) {
+      if (error.code === "23505") {
+        throw new Error(
+          "Ya existe un producto con ese SKU. Cámbialo en Más opciones o ajusta el nombre.",
+        );
+      }
+      throw new Error(error.message);
+    }
     await logInventarioProductoNovedad(supabase, {
       productoId: created.id as number,
       tipo: "creacion",
