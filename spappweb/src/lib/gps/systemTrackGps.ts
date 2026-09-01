@@ -13,15 +13,10 @@ import type {
 export type { AccionMotorGps, UbicacionGpsMoto };
 export { etiquetaEstadoGps } from "@/lib/gps/ubicacionGps";
 
-const SYSTEMTRACK_BASE_URL =
-  process.env.SYSTEMTRACK_API_URL?.trim() ||
-  "https://plataforma.sistemagps.online";
-const SYSTEMTRACK_EMAIL =
-  process.env.SYSTEMTRACK_EMAIL?.trim() || "marisolpinilla@hotmail.com";
-const SYSTEMTRACK_PASSWORD =
-  process.env.SYSTEMTRACK_PASSWORD?.trim() || "123456";
+const SYSTEMTRACK_BASE_URL = "https://plataforma.sistemagps.online";
+const SYSTEMTRACK_EMAIL = "marisolpinilla@hotmail.com";
+const SYSTEMTRACK_PASSWORD = "123456";
 const SYSTEMTRACK_USER_API_HASH_FALLBACK =
-  process.env.SYSTEMTRACK_USER_API_HASH?.trim() ||
   "$2y$10$OCkjP58xbNyEeR8MYK4evePR/l2sVfPI.Qj/W2prKGWxG35OnxIve";
 
 const CACHE_TTL_MS = 45_000;

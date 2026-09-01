@@ -13,15 +13,14 @@ import {
   type UbicacionGpsMoto,
 } from "@/lib/gps/ubicacionGps";
 
-const IOPGPS_BASE_URL =
-  process.env.IOPGPS_API_URL?.trim() || "https://open.iopgps.com";
+const IOPGPS_BASE_URL = "https://open.iopgps.com";
 
 type CuentaIop = {
   appid: string;
   secretKey: string;
 };
 
-const CUENTAS_IOP_DEFECTO: CuentaIop[] = [
+const CUENTAS_IOP: CuentaIop[] = [
   {
     appid: "solucionespinilla",
     secretKey: "qr5i85fszplr0m149mskasoyx6fqhwei",
@@ -35,22 +34,6 @@ const CUENTAS_IOP_DEFECTO: CuentaIop[] = [
     secretKey: "tc1z9k9volktkclrz1c6tsh0m2emni7w",
   },
 ];
-
-function parseCuentasIopEnv(): CuentaIop[] {
-  const raw = process.env.IOPGPS_CUENTAS_JSON?.trim();
-  if (!raw) return CUENTAS_IOP_DEFECTO;
-  try {
-    const parsed = JSON.parse(raw) as CuentaIop[];
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      return parsed.filter((c) => c.appid && c.secretKey);
-    }
-  } catch {
-    console.warn("[iopGps] IOPGPS_CUENTAS_JSON inválido, usando cuentas por defecto");
-  }
-  return CUENTAS_IOP_DEFECTO;
-}
-
-const CUENTAS_IOP = parseCuentasIopEnv();
 
 const CACHE_TTL_MS = 45_000;
 const CACHE_TTL_EN_VIVO_MS = 0;

@@ -11,12 +11,9 @@ import {
   type UbicacionGpsMoto,
 } from "@/lib/gps/ubicacionGps";
 
-const DSTRACK_BASE_URL =
-  process.env.DSTRACK_API_URL?.trim() || "https://dstrack.uno";
-const DSTRACK_USER =
-  process.env.DSTRACK_USER?.trim() || "solucionespinilla";
-const DSTRACK_PASSWORD =
-  process.env.DSTRACK_PASSWORD?.trim() || "SPinilla91222";
+const DSTRACK_BASE_URL = "https://dstrack.uno";
+const DSTRACK_USER = "solucionespinilla";
+const DSTRACK_PASSWORD = "SPinilla91222";
 const DSTRACK_BASIC = Buffer.from(
   `${DSTRACK_USER}:${DSTRACK_PASSWORD}`,
   "utf8",
