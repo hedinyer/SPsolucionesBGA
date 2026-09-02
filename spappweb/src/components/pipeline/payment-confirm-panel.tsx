@@ -6,6 +6,7 @@ import { ExternalLink, Pencil, Printer, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   removePagoAbono,
+  updateCobraCuotaAdelantadaCompra,
   updateMontoVisitaCompra,
   updatePagoAbono,
 } from "@/lib/actions/payment-comprobante-actions";
@@ -169,21 +170,19 @@ export function PaymentConfirmPanel({
             onAddAbono={() => openAbonoDialog("inicial")}
             onAddEfectivo={() => openAbonoDialog("inicial", "efectivo")}
           />
-          {cobraAdelantada && (
-            <ConceptoAbonoSection
-              compra={compra}
-              pagos={pagos}
-              contexto="cuota_adelantada"
-              userId={userId}
-              canEdit={puedeEditarAbonoConcepto(compra, pagos, "cuota_adelantada")}
-              clienteNombre={clienteNombre}
-              clienteCedula={clienteCedula}
-              onAddAbono={() => openAbonoDialog("cuota_adelantada")}
-              onAddEfectivo={() =>
-                openAbonoDialog("cuota_adelantada", "efectivo")
-              }
-            />
-          )}
+          <ConceptoAbonoSection
+            compra={compra}
+            pagos={pagos}
+            contexto="cuota_adelantada"
+            userId={userId}
+            canEdit={puedeEditarAbonoConcepto(compra, pagos, "cuota_adelantada")}
+            clienteNombre={clienteNombre}
+            clienteCedula={clienteCedula}
+            onAddAbono={() => openAbonoDialog("cuota_adelantada")}
+            onAddEfectivo={() =>
+              openAbonoDialog("cuota_adelantada", "efectivo")
+            }
+          />
           {showVisitaSection && (
             <ConceptoAbonoSection
               compra={compra}
@@ -318,12 +317,33 @@ function ConceptoAbonoSection({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [editing, setEditing] = useState<PagoRow | null>(null);
+  const cobraAdelantada = cobraCuotaAdelantada(compra);
   const esperado = montoEsperadoConcepto(compra, contexto);
   const recibido = sumAbonos(pagos, contexto);
   const faltante = faltanteConcepto(compra, pagos, contexto);
   const completo = conceptoCompleto(compra, pagos, contexto);
   const abonos = abonosPorConcepto(pagos, contexto);
   const pct = esperado > 0 ? Math.min(100, (recibido / esperado) * 100) : 0;
+
+  function handleCobraAdelantada(cobra: boolean) {
+    startTransition(async () => {
+      try {
+        await updateCobraCuotaAdelantadaCompra({
+          userId,
+          compraId: compra.id,
+          cobra,
+        });
+        toast.success(
+          cobra
+            ? "Cuota adelantada activada."
+            : "Cuota adelantada en $0. La diaria no cambia.",
+        );
+        router.refresh();
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "No se pudo guardar.");
+      }
+    });
+  }
 
   function handleReprint(abono: PagoRow) {
     if (
@@ -370,6 +390,10 @@ function ConceptoAbonoSection({
           <p className="text-sm text-muted-foreground">
             {formatCop(recibido)} de {formatCop(esperado)}
             {!completo && faltante > 0 && ` · faltan ${formatCop(faltante)}`}
+            {contexto === "cuota_adelantada" &&
+              cobraAdelantada &&
+              recibido === 0 &&
+              " · puedes dejarla en $0"}
           </p>
         </div>
         {completo ? (
@@ -478,7 +502,30 @@ function ConceptoAbonoSection({
           >
             Efectivo
           </Button>
+          {contexto === "cuota_adelantada" && recibido === 0 && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={pending}
+              onClick={() => handleCobraAdelantada(false)}
+            >
+              Poner en $0
+            </Button>
+          )}
         </div>
+      )}
+      {canEdit && contexto === "cuota_adelantada" && !cobraAdelantada && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="w-fit"
+          disabled={pending}
+          onClick={() => handleCobraAdelantada(true)}
+        >
+          Cobrar adelantada ({formatCop(compra.monto_cuota_periodo)})
+        </Button>
       )}
 
       <EditAbonoDialog

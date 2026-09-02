@@ -5,7 +5,10 @@ import { useEffect, useState, useTransition, type FormEvent } from "react";
 import { Copy, MessageCircle } from "lucide-react";
 import { toast } from "sonner";
 import { updateDelivery } from "@/lib/actions/admin-actions";
-import { updateMontosPrimerPagoCompra } from "@/lib/actions/payment-comprobante-actions";
+import {
+  updateCobraCuotaAdelantadaCompra,
+  updateMontosPrimerPagoCompra,
+} from "@/lib/actions/payment-comprobante-actions";
 import { cobraCuotaAdelantada } from "@/lib/moto-payment";
 import type {
   ContractStatus,
@@ -135,16 +138,39 @@ export function MotoSelectionPanel({
           chasis,
         });
         if (canEditMontos && inicial != null && adelantada != null) {
-          const montosChanged =
-            inicial !== compra.cuota_inicial_monto ||
-            adelantada !== compra.monto_cuota_periodo;
-          if (montosChanged) {
-            await updateMontosPrimerPagoCompra({
+          if (adelantada === 0) {
+            await updateCobraCuotaAdelantadaCompra({
               userId,
               compraId,
-              cuotaInicial: inicial,
-              montoCuotaPeriodo: adelantada,
+              cobra: false,
             });
+            if (inicial !== compra.cuota_inicial_monto) {
+              await updateMontosPrimerPagoCompra({
+                userId,
+                compraId,
+                cuotaInicial: inicial,
+                montoCuotaPeriodo: compra.monto_cuota_periodo,
+              });
+            }
+          } else {
+            if (!cobraAdelantada) {
+              await updateCobraCuotaAdelantadaCompra({
+                userId,
+                compraId,
+                cobra: true,
+              });
+            }
+            const montosChanged =
+              inicial !== compra.cuota_inicial_monto ||
+              adelantada !== compra.monto_cuota_periodo;
+            if (montosChanged) {
+              await updateMontosPrimerPagoCompra({
+                userId,
+                compraId,
+                cuotaInicial: inicial,
+                montoCuotaPeriodo: adelantada,
+              });
+            }
           }
         }
         toast.success("Datos de la moto guardados.");
@@ -235,15 +261,22 @@ export function MotoSelectionPanel({
                 Cuota {cobraAdelantada ? "adelantada" : "periódica"}
               </Label>
               {canEditMontos ? (
-                <Input
-                  id="moto-cuota-adelantada"
-                  name="cuota_adelantada"
-                  inputMode="numeric"
-                  value={cuotaAdelantada}
-                  onChange={(e) => setCuotaAdelantada(e.target.value)}
-                  className="font-medium"
-                  disabled={!userId || pending}
-                />
+                <>
+                  <Input
+                    id="moto-cuota-adelantada"
+                    name="cuota_adelantada"
+                    inputMode="numeric"
+                    value={cuotaAdelantada}
+                    onChange={(e) => setCuotaAdelantada(e.target.value)}
+                    className="font-medium"
+                    disabled={!userId || pending}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    {cobraAdelantada
+                      ? "Pon 0 si no pagan adelantada. La cuota periódica no cambia."
+                      : "Sin adelantada en el primer pago. Un valor mayor a 0 la vuelve a cobrar."}
+                  </p>
+                </>
               ) : (
                 <dd className="font-medium">
                   {formatCop(compra.monto_cuota_periodo)}

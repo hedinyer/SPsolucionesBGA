@@ -636,7 +636,7 @@ export async function updateMontosPrimerPagoCompra(input: {
       userId: z.number().int().positive(),
       compraId: z.string().uuid(),
       cuotaInicial: z.number().int().min(0),
-      montoCuotaPeriodo: z.number().int().min(0),
+      montoCuotaPeriodo: z.number().int().positive(),
     })
     .parse(input);
 
@@ -801,6 +801,85 @@ export async function updateMontoVisitaCompra(input: {
     .eq("id", parsed.compraId);
 
   if (updateError) throw new Error(updateError.message);
+
+  revalidateClient(parsed.userId);
+  return { ok: true };
+}
+
+/** $0 de adelantada: no se cobra en el primer pago; la cuota periódica sigue. */
+export async function updateCobraCuotaAdelantadaCompra(input: {
+  userId: number;
+  compraId: string;
+  cobra: boolean;
+}): Promise<{ ok: true }> {
+  const parsed = z
+    .object({
+      userId: z.number().int().positive(),
+      compraId: z.string().uuid(),
+      cobra: z.boolean(),
+    })
+    .parse(input);
+
+  const supabase = await assertAdmin();
+
+  const { data: compra, error: compraError } = await supabase
+    .from("user_moto_compra")
+    .select(
+      "id, estado, cuota_inicial_monto, monto_cuota_periodo, monto_visita_monto, admin_data",
+    )
+    .eq("id", parsed.compraId)
+    .eq("user_id", parsed.userId)
+    .maybeSingle();
+
+  if (compraError) throw new Error(compraError.message);
+  if (!compra) throw new Error("Compra no encontrada.");
+  if (compra.estado !== "pendiente_pago" && compra.estado !== "lista_retiro") {
+    throw new Error("No se puede cambiar la cuota adelantada en este estado.");
+  }
+
+  const actual = cobraCuotaAdelantada(
+    compra as { admin_data?: { cobra_cuota_adelantada?: boolean } },
+  );
+  if (actual === parsed.cobra) return { ok: true };
+
+  if (!parsed.cobra) {
+    const { data: pagos, error: pagosError } = await supabase
+      .from("pagos")
+      .select("id")
+      .eq("user_moto_compra_id", parsed.compraId)
+      .eq("contexto_pago", "cuota_adelantada")
+      .eq("estado", "confirmado")
+      .limit(1);
+    if (pagosError) throw new Error(pagosError.message);
+    if (pagos?.length) {
+      throw new Error(
+        "Ya hay abonos de cuota adelantada. Elimínalos antes de ponerla en $0.",
+      );
+    }
+  }
+
+  const montoTotal =
+    Number(compra.cuota_inicial_monto) +
+    (parsed.cobra ? Number(compra.monto_cuota_periodo) : 0) +
+    Number(compra.monto_visita_monto);
+
+  const { error: updateError } = await supabase
+    .from("user_moto_compra")
+    .update({
+      admin_data: {
+        ...((compra.admin_data as Record<string, unknown> | null) ?? {}),
+        cobra_cuota_adelantada: parsed.cobra,
+      },
+      monto_total_primer_pago: montoTotal,
+    })
+    .eq("id", parsed.compraId);
+
+  if (updateError) throw new Error(updateError.message);
+
+  const { error: syncError } = await supabase.rpc("sync_compra_pago_flags", {
+    p_compra_id: parsed.compraId,
+  });
+  if (syncError) throw new Error(syncError.message);
 
   revalidateClient(parsed.userId);
   return { ok: true };

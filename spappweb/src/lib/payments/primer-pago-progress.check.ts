@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  conceptoCompleto,
   montoEsperadoConcepto,
   puedeEditarAbonoConcepto,
   puedeEditarFrecuenciaPago,
@@ -44,6 +45,7 @@ const sinAdelantada = {
 } as Parameters<typeof montoEsperadoConcepto>[0];
 
 assert.equal(montoEsperadoConcepto(sinAdelantada, "cuota_adelantada"), 0);
+assert.equal(conceptoCompleto(sinAdelantada, pagos, "cuota_adelantada"), true);
 assert.equal(montoEsperadoConcepto(compra("pendiente_pago"), "cuota_adelantada"), 280_000);
 assert.equal(puedeEditarFrecuenciaPago(sinAdelantada, pagos), true);
 
