@@ -554,8 +554,6 @@ export function RentingPanel({ pipeline, userId }: RentingPanelProps) {
                       <TableHead>Fecha</TableHead>
                       <TableHead>Contexto</TableHead>
                       <TableHead>Monto</TableHead>
-                      <TableHead>Esperado</TableHead>
-                      <TableHead>Variación</TableHead>
                       <TableHead>Cuotas</TableHead>
                       <TableHead>Referencia</TableHead>
                     </TableRow>
@@ -568,17 +566,6 @@ export function RentingPanel({ pipeline, userId }: RentingPanelProps) {
                           {historialContextoLabel(pago)}
                         </TableCell>
                         <TableCell>{formatCop(pago.monto)}</TableCell>
-                        <TableCell>
-                          {pago.montoEsperado != null
-                            ? formatCop(pago.montoEsperado)
-                            : "—"}
-                        </TableCell>
-                        <TableCell>
-                          <VariacionBadge
-                            label={pago.variacionLabel}
-                            tone={pago.variacionTone}
-                          />
-                        </TableCell>
                         <TableCell>
                           {pago.cuotasCubiertas > 0
                             ? formatCuotas(pago.cuotasCubiertas)
@@ -607,23 +594,6 @@ export function RentingPanel({ pipeline, userId }: RentingPanelProps) {
                         <dt className="text-muted-foreground">Monto</dt>
                         <dd className="font-medium">{formatCop(pago.monto)}</dd>
                       </div>
-                      {pago.montoEsperado != null && (
-                        <div className="flex justify-between gap-2">
-                          <dt className="text-muted-foreground">Esperado</dt>
-                          <dd>{formatCop(pago.montoEsperado)}</dd>
-                        </div>
-                      )}
-                      {pago.variacionLabel !== "—" && (
-                        <div className="flex justify-between gap-2">
-                          <dt className="text-muted-foreground">Variación</dt>
-                          <dd>
-                            <VariacionBadge
-                              label={pago.variacionLabel}
-                              tone={pago.variacionTone}
-                            />
-                          </dd>
-                        </div>
-                      )}
                       {pago.cuotasCubiertas > 0 && (
                         <div className="flex justify-between gap-2">
                           <dt className="text-muted-foreground">Cuotas</dt>
@@ -709,27 +679,6 @@ function TarifaPagadoCell({ tarifa }: { tarifa: TarifaPagadaRow }) {
       </p>
     </div>
   );
-}
-
-function VariacionBadge({
-  label,
-  tone,
-}: {
-  label: string;
-  tone: "menor" | "mayor" | "exacto";
-}) {
-  if (label === "—") {
-    return <span className="text-muted-foreground">—</span>;
-  }
-
-  const className =
-    tone === "menor"
-      ? "text-amber-800"
-      : tone === "mayor"
-        ? "text-blue-800"
-        : "text-muted-foreground";
-
-  return <span className={`text-xs ${className}`}>{label}</span>;
 }
 
 function Stat({

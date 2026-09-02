@@ -181,6 +181,8 @@ export interface UserMotoCompraRow {
     entrega_antes_visita?: boolean;
     cobra_cuota_adelantada?: boolean;
     condicion?: "nueva" | "segunda_mano" | "recuperada";
+    hora_entrega?: string;
+    nota_entrega?: string;
   };
 }
 

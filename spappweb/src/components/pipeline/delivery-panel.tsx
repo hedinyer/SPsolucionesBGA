@@ -146,7 +146,17 @@ function MotoDocsSection({
           <p className="font-medium">Moto entregada</p>
           {compra.placa && <p>Placa: {compra.placa}</p>}
           {compra.fecha_entrega && (
-            <p>Fecha: {formatDateOnly(compra.fecha_entrega)}</p>
+            <p>
+              Fecha: {formatDateOnly(compra.fecha_entrega)}
+              {compra.admin_data?.hora_entrega
+                ? ` · ${compra.admin_data.hora_entrega}`
+                : ""}
+            </p>
+          )}
+          {compra.admin_data?.nota_entrega && (
+            <p className="text-muted-foreground">
+              {compra.admin_data.nota_entrega}
+            </p>
           )}
         </div>
 
