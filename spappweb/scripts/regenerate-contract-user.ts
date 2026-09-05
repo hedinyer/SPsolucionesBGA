@@ -9,7 +9,10 @@ Module.prototype.require = function (this: NodeModule, id: string) {
 
 const userIdArg = process.argv[2];
 const onlyUserId = userIdArg ? Number(userIdArg) : null;
-if (userIdArg && (!Number.isFinite(onlyUserId) || onlyUserId <= 0)) {
+if (
+  userIdArg &&
+  (onlyUserId === null || !Number.isFinite(onlyUserId) || onlyUserId <= 0)
+) {
   console.error("Usage: npx tsx scripts/regenerate-contract-user.ts [userId]");
   process.exit(1);
 }
