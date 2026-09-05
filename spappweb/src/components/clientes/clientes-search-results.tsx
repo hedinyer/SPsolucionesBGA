@@ -10,6 +10,7 @@ import {
   COMPRA_ESTADO_LABELS,
   type ClientSearchResult,
 } from "@/lib/pipeline/types";
+import { formatDateOnly } from "@/lib/utils/format";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -200,6 +201,14 @@ export function ClientesSearchResults({
                           {client.placa ? `Placa ${client.placa}` : null}
                           {client.placa && client.motoLabel ? " · " : null}
                           {client.motoLabel}
+                        </p>
+                      )}
+                      {client.fechaVenta && (
+                        <p className="text-base text-muted-foreground">
+                          Fecha de venta{" "}
+                          <span className="font-bold text-foreground">
+                            {formatDateOnly(client.fechaVenta)}
+                          </span>
                         </p>
                       )}
                       {client.cuotasPagadas > 0 && (

@@ -1,22 +1,21 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { assignMotoByAdmin } from "@/lib/actions/admin-actions";
 import {
   calcMotoPayment,
   cobraCuotaAdelantada,
   cuotaDiariaFromPeriodo,
-  MIN_CUOTA_INICIAL,
 } from "@/lib/moto-payment";
 import { MONTO_VISITA_DEFAULT } from "@/lib/payments/visita-monto";
 import type { BikeRow, FrecuenciaPago, UserMotoCompraRow } from "@/lib/pipeline/types";
 import { FRECUENCIA_LABELS } from "@/lib/pipeline/types";
 import { formatCop } from "@/lib/utils/format";
 import { Button } from "@/components/ui/button";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { TouchSelect } from "@/components/ui/touch-select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -34,6 +33,37 @@ const FRECUENCIAS: FrecuenciaPago[] = [
   "mensual",
 ];
 
+function initialForm(compra: UserMotoCompraRow | null) {
+  if (!compra) {
+    return {
+      bikeId: "",
+      frecuencia: "semanal" as FrecuenciaPago,
+      cuotaInicial: null as number | null,
+      cuotaDiaria: null as number | null,
+      montoVisita: null as number | null,
+      cuotaAdelantada: null as number | null,
+      condicion: "nueva" as "nueva" | "segunda_mano",
+    };
+  }
+  return {
+    bikeId: compra.bike_id ? String(compra.bike_id) : "",
+    frecuencia: compra.frecuencia_pago,
+    cuotaInicial: compra.cuota_inicial_monto,
+    cuotaDiaria: cuotaDiariaFromPeriodo(
+      compra.monto_cuota_periodo,
+      compra.frecuencia_pago,
+    ),
+    montoVisita: compra.monto_visita_monto,
+    cuotaAdelantada:
+      compra.monto_cuota_adelantada ??
+      (cobraCuotaAdelantada(compra) ? compra.monto_cuota_periodo : 0),
+    condicion:
+      compra.admin_data?.condicion === "segunda_mano"
+        ? ("segunda_mano" as const)
+        : ("nueva" as const),
+  };
+}
+
 export function AdminMotoAssignPanel({
   compra,
   bikes,
@@ -41,62 +71,73 @@ export function AdminMotoAssignPanel({
   documentId,
 }: AdminMotoAssignPanelProps) {
   const [pending, startTransition] = useTransition();
-  const [bikeId, setBikeId] = useState(
-    compra?.bike_id ? String(compra.bike_id) : "",
+  const init = initialForm(compra);
+  const [bikeId, setBikeId] = useState(init.bikeId);
+  const [frecuencia, setFrecuencia] = useState<FrecuenciaPago>(init.frecuencia);
+  const [cuotaInicial, setCuotaInicial] = useState<number | null>(
+    init.cuotaInicial,
   );
-  const [frecuencia, setFrecuencia] = useState<FrecuenciaPago>(
-    compra?.frecuencia_pago ?? "semanal",
-  );
-  const [cuotaInicial, setCuotaInicial] = useState("");
-  const [cuotaDiaria, setCuotaDiaria] = useState("");
-  const [montoVisita, setMontoVisita] = useState("");
-  const [cobraAdelantada, setCobraAdelantada] = useState(
-    cobraCuotaAdelantada(compra),
+  const [cuotaDiaria, setCuotaDiaria] = useState<number | null>(init.cuotaDiaria);
+  const [montoVisita, setMontoVisita] = useState<number | null>(init.montoVisita);
+  const [cuotaAdelantada, setCuotaAdelantada] = useState<number | null>(
+    init.cuotaAdelantada,
   );
   const [condicion, setCondicion] = useState<"nueva" | "segunda_mano">(
-    compra?.admin_data?.condicion === "segunda_mano" ? "segunda_mano" : "nueva",
+    init.condicion,
   );
 
   const activeBikes = bikes.filter((b) => b.activo);
   const selectedBike = activeBikes.find((b) => String(b.id) === bikeId);
 
-  useEffect(() => {
-    if (!selectedBike) return;
-    if (compra && String(compra.bike_id) === bikeId) {
-      setCuotaInicial(String(compra.cuota_inicial_monto));
-      setCuotaDiaria(
-        String(
-          cuotaDiariaFromPeriodo(
-            compra.monto_cuota_periodo,
-            compra.frecuencia_pago,
-          ),
-        ),
-      );
-      setMontoVisita(String(compra.monto_visita_monto));
-      setCobraAdelantada(cobraCuotaAdelantada(compra));
+  function applyBikeDefaults(
+    bike: BikeRow,
+    nextFrecuencia: FrecuenciaPago,
+    keepExisting: boolean,
+  ) {
+    if (keepExisting && compra && String(compra.bike_id) === String(bike.id)) {
+      const form = initialForm(compra);
+      setCuotaInicial(form.cuotaInicial);
+      setCuotaDiaria(form.cuotaDiaria);
+      setMontoVisita(form.montoVisita);
+      setCuotaAdelantada(form.cuotaAdelantada);
       return;
     }
-    setCuotaInicial("");
-    setCuotaDiaria(String(selectedBike.cuota_diaria));
-    setMontoVisita(String(selectedBike.monto_visita ?? MONTO_VISITA_DEFAULT));
-  }, [bikeId, selectedBike, compra]);
+    setCuotaInicial(null);
+    setCuotaDiaria(bike.cuota_diaria);
+    setMontoVisita(bike.monto_visita ?? MONTO_VISITA_DEFAULT);
+    const periodo = calcMotoPayment(bike, nextFrecuencia, {
+      cuotaDiaria: bike.cuota_diaria,
+    }).monto_cuota_periodo;
+    setCuotaAdelantada(periodo);
+  }
 
-  const parsedInicial = Number(cuotaInicial);
-  const parsedDiaria = Number(cuotaDiaria);
-  const parsedVisita = Number(montoVisita);
+  const parsedInicial = cuotaInicial ?? Number.NaN;
+  const parsedDiaria = cuotaDiaria ?? Number.NaN;
+  const parsedVisita = montoVisita ?? Number.NaN;
+  const parsedAdelantada = cuotaAdelantada ?? Number.NaN;
+
   const paymentPreview =
     selectedBike &&
     Number.isFinite(parsedInicial) &&
     Number.isFinite(parsedDiaria) &&
     Number.isFinite(parsedVisita) &&
+    Number.isFinite(parsedAdelantada) &&
     parsedDiaria > 0 &&
-    parsedVisita >= 0
+    parsedVisita >= 0 &&
+    parsedAdelantada >= 0
       ? calcMotoPayment(selectedBike, frecuencia, {
           cuotaInicial: parsedInicial,
           cuotaDiaria: parsedDiaria,
           montoVisita: parsedVisita,
-          cobraCuotaAdelantada: cobraAdelantada,
+          cuotaAdelantada: parsedAdelantada,
         })
+      : null;
+
+  const periodoCompleto =
+    selectedBike && Number.isFinite(parsedDiaria) && parsedDiaria > 0
+      ? calcMotoPayment(selectedBike, frecuencia, {
+          cuotaDiaria: parsedDiaria,
+        }).monto_cuota_periodo
       : null;
 
   return (
@@ -104,9 +145,8 @@ export function AdminMotoAssignPanel({
       <CardHeader>
         <CardTitle>Asignar moto y placa</CardTitle>
         <p className="text-sm text-muted-foreground">
-          Elige la moto e indica la cuota inicial acordada con el cliente (el
-          catálogo es solo referencia). Ajusta diaria o visita si negociaron otro
-          valor, y registra el chasis. Si no pagan adelantada, desactívala.
+          Elige la moto e indica la cuota inicial, adelantada y visita acordadas
+          (pueden ser $0). El catálogo es solo referencia.
         </p>
       </CardHeader>
       <CardContent>
@@ -120,14 +160,12 @@ export function AdminMotoAssignPanel({
               toast.error("Selecciona una moto.");
               return;
             }
-            if (cuotaInicial.trim() === "" || !Number.isFinite(parsedInicial)) {
-              toast.error("Indica la cuota inicial acordada.");
+            if (cuotaInicial == null || !Number.isFinite(parsedInicial)) {
+              toast.error("Indica la cuota inicial acordada (puede ser $0).");
               return;
             }
-            if (parsedInicial < MIN_CUOTA_INICIAL) {
-              toast.error(
-                `La cuota inicial mínima es ${formatCop(MIN_CUOTA_INICIAL)}.`,
-              );
+            if (parsedInicial < 0) {
+              toast.error("La cuota inicial no puede ser negativa.");
               return;
             }
             if (!Number.isFinite(parsedDiaria) || parsedDiaria <= 0) {
@@ -135,7 +173,13 @@ export function AdminMotoAssignPanel({
               return;
             }
             if (!Number.isFinite(parsedVisita) || parsedVisita < 0) {
-              toast.error("Indica un monto de visita válido.");
+              toast.error("Indica un monto de visita válido (puede ser $0).");
+              return;
+            }
+            if (!Number.isFinite(parsedAdelantada) || parsedAdelantada < 0) {
+              toast.error(
+                "Indica la cuota adelantada (puede ser $0 o cualquier valor).",
+              );
               return;
             }
             startTransition(async () => {
@@ -151,10 +195,12 @@ export function AdminMotoAssignPanel({
                   cuotaInicial: parsedInicial,
                   cuotaDiaria: parsedDiaria,
                   montoVisita: parsedVisita,
-                  cobraCuotaAdelantada: cobraAdelantada,
+                  cuotaAdelantada: parsedAdelantada,
                   condicion,
                 });
-                toast.success("Moto asignada. Envía el link de contrato al cliente.");
+                toast.success(
+                  "Moto asignada. Envía el link de contrato al cliente.",
+                );
               } catch (err) {
                 toast.error(
                   err instanceof Error ? err.message : "Error al guardar.",
@@ -165,11 +211,16 @@ export function AdminMotoAssignPanel({
         >
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-2 sm:col-span-2">
-              <Label>Moto (modelo · color)</Label>
+              <Label htmlFor="assign-moto">Moto (modelo · color)</Label>
               <TouchSelect
+                id="assign-moto"
                 aria-label="Moto"
                 value={bikeId}
-                onChange={setBikeId}
+                onChange={(v) => {
+                  setBikeId(v);
+                  const bike = activeBikes.find((b) => String(b.id) === v);
+                  if (bike) applyBikeDefaults(bike, frecuencia, true);
+                }}
                 placeholder="Seleccionar moto"
                 options={activeBikes.map((b) => ({
                   value: String(b.id),
@@ -178,8 +229,9 @@ export function AdminMotoAssignPanel({
               />
             </div>
             <div className="flex flex-col gap-2 sm:col-span-2">
-              <Label>Condición</Label>
+              <Label htmlFor="assign-condicion">Condición</Label>
               <TouchSelect
+                id="assign-condicion"
                 aria-label="Condición"
                 value={condicion}
                 onChange={(v) =>
@@ -192,11 +244,32 @@ export function AdminMotoAssignPanel({
               />
             </div>
             <div className="flex flex-col gap-2 sm:col-span-2">
-              <Label>Frecuencia de pago</Label>
+              <Label htmlFor="assign-frecuencia">Frecuencia de pago</Label>
               <TouchSelect
+                id="assign-frecuencia"
                 aria-label="Frecuencia"
                 value={frecuencia}
-                onChange={(v) => setFrecuencia(v as FrecuenciaPago)}
+                onChange={(v) => {
+                  const next = v as FrecuenciaPago;
+                  setFrecuencia(next);
+                  if (selectedBike && cuotaDiaria != null && cuotaDiaria > 0) {
+                    const periodo = calcMotoPayment(selectedBike, next, {
+                      cuotaDiaria,
+                    }).monto_cuota_periodo;
+                    // Si la adelantada coincidía con el periodo anterior, actualizarla
+                    const prevPeriodo = calcMotoPayment(
+                      selectedBike,
+                      frecuencia,
+                      { cuotaDiaria },
+                    ).monto_cuota_periodo;
+                    if (
+                      cuotaAdelantada == null ||
+                      cuotaAdelantada === prevPeriodo
+                    ) {
+                      setCuotaAdelantada(periodo);
+                    }
+                  }
+                }}
                 options={FRECUENCIAS.map((f) => ({
                   value: f,
                   label: FRECUENCIA_LABELS[f],
@@ -212,22 +285,21 @@ export function AdminMotoAssignPanel({
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="cuota-inicial">Cuota inicial negociada</Label>
-                  <Input
+                  <CurrencyInput
                     id="cuota-inicial"
-                    inputMode="numeric"
                     value={cuotaInicial}
-                    onChange={(e) => setCuotaInicial(e.target.value)}
+                    onValueChange={setCuotaInicial}
+                    min={0}
                     placeholder="Acordado con el cliente"
-                    required
                   />
                   <p className="text-xs text-muted-foreground">
-                    Catálogo sugiere {formatCop(selectedBike.cuota_inicial)} ·
-                    mínimo {formatCop(MIN_CUOTA_INICIAL)}.{" "}
+                    Catálogo sugiere {formatCop(selectedBike.cuota_inicial)}.
+                    Puede ser $0.{" "}
                     <button
                       type="button"
                       className="underline underline-offset-2 hover:text-foreground"
                       onClick={() =>
-                        setCuotaInicial(String(selectedBike.cuota_inicial))
+                        setCuotaInicial(selectedBike.cuota_inicial)
                       }
                     >
                       Usar precio catálogo
@@ -236,49 +308,82 @@ export function AdminMotoAssignPanel({
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="cuota-diaria">Cuota diaria negociada</Label>
-                  <Input
+                  <CurrencyInput
                     id="cuota-diaria"
-                    inputMode="numeric"
                     value={cuotaDiaria}
-                    onChange={(e) => setCuotaDiaria(e.target.value)}
+                    onValueChange={(v) => {
+                      setCuotaDiaria(v);
+                      if (selectedBike && v != null && v > 0) {
+                        const periodo = calcMotoPayment(
+                          selectedBike,
+                          frecuencia,
+                          { cuotaDiaria: v },
+                        ).monto_cuota_periodo;
+                        const prev =
+                          cuotaDiaria != null && cuotaDiaria > 0
+                            ? calcMotoPayment(selectedBike, frecuencia, {
+                                cuotaDiaria,
+                              }).monto_cuota_periodo
+                            : null;
+                        if (
+                          cuotaAdelantada == null ||
+                          (prev != null && cuotaAdelantada === prev)
+                        ) {
+                          setCuotaAdelantada(periodo);
+                        }
+                      }
+                    }}
+                    min={1}
                     placeholder={String(selectedBike.cuota_diaria)}
                   />
                   <p className="text-xs text-muted-foreground">
-                    Base diaria acordada en persona. Define la cuota periódica
-                    {cobraAdelantada
-                      ? " y la adelantada del primer pago."
+                    Base diaria acordada. Define la cuota periódica
+                    {parsedAdelantada > 0
+                      ? " y sirve de referencia para la adelantada."
                       : "; la periódica empieza después de la entrega."}
                   </p>
                 </div>
-                <div className="sm:col-span-2 flex items-start gap-3 rounded-lg border border-border px-3 py-3">
-                  <Switch
-                    id="cobra-adelantada"
-                    checked={cobraAdelantada}
-                    onCheckedChange={setCobraAdelantada}
+                <div className="flex flex-col gap-2 sm:col-span-2">
+                  <Label htmlFor="cuota-adelantada">
+                    Cuota adelantada en el primer pago
+                  </Label>
+                  <CurrencyInput
+                    id="cuota-adelantada"
+                    value={cuotaAdelantada}
+                    onValueChange={setCuotaAdelantada}
+                    min={0}
+                    placeholder={
+                      periodoCompleto != null
+                        ? String(periodoCompleto)
+                        : undefined
+                    }
                   />
-                  <div className="min-w-0">
-                    <Label htmlFor="cobra-adelantada" className="font-medium">
-                      Incluir cuota adelantada en el primer pago
-                    </Label>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Si el cliente no da la cuota por adelantado, apaga esta
-                      opción. El primer pago queda en inicial
-                      {parsedVisita > 0 ? " + visita" : ""}; la cuota periódica
-                      sigue vigente desde la entrega.
-                    </p>
-                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Cualquier valor desde $0.{" "}
+                    {periodoCompleto != null && (
+                      <button
+                        type="button"
+                        className="underline underline-offset-2 hover:text-foreground"
+                        onClick={() => setCuotaAdelantada(periodoCompleto)}
+                      >
+                        Usar periodo completo ({formatCop(periodoCompleto)})
+                      </button>
+                    )}
+                  </p>
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="monto-visita">Monto visita domiciliaria</Label>
-                  <Input
+                  <CurrencyInput
                     id="monto-visita"
-                    inputMode="numeric"
                     value={montoVisita}
-                    onChange={(e) => setMontoVisita(e.target.value)}
-                    placeholder={String(selectedBike.monto_visita ?? MONTO_VISITA_DEFAULT)}
+                    onValueChange={setMontoVisita}
+                    min={0}
+                    placeholder={String(
+                      selectedBike.monto_visita ?? MONTO_VISITA_DEFAULT,
+                    )}
                   />
                   <p className="text-xs text-muted-foreground">
-                    Valor de la visita al domicilio (catálogo o negociado).
+                    Valor de la visita al domicilio (puede ser $0).
                   </p>
                 </div>
                 {paymentPreview && (
@@ -288,15 +393,18 @@ export function AdminMotoAssignPanel({
                     </p>
                     <p className="mt-1 text-emerald-800">
                       Inicial {formatCop(paymentPreview.cuota_inicial_monto)}
-                      {cobraAdelantada && (
+                      {paymentPreview.monto_cuota_adelantada > 0 && (
                         <>
                           {" "}
                           + adelantada{" "}
-                          {formatCop(paymentPreview.monto_cuota_periodo)}
+                          {formatCop(paymentPreview.monto_cuota_adelantada)}
                         </>
                       )}
                       {paymentPreview.monto_visita_monto > 0 && (
-                        <> + visita {formatCop(paymentPreview.monto_visita_monto)}</>
+                        <>
+                          {" "}
+                          + visita {formatCop(paymentPreview.monto_visita_monto)}
+                        </>
                       )}{" "}
                       ={" "}
                       <span className="font-semibold">
@@ -304,8 +412,8 @@ export function AdminMotoAssignPanel({
                       </span>
                     </p>
                     <p className="mt-1 text-xs text-emerald-800/80">
-                      {cobraAdelantada
-                        ? `Incluye ${formatCop(parsedDiaria)}/día × ${FRECUENCIA_LABELS[frecuencia].toLowerCase()} adelantada.`
+                      {paymentPreview.monto_cuota_adelantada > 0
+                        ? `Adelantada ${formatCop(paymentPreview.monto_cuota_adelantada)}. Cuota periódica ${formatCop(paymentPreview.monto_cuota_periodo)} (${FRECUENCIA_LABELS[frecuencia].toLowerCase()}).`
                         : `Sin adelantada. Cuota periódica ${formatCop(paymentPreview.monto_cuota_periodo)} (${FRECUENCIA_LABELS[frecuencia].toLowerCase()}) desde la entrega.`}
                     </p>
                   </div>

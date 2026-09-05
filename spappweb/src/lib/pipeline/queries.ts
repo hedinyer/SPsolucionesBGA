@@ -281,7 +281,7 @@ export async function getClientPipeline(
   const { data: compra } = await supabase
     .from("user_moto_compra")
     .select(
-      "id, user_id, bike_id, modelo, color, frecuencia_pago, cuota_inicial_monto, monto_cuota_periodo, monto_visita_monto, monto_total_primer_pago, estado, pago_inicial_confirmado, pago_cuota_confirmado, pago_visita_confirmado, placa, chasis, referencia, fecha_entrega, doc_tarjeta_propiedad_path, doc_soat_path, doc_tecno_path, seleccionado_at, admin_data",
+      "id, user_id, bike_id, modelo, color, frecuencia_pago, cuota_inicial_monto, monto_cuota_periodo, monto_cuota_adelantada, monto_visita_monto, monto_total_primer_pago, estado, pago_inicial_confirmado, pago_cuota_confirmado, pago_visita_confirmado, placa, chasis, referencia, fecha_entrega, doc_tarjeta_propiedad_path, doc_soat_path, doc_tecno_path, seleccionado_at, admin_data",
     )
     .eq("user_id", userId)
     .maybeSingle();
@@ -351,7 +351,7 @@ export async function getClientPipeline(
     ? await supabase
         .from("pagos")
         .select(
-          "id, user_moto_compra_id, user_id, monto, referencia, comprobante_url, contexto_pago, fecha_comprobante, confirmado_at, tarifa_objetivo_id, compra_producto_credito_id, estado, medio_pago_admin",
+          "id, user_moto_compra_id, user_id, monto, referencia, comprobante_url, contexto_pago, fecha_comprobante, confirmado_at, tarifa_objetivo_id, compra_producto_credito_id, estado, medio_pago_admin, cobro_grupo_id, created_at",
         )
         .eq("user_moto_compra_id", compra.id)
         .eq("estado", "confirmado")
@@ -553,7 +553,9 @@ function buildPagosHistorial(
     if (pago.contexto_pago === "inicial") {
       montoEsperado = compra.cuota_inicial_monto;
     } else if (pago.contexto_pago === "cuota_adelantada") {
-      montoEsperado = compra.monto_cuota_periodo;
+      montoEsperado =
+        (compra as UserMotoCompraRow).monto_cuota_adelantada ??
+        compra.monto_cuota_periodo;
     } else if (pago.contexto_pago === "visita") {
       montoEsperado = compra.monto_visita_monto;
     } else if (pago.contexto_pago === "producto_inicial" && producto) {
@@ -2119,7 +2121,7 @@ export async function searchClients(
       supabase
         .from("users")
         .select(
-          "id, user, users_documents(selfie_url, referral_source), user_moto_compra(id, modelo, color, placa, estado, bike_table(imagen_url)), visitas(cliente_nombre), digital_contracts(hoja_vida_data, contrato_data, created_at)",
+          "id, user, users_documents(selfie_url, referral_source), user_moto_compra(id, modelo, color, placa, estado, fecha_entrega, seleccionado_at, bike_table(imagen_url)), visitas(cliente_nombre), digital_contracts(hoja_vida_data, contrato_data, created_at)",
         )
         .in("id", userIds),
       supabase
@@ -2159,6 +2161,8 @@ export async function searchClients(
             color: string;
             placa: string | null;
             estado: ClientSearchResult["compraEstado"];
+            fecha_entrega: string | null;
+            seleccionado_at: string | null;
             bike_table: { imagen_url: string | null } | { imagen_url: string | null }[] | null;
           }
         | {
@@ -2167,6 +2171,8 @@ export async function searchClients(
             color: string;
             placa: string | null;
             estado: ClientSearchResult["compraEstado"];
+            fecha_entrega: string | null;
+            seleccionado_at: string | null;
             bike_table: { imagen_url: string | null } | { imagen_url: string | null }[] | null;
           }[]
         | null;
@@ -2238,7 +2244,9 @@ export async function searchClients(
         cuotasPagadas: paidCount.get(user.id) ?? 0,
         diasAtraso: diasByUser.get(user.id) ?? 0,
         matchLabel: matchLabels.get(user.id) ?? "—",
-        seleccionadoAt: null,
+        seleccionadoAt: compra?.seleccionado_at ?? null,
+        // ponytail: fecha_entrega often null on entregadas → fall back to asignación
+        fechaVenta: compra?.fecha_entrega ?? compra?.seleccionado_at ?? null,
         selfieUrl: doc?.selfie_url ? String(doc.selfie_url) : null,
         motoImagenUrl: bike?.imagen_url ? String(bike.imagen_url) : null,
         referralLabel:
@@ -2269,7 +2277,7 @@ export async function listClientesMotoCredito(
   const { data: compras, error } = await supabase
     .from("user_moto_compra")
     .select(
-      "id, modelo, color, placa, estado, seleccionado_at, user_id, bike_table(imagen_url), users(id, user, users_documents(selfie_url, referral_source), visitas(cliente_nombre), digital_contracts(hoja_vida_data, contrato_data, created_at))",
+      "id, modelo, color, placa, estado, seleccionado_at, fecha_entrega, user_id, bike_table(imagen_url), users(id, user, users_documents(selfie_url, referral_source), visitas(cliente_nombre), digital_contracts(hoja_vida_data, contrato_data, created_at))",
     )
     .neq("estado", "cancelada")
     .order("seleccionado_at", { ascending: false })
@@ -2315,6 +2323,7 @@ export async function listClientesMotoCredito(
       placa: string | null;
       estado: ClientSearchResult["compraEstado"];
       seleccionado_at: string;
+      fecha_entrega: string | null;
       user_id: number;
       bike_table:
         | { imagen_url: string | null }
@@ -2388,6 +2397,7 @@ export async function listClientesMotoCredito(
           diasAtraso: diasByCompra.get(compra.id) ?? 0,
           matchLabel: "",
           seleccionadoAt: compra.seleccionado_at,
+          fechaVenta: compra.fecha_entrega ?? compra.seleccionado_at ?? null,
           selfieUrl: null,
           motoImagenUrl: null,
           referralLabel: "Punto de venta",
@@ -2449,6 +2459,8 @@ export async function listClientesMotoCredito(
         diasAtraso: diasByCompra.get(compra.id) ?? 0,
         matchLabel: "",
         seleccionadoAt: compra.seleccionado_at,
+        // ponytail: fecha_entrega often null on entregadas → fall back to asignación
+        fechaVenta: compra.fecha_entrega ?? compra.seleccionado_at ?? null,
         selfieUrl: doc?.selfie_url ? String(doc.selfie_url) : null,
         motoImagenUrl: bike?.imagen_url ? String(bike.imagen_url) : null,
         referralLabel:
@@ -2473,7 +2485,7 @@ export async function getClienteFacturacion(
   const { data: user, error: userError } = await supabase
     .from("users")
     .select(
-      "id, user, visitas(cliente_nombre), digital_contracts(hoja_vida_data, contrato_data, created_at), user_moto_compra(id, modelo, color, cuota_inicial_monto, monto_cuota_periodo, monto_visita_monto, monto_total_primer_pago, admin_data)",
+      "id, user, visitas(cliente_nombre), digital_contracts(hoja_vida_data, contrato_data, created_at), user_moto_compra(id, modelo, color, cuota_inicial_monto, monto_cuota_periodo, monto_cuota_adelantada, monto_visita_monto, monto_total_primer_pago, admin_data)",
     )
     .eq("id", userId)
     .maybeSingle();
@@ -2513,11 +2525,16 @@ export async function getClienteFacturacion(
     motoModelo: (compra?.modelo as string | undefined) ?? null,
     motoColor: (compra?.color as string | undefined) ?? null,
     cuotaInicial: (compra?.cuota_inicial_monto as number | undefined) ?? null,
-    cuotaAdelantada: cobraCuotaAdelantada(
-      compra as { admin_data?: { cobra_cuota_adelantada?: boolean } } | null,
-    )
-      ? ((compra?.monto_cuota_periodo as number | undefined) ?? null)
-      : 0,
+    cuotaAdelantada:
+      (compra?.monto_cuota_adelantada as number | undefined) ??
+      (cobraCuotaAdelantada(
+        compra as {
+          monto_cuota_adelantada?: number | null;
+          admin_data?: { cobra_cuota_adelantada?: boolean };
+        } | null,
+      )
+        ? ((compra?.monto_cuota_periodo as number | undefined) ?? null)
+        : 0),
     montoVisita: (compra?.monto_visita_monto as number | undefined) ?? null,
     totalPrimerPago: (compra?.monto_total_primer_pago as number | undefined) ?? null,
   };

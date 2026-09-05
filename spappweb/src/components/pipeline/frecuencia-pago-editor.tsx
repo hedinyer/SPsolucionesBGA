@@ -138,6 +138,7 @@ export function FrecuenciaPagoEditor({
         <div className="flex flex-col gap-2">
           <Label htmlFor="frecuencia-pago-compra">Modalidad</Label>
           <TouchSelect
+            id="frecuencia-pago-compra"
             aria-label="Frecuencia de pago"
             value={frecuencia}
             onChange={(v) => setFrecuencia(v as FrecuenciaPago)}

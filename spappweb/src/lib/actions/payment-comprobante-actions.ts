@@ -12,7 +12,10 @@ import {
   montoCuotaPeriodo,
 } from "@/lib/moto-payment";
 import {
+  allocateCobroPrimerPago,
   faltanteConcepto,
+  faltanteTotal,
+  primerPagoCubierto,
   type PrimerPagoConcepto,
 } from "@/lib/payments/primer-pago-progress";
 import type { FrecuenciaPago } from "@/lib/pipeline/types";
@@ -645,7 +648,7 @@ export async function updateMontosPrimerPagoCompra(input: {
   const { data: compra, error: compraError } = await supabase
     .from("user_moto_compra")
     .select(
-      "id, digital_contract_id, estado, cuota_inicial_monto, monto_cuota_periodo, monto_visita_monto, admin_data",
+      "id, digital_contract_id, estado, cuota_inicial_monto, monto_cuota_periodo, monto_cuota_adelantada, monto_visita_monto, admin_data",
     )
     .eq("id", parsed.compraId)
     .eq("user_id", parsed.userId)
@@ -679,7 +682,10 @@ export async function updateMontosPrimerPagoCompra(input: {
     );
   }
   const cobraAdelantada = cobraCuotaAdelantada(
-    compra as { admin_data?: { cobra_cuota_adelantada?: boolean } },
+    compra as {
+      monto_cuota_adelantada?: number;
+      admin_data?: { cobra_cuota_adelantada?: boolean };
+    },
   );
   if (cobraAdelantada && parsed.montoCuotaPeriodo < recibidoCuota) {
     throw new Error(
@@ -687,9 +693,27 @@ export async function updateMontosPrimerPagoCompra(input: {
     );
   }
 
+  const adelantadaActual =
+    (compra as { monto_cuota_adelantada?: number }).monto_cuota_adelantada ??
+    (cobraAdelantada ? Number(compra.monto_cuota_periodo) : 0);
+  const eraPeriodoCompleto =
+    adelantadaActual > 0 &&
+    adelantadaActual === Number(compra.monto_cuota_periodo);
+  const montoCuotaAdelantada = cobraAdelantada
+    ? eraPeriodoCompleto
+      ? parsed.montoCuotaPeriodo
+      : Math.min(adelantadaActual, parsed.montoCuotaPeriodo)
+    : 0;
+
+  if (montoCuotaAdelantada < recibidoCuota) {
+    throw new Error(
+      `Ya se recibieron ${recibidoCuota.toLocaleString("es-CO")} de cuota adelantada; el nuevo monto no alcanza.`,
+    );
+  }
+
   const montoTotal =
     parsed.cuotaInicial +
-    (cobraAdelantada ? parsed.montoCuotaPeriodo : 0) +
+    montoCuotaAdelantada +
     Number(compra.monto_visita_monto);
 
   const { error: updateError } = await supabase
@@ -697,7 +721,12 @@ export async function updateMontosPrimerPagoCompra(input: {
     .update({
       cuota_inicial_monto: parsed.cuotaInicial,
       monto_cuota_periodo: parsed.montoCuotaPeriodo,
+      monto_cuota_adelantada: montoCuotaAdelantada,
       monto_total_primer_pago: montoTotal,
+      admin_data: {
+        ...((compra.admin_data as Record<string, unknown> | null) ?? {}),
+        cobra_cuota_adelantada: montoCuotaAdelantada > 0,
+      },
     })
     .eq("id", parsed.compraId);
 
@@ -785,11 +814,18 @@ export async function updateMontoVisitaCompra(input: {
   }
 
   const cobraAdelantada = cobraCuotaAdelantada(
-    compra as { admin_data?: { cobra_cuota_adelantada?: boolean } },
+    compra as {
+      monto_cuota_adelantada?: number;
+      admin_data?: { cobra_cuota_adelantada?: boolean };
+    },
   );
+  const montoAdelantada = cobraAdelantada
+    ? ((compra as { monto_cuota_adelantada?: number }).monto_cuota_adelantada ??
+      Number(compra.monto_cuota_periodo))
+    : 0;
   const montoTotal =
     Number(compra.cuota_inicial_monto) +
-    (cobraAdelantada ? Number(compra.monto_cuota_periodo) : 0) +
+    montoAdelantada +
     parsed.montoVisita;
 
   const { error: updateError } = await supabase
@@ -801,6 +837,11 @@ export async function updateMontoVisitaCompra(input: {
     .eq("id", parsed.compraId);
 
   if (updateError) throw new Error(updateError.message);
+
+  const { error: syncError } = await supabase.rpc("sync_compra_pago_flags", {
+    p_compra_id: parsed.compraId,
+  });
+  if (syncError) throw new Error(syncError.message);
 
   revalidateClient(parsed.userId);
   return { ok: true };
@@ -858,9 +899,12 @@ export async function updateCobraCuotaAdelantadaCompra(input: {
     }
   }
 
+  const montoAdelantada = parsed.cobra
+    ? Number(compra.monto_cuota_periodo)
+    : 0;
   const montoTotal =
     Number(compra.cuota_inicial_monto) +
-    (parsed.cobra ? Number(compra.monto_cuota_periodo) : 0) +
+    montoAdelantada +
     Number(compra.monto_visita_monto);
 
   const { error: updateError } = await supabase
@@ -870,6 +914,7 @@ export async function updateCobraCuotaAdelantadaCompra(input: {
         ...((compra.admin_data as Record<string, unknown> | null) ?? {}),
         cobra_cuota_adelantada: parsed.cobra,
       },
+      monto_cuota_adelantada: montoAdelantada,
       monto_total_primer_pago: montoTotal,
     })
     .eq("id", parsed.compraId);
@@ -903,7 +948,7 @@ export async function updateFrecuenciaPagoCompra(input: {
   const { data: compra, error: compraError } = await supabase
     .from("user_moto_compra")
     .select(
-      "id, user_id, digital_contract_id, estado, frecuencia_pago, cuota_inicial_monto, monto_cuota_periodo, monto_visita_monto, pago_cuota_confirmado, admin_data",
+      "id, user_id, digital_contract_id, estado, frecuencia_pago, cuota_inicial_monto, monto_cuota_periodo, monto_cuota_adelantada, monto_visita_monto, pago_cuota_confirmado, admin_data",
     )
     .eq("id", parsed.compraId)
     .eq("user_id", parsed.userId)
@@ -949,9 +994,25 @@ export async function updateFrecuenciaPagoCompra(input: {
     );
   }
 
+  const adelantadaActual =
+    (compra as { monto_cuota_adelantada?: number }).monto_cuota_adelantada ??
+    (cobraAdelantada ? Number(compra.monto_cuota_periodo) : 0);
+  const eraPeriodoCompleto =
+    adelantadaActual > 0 &&
+    adelantadaActual === Number(compra.monto_cuota_periodo);
+  const montoCuotaAdelantadaNuevo = eraPeriodoCompleto
+    ? montoCuotaPeriodoNuevo
+    : Math.min(adelantadaActual, montoCuotaPeriodoNuevo);
+
+  if (montoCuotaAdelantadaNuevo < recibidoCuota) {
+    throw new Error(
+      `Ya se recibieron ${recibidoCuota.toLocaleString("es-CO")} por cuota adelantada; el nuevo monto no alcanza.`,
+    );
+  }
+
   const montoTotal =
     Number(compra.cuota_inicial_monto) +
-    (cobraAdelantada ? montoCuotaPeriodoNuevo : 0) +
+    montoCuotaAdelantadaNuevo +
     Number(compra.monto_visita_monto);
 
   const { error: updateError } = await supabase
@@ -959,7 +1020,12 @@ export async function updateFrecuenciaPagoCompra(input: {
     .update({
       frecuencia_pago: parsed.frecuencia,
       monto_cuota_periodo: montoCuotaPeriodoNuevo,
+      monto_cuota_adelantada: montoCuotaAdelantadaNuevo,
       monto_total_primer_pago: montoTotal,
+      admin_data: {
+        ...((compra.admin_data as Record<string, unknown> | null) ?? {}),
+        cobra_cuota_adelantada: montoCuotaAdelantadaNuevo > 0,
+      },
     })
     .eq("id", parsed.compraId);
 
@@ -992,4 +1058,461 @@ export async function updateFrecuenciaPagoCompra(input: {
 
   revalidateClient(parsed.userId);
   return { ok: true };
+}
+
+export async function updateAcuerdoPrimerPago(input: {
+  userId: number;
+  compraId: string;
+  cuotaInicial: number;
+  montoCuotaAdelantada: number;
+  montoVisita: number;
+}): Promise<{ ok: true }> {
+  const parsed = z
+    .object({
+      userId: z.number().int().positive(),
+      compraId: z.string().uuid(),
+      cuotaInicial: z.number().int().min(0),
+      montoCuotaAdelantada: z.number().int().min(0),
+      montoVisita: z.number().int().min(0),
+    })
+    .parse(input);
+
+  const supabase = await assertAdmin();
+
+  const { data: compra, error: compraError } = await supabase
+    .from("user_moto_compra")
+    .select(
+      "id, digital_contract_id, estado, cuota_inicial_monto, monto_cuota_periodo, monto_cuota_adelantada, monto_visita_monto, admin_data",
+    )
+    .eq("id", parsed.compraId)
+    .eq("user_id", parsed.userId)
+    .maybeSingle();
+
+  if (compraError) throw new Error(compraError.message);
+  if (!compra) throw new Error("Compra no encontrada.");
+  if (compra.estado !== "pendiente_pago" && compra.estado !== "lista_retiro") {
+    throw new Error("No se pueden cambiar los montos en este estado.");
+  }
+
+  const { data: pagos, error: pagosError } = await supabase
+    .from("pagos")
+    .select("monto, contexto_pago, estado")
+    .eq("user_moto_compra_id", parsed.compraId)
+    .in("contexto_pago", ["inicial", "cuota_adelantada", "visita"])
+    .eq("estado", "confirmado");
+
+  if (pagosError) throw new Error(pagosError.message);
+
+  let recibidoInicial = 0;
+  let recibidoCuota = 0;
+  let recibidoVisita = 0;
+  for (const p of pagos ?? []) {
+    if (p.contexto_pago === "inicial") recibidoInicial += Number(p.monto);
+    if (p.contexto_pago === "cuota_adelantada") recibidoCuota += Number(p.monto);
+    if (p.contexto_pago === "visita") recibidoVisita += Number(p.monto);
+  }
+
+  if (parsed.cuotaInicial < recibidoInicial) {
+    throw new Error(
+      `Ya se recibieron ${recibidoInicial.toLocaleString("es-CO")} de cuota inicial; el monto no puede ser menor.`,
+    );
+  }
+  if (parsed.montoCuotaAdelantada < recibidoCuota) {
+    throw new Error(
+      `Ya se recibieron ${recibidoCuota.toLocaleString("es-CO")} de cuota adelantada; el monto no puede ser menor.`,
+    );
+  }
+  if (parsed.montoVisita < recibidoVisita) {
+    throw new Error(
+      `Ya se recibieron ${recibidoVisita.toLocaleString("es-CO")} por visita; el monto no puede ser menor.`,
+    );
+  }
+
+  const cobraAdelantada = parsed.montoCuotaAdelantada > 0;
+  const montoTotal =
+    parsed.cuotaInicial + parsed.montoCuotaAdelantada + parsed.montoVisita;
+
+  const { error: updateError } = await supabase
+    .from("user_moto_compra")
+    .update({
+      cuota_inicial_monto: parsed.cuotaInicial,
+      monto_cuota_adelantada: parsed.montoCuotaAdelantada,
+      monto_visita_monto: parsed.montoVisita,
+      monto_total_primer_pago: montoTotal,
+      admin_data: {
+        ...((compra.admin_data as Record<string, unknown> | null) ?? {}),
+        cobra_cuota_adelantada: cobraAdelantada,
+      },
+    })
+    .eq("id", parsed.compraId);
+
+  if (updateError) throw new Error(updateError.message);
+
+  const { error: syncError } = await supabase.rpc("sync_compra_pago_flags", {
+    p_compra_id: parsed.compraId,
+  });
+  if (syncError) throw new Error(syncError.message);
+
+  const contractId = compra.digital_contract_id as string | null;
+  if (contractId) {
+    const { data: contract, error: contractError } = await supabase
+      .from("digital_contracts")
+      .select("admin_data")
+      .eq("id", contractId)
+      .maybeSingle();
+
+    if (contractError) throw new Error(contractError.message);
+
+    const adminData = {
+      ...((contract?.admin_data as Record<string, unknown>) ?? {}),
+      cuota_inicial: parsed.cuotaInicial,
+      valor_cuota: Number(compra.monto_cuota_periodo),
+      monto_total_primer_pago: montoTotal,
+      cobra_cuota_adelantada: cobraAdelantada,
+    };
+
+    const { error: contractUpdateError } = await supabase
+      .from("digital_contracts")
+      .update({ admin_data: adminData })
+      .eq("id", contractId);
+
+    if (contractUpdateError) throw new Error(contractUpdateError.message);
+  }
+
+  revalidateClient(parsed.userId);
+  return { ok: true };
+}
+
+export async function cerrarPrimerPago(input: {
+  userId: number;
+  compraId: string;
+}): Promise<{ ok: true; estado: string }> {
+  const parsed = z
+    .object({
+      userId: z.number().int().positive(),
+      compraId: z.string().uuid(),
+    })
+    .parse(input);
+
+  const supabase = await assertAdmin();
+
+  const { data: compra, error: compraError } = await supabase
+    .from("user_moto_compra")
+    .select(
+      "id, estado, cuota_inicial_monto, monto_cuota_periodo, monto_cuota_adelantada, monto_visita_monto, admin_data",
+    )
+    .eq("id", parsed.compraId)
+    .eq("user_id", parsed.userId)
+    .maybeSingle();
+
+  if (compraError) throw new Error(compraError.message);
+  if (!compra) throw new Error("Compra no encontrada.");
+  if (compra.estado !== "pendiente_pago" && compra.estado !== "lista_retiro") {
+    throw new Error("El pago ya no est� pendiente.");
+  }
+
+  const { data: pagos, error: pagosError } = await supabase
+    .from("pagos")
+    .select(
+      "id, monto, contexto_pago, estado, medio_pago_admin, user_moto_compra_id, user_id, referencia, comprobante_url, origen, reportado_at, confirmado_at, confirmado_por, fecha_comprobante, tarifa_objetivo_id, notas_admin, created_at, updated_at, dias_cubiertos, medio_pago_usuario, cobro_grupo_id",
+    )
+    .eq("user_moto_compra_id", parsed.compraId)
+    .eq("estado", "confirmado");
+
+  if (pagosError) throw new Error(pagosError.message);
+
+  const compraRow = compra as UserMotoCompraRow;
+  const pagoRows = (pagos ?? []) as PagoRow[];
+
+  if (!primerPagoCubierto(compraRow, pagoRows)) {
+    const faltantes: string[] = [];
+    const fi = faltanteConcepto(compraRow, pagoRows, "inicial");
+    const fa = faltanteConcepto(compraRow, pagoRows, "cuota_adelantada");
+    const fv = faltanteConcepto(compraRow, pagoRows, "visita");
+    if (fi > 0) faltantes.push(`inicial (${fi.toLocaleString("es-CO")})`);
+    if (fa > 0) faltantes.push(`adelantada (${fa.toLocaleString("es-CO")})`);
+    if (fv > 0) faltantes.push(`visita (${fv.toLocaleString("es-CO")})`);
+    throw new Error(
+      `A�n falta cubrir: ${faltantes.join(", ") || "conceptos pendientes"}.`,
+    );
+  }
+
+  const previousEstado = compra.estado;
+
+  const { error: syncError } = await supabase.rpc("sync_compra_pago_flags", {
+    p_compra_id: parsed.compraId,
+  });
+  if (syncError) throw new Error(syncError.message);
+
+  const { data: after, error: afterError } = await supabase
+    .from("user_moto_compra")
+    .select("estado, pago_inicial_confirmado, pago_cuota_confirmado")
+    .eq("id", parsed.compraId)
+    .maybeSingle();
+
+  if (afterError) throw new Error(afterError.message);
+  if (!after) throw new Error("Compra no encontrada tras sincronizar.");
+
+  if (after.estado === "pendiente_pago") {
+    // Edge: sync flags but estado trigger only fires on flag change �
+    // force lista_retiro when both flags are true.
+    if (after.pago_inicial_confirmado && after.pago_cuota_confirmado) {
+      const { error: estadoError } = await supabase
+        .from("user_moto_compra")
+        .update({ estado: "lista_retiro" })
+        .eq("id", parsed.compraId)
+        .eq("estado", "pendiente_pago");
+      if (estadoError) throw new Error(estadoError.message);
+    } else {
+      throw new Error(
+        "No se pudo confirmar el pago completo. Revisa los montos acordados.",
+      );
+    }
+  }
+
+  await emitPagoCompletoOnTransition(
+    parsed.userId,
+    parsed.compraId,
+    previousEstado,
+  );
+
+  revalidateClient(parsed.userId);
+
+  const { data: final } = await supabase
+    .from("user_moto_compra")
+    .select("estado")
+    .eq("id", parsed.compraId)
+    .maybeSingle();
+
+  return { ok: true, estado: (final?.estado as string) ?? "lista_retiro" };
+}
+
+export async function registrarCobroPrimerPago(
+  formData: FormData,
+): Promise<{
+  ok: true;
+  cobroGrupoId: string;
+  pagoId: string;
+  referencia: string;
+  confirmadoAt: string;
+  items: { contexto: PrimerPagoConcepto; monto: number; pagoId: string }[];
+  total: number;
+}> {
+  const supabase = await assertAdmin();
+
+  const parsed = z
+    .object({
+      userId: z.number(),
+      compraId: z.string().uuid(),
+      referencia: z.string().optional(),
+      monto: z.number().int().positive("El monto debe ser mayor a 0"),
+      fechaComprobante: z.string().optional(),
+      medioPagoAdmin: z.enum(MEDIO_PAGO_ADMIN_VALUES),
+      bancoOrigen: z.enum([
+        "nequi",
+        "davivienda",
+        "bancolombia",
+        "banco_bogota",
+        "pse",
+        "otro",
+      ]),
+      entradaManual: z.boolean(),
+      notas: z.string().optional(),
+    })
+    .parse({
+      userId: Number(formData.get("userId")),
+      compraId: String(formData.get("compraId")),
+      referencia: formData.get("referencia")
+        ? String(formData.get("referencia")).trim()
+        : undefined,
+      monto: Number(formData.get("monto")),
+      fechaComprobante: formData.get("fechaComprobante")
+        ? String(formData.get("fechaComprobante"))
+        : undefined,
+      medioPagoAdmin: String(formData.get("medioPagoAdmin")) as MedioPagoAdmin,
+      bancoOrigen: String(formData.get("bancoOrigen") || "nequi") as BancoOrigen,
+      entradaManual: formData.get("entradaManual") === "true",
+      notas: formData.get("notas") ? String(formData.get("notas")) : undefined,
+    });
+
+  const presencial = isPresencialMedio(parsed.medioPagoAdmin);
+  const file = optionalImageFile(formData.get("file"));
+
+  if (!file && !presencial) {
+    throw new Error("Sube el comprobante de pago.");
+  }
+
+  const { data: compra, error: compraError } = await supabase
+    .from("user_moto_compra")
+    .select(
+      "id, estado, cuota_inicial_monto, monto_cuota_periodo, monto_cuota_adelantada, monto_visita_monto, admin_data",
+    )
+    .eq("id", parsed.compraId)
+    .eq("user_id", parsed.userId)
+    .maybeSingle();
+
+  if (compraError) throw new Error(compraError.message);
+  if (!compra) throw new Error("Compra no encontrada.");
+  if (compra.estado !== "pendiente_pago" && compra.estado !== "lista_retiro") {
+    throw new Error("No se pueden registrar cobros en este estado.");
+  }
+
+  const { data: pagos, error: pagosError } = await supabase
+    .from("pagos")
+    .select(
+      "id, monto, contexto_pago, estado, medio_pago_admin, user_moto_compra_id, user_id, referencia, comprobante_url, origen, reportado_at, confirmado_at, confirmado_por, fecha_comprobante, tarifa_objetivo_id, notas_admin, created_at, updated_at, dias_cubiertos, medio_pago_usuario, cobro_grupo_id",
+    )
+    .eq("user_moto_compra_id", parsed.compraId)
+    .eq("estado", "confirmado");
+
+  if (pagosError) throw new Error(pagosError.message);
+
+  const compraRow = compra as UserMotoCompraRow;
+  const pagoRows = (pagos ?? []) as PagoRow[];
+  const faltante = faltanteTotal(compraRow, pagoRows);
+
+  if (faltante <= 0) {
+    throw new Error("El primer pago ya est� cubierto.");
+  }
+  if (parsed.monto > faltante) {
+    throw new Error(
+      `El monto supera lo que falta (${faltante.toLocaleString("es-CO")}).`,
+    );
+  }
+
+  const allocation = allocateCobroPrimerPago(
+    compraRow,
+    pagoRows,
+    parsed.monto,
+  );
+  if (allocation.length === 0) {
+    throw new Error("No hay conceptos pendientes para aplicar este cobro.");
+  }
+
+  let referencia = parsed.referencia?.trim() ?? "";
+  if (presencial) {
+    referencia = resolveReferenciaPresencial(parsed.medioPagoAdmin, referencia);
+  }
+  if (!referencia) {
+    throw new Error("Ingresa la referencia.");
+  }
+
+  await assertReferenciaUnicaPorCliente(supabase, parsed.userId, referencia);
+
+  let comprobanteUrl: string | null = null;
+  if (file) {
+    const path = `${parsed.userId}/${parsed.compraId}/${Date.now()}.${extensionFor(file.type)}`;
+    const bytes = Buffer.from(await file.arrayBuffer());
+
+    const { error: uploadError } = await supabase.storage
+      .from(STORAGE_BUCKETS.pagosComprobantes)
+      .upload(path, bytes, {
+        contentType: file.type,
+        upsert: true,
+      });
+
+    if (uploadError) {
+      throw new Error(`No se pudo subir el comprobante: ${uploadError.message}`);
+    }
+
+    comprobanteUrl = getStoragePublicUrl(
+      STORAGE_BUCKETS.pagosComprobantes,
+      path,
+    );
+    if (!comprobanteUrl) {
+      throw new Error("No se pudo obtener la URL del comprobante.");
+    }
+  }
+
+  let fechaComprobante = parsed.fechaComprobante?.trim() ?? "";
+  if (!fechaComprobante) {
+    if (presencial) {
+      fechaComprobante = new Date().toISOString();
+    } else {
+      throw new Error("Ingresa la fecha del comprobante.");
+    }
+  }
+
+  const notasAdmin =
+    [
+      parsed.notas?.trim(),
+      parsed.entradaManual ? "Entrada manual" : null,
+      parsed.bancoOrigen !== "nequi" && parsed.bancoOrigen !== "davivienda"
+        ? BANCO_ORIGEN_LABELS[parsed.bancoOrigen]
+        : null,
+      "Cobro primer pago",
+    ]
+      .filter(Boolean)
+      .join(" � ") || null;
+
+  const cobroGrupoId = crypto.randomUUID();
+  const confirmadoAt = new Date().toISOString();
+  const baseRef = normalizeReferencia(referencia);
+  const previousEstado = compra.estado;
+
+  const items: {
+    contexto: PrimerPagoConcepto;
+    monto: number;
+    pagoId: string;
+  }[] = [];
+
+  for (let i = 0; i < allocation.length; i++) {
+    const part = allocation[i]!;
+    const ref =
+      i === 0 ? baseRef : normalizeReferencia(`${baseRef}/${i + 1}`);
+
+    const { data: inserted, error: insertError } = await supabase
+      .from("pagos")
+      .insert({
+        user_moto_compra_id: parsed.compraId,
+        user_id: parsed.userId,
+        monto: part.monto,
+        medio_pago_usuario: medioPagoUsuarioFromAdmin(parsed.medioPagoAdmin),
+        medio_pago_admin: parsed.medioPagoAdmin,
+        referencia: ref,
+        comprobante_url: comprobanteUrl,
+        origen: "admin",
+        estado: "confirmado",
+        confirmado_at: confirmadoAt,
+        confirmado_por: "admin",
+        fecha_comprobante: fechaComprobante,
+        contexto_pago: part.contexto,
+        notas_admin: notasAdmin,
+        cobro_grupo_id: cobroGrupoId,
+      })
+      .select("id")
+      .single();
+
+    if (insertError) {
+      if (insertError.code === "23505") {
+        throw new Error(
+          "Esta referencia ya fue usada en otro pago de este cliente.",
+        );
+      }
+      throw new Error(insertError.message);
+    }
+
+    items.push({
+      contexto: part.contexto,
+      monto: part.monto,
+      pagoId: inserted.id as string,
+    });
+  }
+
+  await emitPagoCompletoOnTransition(
+    parsed.userId,
+    parsed.compraId,
+    previousEstado,
+  );
+  revalidateClient(parsed.userId);
+
+  return {
+    ok: true,
+    cobroGrupoId,
+    pagoId: items[0]!.pagoId,
+    referencia: baseRef,
+    confirmadoAt,
+    items,
+    total: parsed.monto,
+  };
 }

@@ -69,9 +69,14 @@ function visitError(visita: VisitaRow | null): boolean {
 
 function paymentDone(compra: UserMotoCompraRow | null): boolean {
   if (!compra) return false;
+  const adelantadaEsperada =
+    compra.monto_cuota_adelantada != null
+      ? compra.monto_cuota_adelantada
+      : compra.admin_data?.cobra_cuota_adelantada === false
+        ? 0
+        : compra.monto_cuota_periodo;
   const cuotaOk =
-    compra.pago_cuota_confirmado ||
-    compra.admin_data?.cobra_cuota_adelantada === false;
+    compra.pago_cuota_confirmado || adelantadaEsperada === 0;
   return (
     compra.pago_inicial_confirmado &&
     cuotaOk &&
@@ -168,15 +173,19 @@ export function detectAdminActionStep(
     if (!compra) return null;
   }
 
-  if (
-    compra &&
-    contractDone(contract) &&
-    compra.estado === "pendiente_pago" &&
-    (!compra.pago_inicial_confirmado ||
-      (compra.admin_data?.cobra_cuota_adelantada !== false &&
-        !compra.pago_cuota_confirmado))
-  ) {
-    return "pago";
+  if (compra && contractDone(contract) && compra.estado === "pendiente_pago") {
+    const adelantadaEsperada =
+      compra.monto_cuota_adelantada != null
+        ? compra.monto_cuota_adelantada
+        : compra.admin_data?.cobra_cuota_adelantada === false
+          ? 0
+          : compra.monto_cuota_periodo;
+    if (
+      !compra.pago_inicial_confirmado ||
+      (adelantadaEsperada > 0 && !compra.pago_cuota_confirmado)
+    ) {
+      return "pago";
+    }
   }
   if (compra?.estado === "lista_retiro") return "entrega";
   if (
@@ -369,6 +378,7 @@ export function runPipelineSelfCheck(): void {
     frecuencia_pago: "semanal",
     cuota_inicial_monto: 1,
     monto_cuota_periodo: 1,
+    monto_cuota_adelantada: 1,
     monto_visita_monto: 0,
     monto_total_primer_pago: 2,
     estado: "lista_retiro",

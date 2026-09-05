@@ -10,7 +10,6 @@ import {
   emitPagoCompletoOnTransition,
   emitPipelineEvent,
 } from "@/lib/agent/pipeline-events";
-import { MIN_CUOTA_INICIAL } from "@/lib/moto-payment";
 import { MONTO_VISITA_DEFAULT } from "@/lib/payments/visita-monto";
 import {
   condicionFromAdminData,
@@ -193,10 +192,11 @@ const assignMotoSchema = z.object({
   placa: z.string().trim().optional(),
   chasis: z.string().trim().min(1),
   referencia: z.string().trim().optional(),
-  cuotaInicial: z.number().int().min(MIN_CUOTA_INICIAL),
+  cuotaInicial: z.number().int().min(0),
   cuotaDiaria: z.number().int().positive().optional(),
   montoVisita: z.number().int().min(0).optional(),
   cobraCuotaAdelantada: z.boolean().optional(),
+  cuotaAdelantada: z.number().int().min(0).optional(),
   condicion: z.enum(["nueva", "segunda_mano"]).optional(),
 });
 
@@ -476,7 +476,7 @@ export async function markDelivered(compraId: string, userId: number) {
   const { data: compra } = await supabase
     .from("user_moto_compra")
     .select(
-      "modelo, color, placa, chasis, estado, garaje_moto_id, monto_cuota_periodo, admin_data",
+      "modelo, color, placa, chasis, estado, garaje_moto_id, monto_cuota_periodo, admin_data, fecha_entrega",
     )
     .eq("id", compraId)
     .maybeSingle();
@@ -496,9 +496,17 @@ export async function markDelivered(compraId: string, userId: number) {
     (compra.admin_data as Record<string, unknown> | null) ?? {},
   );
 
+  const entregaUpdate: { estado: "entregada"; fecha_entrega?: string } = {
+    estado: "entregada",
+  };
+  // ponytail: muchos legados quedaron entregada sin fecha_entrega
+  if (!compra.fecha_entrega) {
+    entregaUpdate.fecha_entrega = new Date().toISOString().slice(0, 10);
+  }
+
   const { error } = await supabase
     .from("user_moto_compra")
-    .update({ estado: "entregada" })
+    .update(entregaUpdate)
     .eq("id", compraId)
     .neq("estado", "saldada")
     .neq("estado", "cancelada");

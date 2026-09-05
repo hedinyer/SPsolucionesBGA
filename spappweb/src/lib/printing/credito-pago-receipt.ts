@@ -6,14 +6,22 @@ import {
 } from "@/lib/pipeline/types";
 import { formatCop } from "@/lib/utils/format";
 
+export interface CreditoPagoReceiptItem {
+  concepto: ContextoPago;
+  monto: number;
+}
+
 export interface CreditoPagoReceiptData {
   pagoId: string;
   clienteNombre: string;
   clienteCedula: string;
   motoModelo: string;
   motoColor: string;
+  /** Legacy single-line; preferred when `items` is absent. */
   concepto: ContextoPago;
   monto: number;
+  /** Multi-line cobro (primer pago agrupado). */
+  items?: CreditoPagoReceiptItem[];
   medioPago: MedioPagoAdminStored;
   referencia: string | null;
   confirmadoAt: string;
@@ -65,10 +73,33 @@ export async function buildCreditoPagoReceiptHtml(
   const beraLogo = `${origin}/beralogo.jpg`;
   const sgLogo = `${origin}/logosolucionesgarrido.jpg`;
   const medioLabel = MEDIO_PAGO_ADMIN_LABELS[recibo.medioPago] ?? recibo.medioPago;
-  const conceptoLabel = CONTEXTO_PAGO_LABELS[recibo.concepto];
+  const lines =
+    recibo.items && recibo.items.length > 0
+      ? recibo.items
+      : [{ concepto: recibo.concepto, monto: recibo.monto }];
+  const total = lines.reduce((s, l) => s + l.monto, 0);
+  const headerConcepto =
+    lines.length === 1
+      ? CONTEXTO_PAGO_LABELS[lines[0]!.concepto]
+      : "Primer pago";
   const refHtml = recibo.referencia
     ? `<div class="sub">Ref. ${esc(recibo.referencia)}</div>`
     : "";
+  const rowsHtml = lines
+    .map(
+      (line) => `<div class="row">
+    <span>${esc(CONTEXTO_PAGO_LABELS[line.concepto])}</span>
+    <span class="amount">${esc(formatCop(line.monto))}</span>
+  </div>`,
+    )
+    .join("");
+  const totalHtml =
+    lines.length > 1
+      ? `<div class="row total">
+    <span>Total</span>
+    <span class="amount">${esc(formatCop(total))}</span>
+  </div>`
+      : "";
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Recibo ${esc(f)}</title>
 <style>
@@ -118,6 +149,14 @@ body {
   justify-content: space-between;
   gap: 8px;
   font-size: 11px;
+  margin-top: 4px;
+}
+.totals .row:first-child { margin-top: 0; }
+.totals .row.total {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed #ccc;
+  font-weight: 700;
 }
 .totals .amount { font-weight: 700; }
 .status-ok {
@@ -137,7 +176,7 @@ body {
 </div>
 <div class="header">
   <h1>RECIBO DE PAGO</h1>
-  <p>Crédito moto · ${esc(conceptoLabel)}</p>
+  <p>Crédito moto · ${esc(headerConcepto)}</p>
   <p>${esc(fechaLabel(recibo.confirmadoAt))}</p>
 </div>
 <hr class="divider" />
@@ -156,10 +195,8 @@ body {
   ${refHtml}
 </div>
 <div class="totals">
-  <div class="row">
-    <span>${esc(conceptoLabel)}</span>
-    <span class="amount">${esc(formatCop(recibo.monto))}</span>
-  </div>
+  ${rowsHtml}
+  ${totalHtml}
   <div class="status-ok">✓ PAGO RECIBIDO</div>
 </div>
 <hr class="divider" />

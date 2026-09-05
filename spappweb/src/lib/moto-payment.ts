@@ -1,11 +1,17 @@
 import type { BikeRow, FrecuenciaPago } from "@/lib/pipeline/types";
 
-/** Piso negociable de cuota inicial (COP). */
-export const MIN_CUOTA_INICIAL = 200_000;
+/** Piso negociable de cuota inicial (COP). 0 = sin mínimo. */
+export const MIN_CUOTA_INICIAL = 0;
 
 export function cobraCuotaAdelantada(
-  compra?: { admin_data?: { cobra_cuota_adelantada?: boolean } } | null,
+  compra?: {
+    monto_cuota_adelantada?: number | null;
+    admin_data?: { cobra_cuota_adelantada?: boolean };
+  } | null,
 ): boolean {
+  if (compra?.monto_cuota_adelantada != null) {
+    return compra.monto_cuota_adelantada > 0;
+  }
   return compra?.admin_data?.cobra_cuota_adelantada !== false;
 }
 
@@ -49,21 +55,30 @@ export function calcMotoPayment(
     cuotaDiaria?: number;
     montoVisita?: number;
     cobraCuotaAdelantada?: boolean;
+    cuotaAdelantada?: number;
   },
 ) {
   const cuota_inicial_monto = overrides?.cuotaInicial ?? bike.cuota_inicial;
   const cuotaDiaria = overrides?.cuotaDiaria ?? bike.cuota_diaria;
   const monto_visita_monto = overrides?.montoVisita ?? bike.monto_visita ?? 0;
   const monto_cuota_periodo = montoCuotaPeriodo(cuotaDiaria, frecuencia);
-  const cobraAdelantada = overrides?.cobraCuotaAdelantada !== false;
+
+  let monto_cuota_adelantada: number;
+  if (overrides?.cuotaAdelantada != null) {
+    monto_cuota_adelantada = Math.max(0, overrides.cuotaAdelantada);
+  } else if (overrides?.cobraCuotaAdelantada === false) {
+    monto_cuota_adelantada = 0;
+  } else {
+    monto_cuota_adelantada = monto_cuota_periodo;
+  }
+
   return {
     cuota_inicial_monto,
     monto_cuota_periodo,
+    monto_cuota_adelantada,
     monto_visita_monto,
     monto_total_primer_pago:
-      cuota_inicial_monto +
-      (cobraAdelantada ? monto_cuota_periodo : 0) +
-      monto_visita_monto,
+      cuota_inicial_monto + monto_cuota_adelantada + monto_visita_monto,
   };
 }
 

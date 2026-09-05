@@ -7,7 +7,7 @@ import { ContractSharePanel } from "@/components/pipeline/contract-share-panel";
 import { VisitActionPanel } from "@/components/pipeline/visit-action-panel";
 import { AdminMotoAssignPanel } from "@/components/pipeline/admin-moto-assign-panel";
 import { MotoSelectionPanel } from "@/components/pipeline/moto-selection-panel";
-import { PaymentConfirmPanel } from "@/components/pipeline/payment-confirm-panel";
+import { PrimerPagoPanel } from "@/components/pipeline/primer-pago/primer-pago-panel";
 import { CreditProductsPanel } from "@/components/pipeline/credit-products-panel";
 import { DeliveryPanel } from "@/components/pipeline/delivery-panel";
 import { RentingPanel } from "@/components/pipeline/renting-panel";
@@ -101,19 +101,22 @@ export function ClientPipelineView({
               userId={userId}
             />
           )}
-          {adminStep === "pago" && (
+          {(adminStep === "pago" ||
+            pipeline.compra?.estado === "lista_retiro") && (
             <>
-              <CreditProductsPanel
-                compra={pipeline.compra}
-                items={pipeline.compraProductosCredito}
-                catalogo={productosCredito}
-                pagos={pipeline.pagos}
-                userId={userId}
-                referenciasUsadas={referenciasUsadas}
-                clienteNombre={pipeline.displayName}
-                clienteCedula={pipeline.user.user}
-              />
-              <PaymentConfirmPanel
+              {adminStep === "pago" && (
+                <CreditProductsPanel
+                  compra={pipeline.compra}
+                  items={pipeline.compraProductosCredito}
+                  catalogo={productosCredito}
+                  pagos={pipeline.pagos}
+                  userId={userId}
+                  referenciasUsadas={referenciasUsadas}
+                  clienteNombre={pipeline.displayName}
+                  clienteCedula={pipeline.user.user}
+                />
+              )}
+              <PrimerPagoPanel
                 compra={pipeline.compra}
                 pagos={pipeline.pagos}
                 userId={userId}
@@ -139,12 +142,14 @@ export function ClientPipelineView({
                     clienteCedula={pipeline.user.user}
                   />
                 )}
-              <DeliveryPanel
-                compra={pipeline.compra}
-                userId={userId}
-                clienteCelular={clienteCelular}
-                clienteNombre={pipeline.displayName}
-              />
+              <div id="pipeline-entrega">
+                <DeliveryPanel
+                  compra={pipeline.compra}
+                  userId={userId}
+                  clienteCelular={clienteCelular}
+                  clienteNombre={pipeline.displayName}
+                />
+              </div>
             </>
           )}
           {showVisitaMain && (
@@ -195,7 +200,8 @@ export function ClientPipelineView({
                 clienteCelular={clienteCelular}
                 userId={userId}
               />
-              {adminStep !== "pago" && (
+              {adminStep !== "pago" &&
+                pipeline.compra?.estado !== "lista_retiro" && (
                 <>
                   <CreditProductsPanel
                     compra={pipeline.compra}
@@ -207,21 +213,25 @@ export function ClientPipelineView({
                     clienteNombre={pipeline.displayName}
                     clienteCedula={pipeline.user.user}
                   />
-                  <PaymentConfirmPanel
+                  <PrimerPagoPanel
                     compra={pipeline.compra}
                     pagos={pipeline.pagos}
                     userId={userId}
                     referenciasUsadas={referenciasUsadas}
+                    clienteNombre={pipeline.displayName}
+                    clienteCedula={pipeline.user.user}
                   />
                 </>
               )}
               {!showDeliveryMain && (
-                <DeliveryPanel
-                  compra={pipeline.compra}
-                  userId={userId}
-                  clienteCelular={clienteCelular}
-                  clienteNombre={pipeline.displayName}
-                />
+                <div id="pipeline-entrega-historial">
+                  <DeliveryPanel
+                    compra={pipeline.compra}
+                    userId={userId}
+                    clienteCelular={clienteCelular}
+                    clienteNombre={pipeline.displayName}
+                  />
+                </div>
               )}
               {!showVisitaMain && (
                 <VisitActionPanel

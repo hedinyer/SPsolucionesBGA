@@ -163,6 +163,8 @@ export interface UserMotoCompraRow {
   frecuencia_pago: FrecuenciaPago;
   cuota_inicial_monto: number;
   monto_cuota_periodo: number;
+  /** Monto de cuota adelantada en el primer pago (puede ser 0 o parcial). */
+  monto_cuota_adelantada?: number;
   monto_visita_monto: number;
   monto_total_primer_pago: number;
   estado: MotoCompraEstado;
@@ -479,6 +481,8 @@ export interface ClientSearchResult {
   diasAtraso: number;
   matchLabel: string;
   seleccionadoAt: string | null;
+  /** Fecha de entrega / venta de la moto (ISO date). */
+  fechaVenta: string | null;
   selfieUrl: string | null;
   motoImagenUrl: string | null;
   /** Quién captó al cliente (Guillen, Punto de venta, …). */
@@ -581,6 +585,7 @@ export interface PagoRow {
   tarifa_objetivo_id: string | null;
   compra_producto_credito_id?: string | null;
   contexto_pago: ContextoPago | null;
+  cobro_grupo_id?: string | null;
   notas_admin: string | null;
   created_at: string;
   updated_at: string;

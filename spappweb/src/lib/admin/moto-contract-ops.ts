@@ -3,9 +3,8 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { emitPipelineEvent } from "@/lib/agent/pipeline-events";
-import { calcMotoPayment, MIN_CUOTA_INICIAL } from "@/lib/moto-payment";
+import { calcMotoPayment } from "@/lib/moto-payment";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { formatCop } from "@/lib/utils/format";
 
 function motoAdminData(compra: {
   modelo: string;
@@ -136,10 +135,11 @@ const assignMotoSchema = z.object({
   placa: z.string().trim().min(1).optional(),
   chasis: z.string().trim().min(1).optional(),
   referencia: z.string().trim().optional(),
-  cuotaInicial: z.number().int().min(MIN_CUOTA_INICIAL),
+  cuotaInicial: z.number().int().min(0),
   cuotaDiaria: z.number().int().positive().optional(),
   montoVisita: z.number().int().min(0).optional(),
   cobraCuotaAdelantada: z.boolean().optional(),
+  cuotaAdelantada: z.number().int().min(0).optional(),
   condicion: z.enum(["nueva", "segunda_mano"]).optional(),
 });
 
@@ -175,10 +175,8 @@ export async function assignMotoByAdminOp(
   const cuotaDiaria = parsed.cuotaDiaria ?? (bike.cuota_diaria as number);
   const montoVisita = parsed.montoVisita ?? (bike.monto_visita as number);
 
-  if (cuotaInicial < MIN_CUOTA_INICIAL) {
-    throw new Error(
-      `La cuota inicial no puede ser menor a ${formatCop(MIN_CUOTA_INICIAL)}.`,
-    );
+  if (cuotaInicial < 0) {
+    throw new Error("La cuota inicial no puede ser negativa.");
   }
   if (cuotaDiaria <= 0) {
     throw new Error("La cuota diaria debe ser mayor a cero.");
@@ -187,13 +185,31 @@ export async function assignMotoByAdminOp(
     throw new Error("El monto de visita no puede ser negativo.");
   }
 
-  const cobraAdelantada = parsed.cobraCuotaAdelantada !== false;
+  const periodoPreview = calcMotoPayment(bike, parsed.frecuencia, {
+    cuotaInicial,
+    cuotaDiaria,
+    montoVisita,
+  }).monto_cuota_periodo;
+
+  const cuotaAdelantada =
+    parsed.cuotaAdelantada != null
+      ? parsed.cuotaAdelantada
+      : parsed.cobraCuotaAdelantada === false
+        ? 0
+        : periodoPreview;
+
+  if (cuotaAdelantada < 0) {
+    throw new Error("La cuota adelantada no puede ser negativa.");
+  }
+
   const payment = calcMotoPayment(bike, parsed.frecuencia, {
     cuotaInicial,
     cuotaDiaria,
     montoVisita,
-    cobraCuotaAdelantada: cobraAdelantada,
+    cuotaAdelantada,
   });
+
+  const cobraAdelantada = payment.monto_cuota_adelantada > 0;
 
   const placa = parsed.placa?.trim().toUpperCase() || null;
   const chasis = parsed.chasis?.trim() || null;
