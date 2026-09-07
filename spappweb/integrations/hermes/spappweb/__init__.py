@@ -7,7 +7,7 @@ Hermes. Cada llamada se ejecuta vía `POST {SPAPP_BASE_URL}/api/agent/tools`.
 Solo usa la librería estándar (urllib) — sin dependencias externas.
 
 Variables de entorno:
-    SPAPP_BASE_URL        ej. https://tu-panel.vercel.app (default http://localhost:3000)
+    SPAPP_BASE_URL        ej. https://spsoluciones-bga.vercel.app (default http://localhost:3000)
     SPAPP_AGENT_API_KEY   OPCIONAL. Solo si el servidor tiene AGENT_API_KEY puesta.
 """
 

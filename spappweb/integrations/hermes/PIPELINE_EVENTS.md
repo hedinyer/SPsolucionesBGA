@@ -67,7 +67,7 @@ Equivalente vía tools (auto-descubiertas por el plugin):
     "stepLabel": "Moto",
     "moto": { "modelo": "AKT", "color": "Rojo", "placa": "ABC123", "chasis": "..." },
     "contractId": "uuid-contrato",
-    "contractUrl": "https://tu-panel.vercel.app/contrato/uuid-contrato"
+    "contractUrl": "https://spsoluciones-bga.vercel.app/contrato/uuid-contrato"
   },
   "whatsappHint": "Hola Juan Pérez, tu moto AKT Rojo fue asignada...",
   "createdAt": "2026-07-02T12:00:00.000Z",

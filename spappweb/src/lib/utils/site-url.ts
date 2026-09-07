@@ -1,4 +1,4 @@
-export const DEFAULT_SITE_URL = "https://sp-bucaramanga.vercel.app";
+export const DEFAULT_SITE_URL = "https://spsoluciones-bga.vercel.app";
 
 export function getSiteUrl() {
   if (process.env.NEXT_PUBLIC_SITE_URL) {

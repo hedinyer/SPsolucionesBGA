@@ -34,7 +34,7 @@ cp -r spappweb/integrations/hermes/spappweb ~/.hermes/plugins/spappweb
 Si tu panel NO corre en `http://localhost:3000`, indica la URL:
 
 ```bash
-export SPAPP_BASE_URL="https://tu-panel.vercel.app"   # sin slash final
+export SPAPP_BASE_URL="https://spsoluciones-bga.vercel.app"   # sin slash final
 # export SPAPP_AGENT_API_KEY="..."   # solo si configuraste AGENT_API_KEY
 ```
 
