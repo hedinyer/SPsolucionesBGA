@@ -4,10 +4,21 @@ import { useEffect, useState, useTransition } from "react";
 import { Bike, Printer } from "lucide-react";
 import { toast } from "sonner";
 import { saveVentaMoto } from "@/lib/actions/venta-moto-actions";
+import {
+  CONTADO_TIPO_DOC,
+  CONTADO_TIPO_DOC_LABELS,
+  contadoClienteFotoFolder,
+  type ContadoTipoDocumento,
+} from "@/lib/venta-contado/contado-cliente";
 import { printVentaMotoReceipt } from "@/lib/printing/venta-moto-receipt";
 import type { BikeRow } from "@/lib/pipeline/types";
+import { STORAGE_BUCKETS } from "@/lib/supabase/storage-buckets";
 import { formatCop } from "@/lib/utils/format";
 import { Button } from "@/components/ui/button";
+import {
+  ImageFileField,
+  uploadImageFile,
+} from "@/components/ui/image-file-field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -37,6 +48,8 @@ export function VenderMotoSheet({
 }: VenderMotoSheetProps) {
   const [pending, startTransition] = useTransition();
   const [bikeId, setBikeId] = useState("");
+  const [tipoDocumento, setTipoDocumento] = useState<ContadoTipoDocumento>("cc");
+  const [clienteFoto, setClienteFoto] = useState<File | null>(null);
   const [valorVenta, setValorVenta] = useState("");
   const [montoPagado, setMontoPagado] = useState("");
   const activeBikes = bikes.filter((b) => b.activo && b.stock > 0);
@@ -65,6 +78,8 @@ export function VenderMotoSheet({
 
   function resetForm() {
     setBikeId("");
+    setTipoDocumento("cc");
+    setClienteFoto(null);
     setValorVenta("");
     setMontoPagado("");
   }
@@ -107,13 +122,26 @@ export function VenderMotoSheet({
 
             startTransition(async () => {
               try {
+                const cedula = String(fd.get("clienteCedula") || "").trim();
+                let clienteFotoUrl: string | undefined;
+                if (clienteFoto) {
+                  clienteFotoUrl = await uploadImageFile(
+                    STORAGE_BUCKETS.userDocuments,
+                    contadoClienteFotoFolder(cedula || "sin-doc"),
+                    clienteFoto,
+                  );
+                }
                 const venta = await saveVentaMoto({
                   bikeId: Number(bikeId),
                   modelo: selected.modelo,
                   color: selected.color,
                   clienteNombre: String(fd.get("clienteNombre")),
-                  clienteCedula: String(fd.get("clienteCedula")),
+                  clienteCedula: cedula,
                   clienteCelular: String(fd.get("clienteCelular")),
+                  clienteTipoDocumento: tipoDocumento,
+                  clienteDireccion: String(fd.get("clienteDireccion") || ""),
+                  clienteCorreo: String(fd.get("clienteCorreo") || "") || undefined,
+                  clienteFotoUrl,
                   chasis: String(fd.get("chasis") || "") || undefined,
                   cuotaInicial: selected?.cuota_inicial,
                   valorVenta: parseCopInput(valorVenta),
@@ -211,9 +239,37 @@ export function VenderMotoSheet({
             <Label htmlFor="clienteNombre">Nombre del cliente</Label>
             <Input id="clienteNombre" name="clienteNombre" required />
           </div>
+          <ImageFileField
+            label="Foto del cliente"
+            file={clienteFoto}
+            onFileChange={setClienteFoto}
+            enableCamera
+            disabled={pending}
+            fileInputId="contado-cliente-foto"
+            cameraInputId="contado-cliente-foto-cam"
+          />
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="clienteTipoDocumento">Tipo de documento</Label>
+            <TouchSelect
+              id="clienteTipoDocumento"
+              aria-label="Tipo de documento"
+              value={tipoDocumento}
+              onChange={(v) =>
+                setTipoDocumento(
+                  CONTADO_TIPO_DOC.includes(v as ContadoTipoDocumento)
+                    ? (v as ContadoTipoDocumento)
+                    : "cc",
+                )
+              }
+              options={CONTADO_TIPO_DOC.map((t) => ({
+                value: t,
+                label: CONTADO_TIPO_DOC_LABELS[t],
+              }))}
+            />
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-2">
-              <Label htmlFor="clienteCedula">Cédula</Label>
+              <Label htmlFor="clienteCedula">Número de documento</Label>
               <Input
                 id="clienteCedula"
                 name="clienteCedula"
@@ -230,6 +286,20 @@ export function VenderMotoSheet({
                 required
               />
             </div>
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="clienteDireccion">Dirección de residencia</Label>
+            <Input id="clienteDireccion" name="clienteDireccion" required />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="clienteCorreo">Correo electrónico</Label>
+            <Input
+              id="clienteCorreo"
+              name="clienteCorreo"
+              type="email"
+              inputMode="email"
+              placeholder="Opcional"
+            />
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="chasis">Chasis</Label>

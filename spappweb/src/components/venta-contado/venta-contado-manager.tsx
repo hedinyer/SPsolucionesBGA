@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Bike, CircleDollarSign, Pencil, Plus, Printer, Tag, User } from "lucide-react";
 import type { VentaMotoRow } from "@/lib/actions/venta-moto-actions";
+import { CONTADO_TIPO_DOC_LABELS } from "@/lib/venta-contado/contado-cliente";
 import { AbonoVentaDialog } from "@/components/venta-contado/abono-venta-dialog";
 import { EditarVentaContadoDialog } from "@/components/venta-contado/editar-venta-contado-dialog";
 import { PlacaVentaDialog } from "@/components/venta-contado/placa-venta-dialog";
@@ -115,6 +116,8 @@ export function VentaContadoManager({
         v.clienteNombre.toLowerCase().includes(q) ||
         v.clienteCedula.toLowerCase().includes(q) ||
         v.clienteCelular.toLowerCase().includes(q) ||
+        (v.clienteDireccion ?? "").toLowerCase().includes(q) ||
+        (v.clienteCorreo ?? "").toLowerCase().includes(q) ||
         v.modelo.toLowerCase().includes(q) ||
         v.color.toLowerCase().includes(q) ||
         (v.chasis ?? "").toLowerCase().includes(q) ||
@@ -142,7 +145,7 @@ export function VentaContadoManager({
             type="search"
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}
-            placeholder="Cliente, cédula, celular, placa, modelo, chasis…"
+            placeholder="Cliente, documento, celular, correo, dirección, placa…"
             className="flex h-11 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-neutral-400"
           />
         </div>
@@ -197,8 +200,18 @@ export function VentaContadoManager({
                         <div>
                           <div className="font-medium">{v.clienteNombre}</div>
                           <div className="text-xs text-muted-foreground">
+                            {v.clienteTipoDocumento
+                              ? `${CONTADO_TIPO_DOC_LABELS[v.clienteTipoDocumento]} `
+                              : ""}
                             {v.clienteCedula} · {v.clienteCelular}
                           </div>
+                          {v.clienteDireccion || v.clienteCorreo ? (
+                            <div className="text-xs text-muted-foreground">
+                              {[v.clienteDireccion, v.clienteCorreo]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </div>
+                          ) : null}
                         </div>
                       </div>
                     </TableCell>
@@ -317,6 +330,19 @@ export function VentaContadoManager({
                     </div>
                     <div className="min-w-0">
                       <p className="font-medium">{v.clienteNombre}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {v.clienteTipoDocumento
+                          ? `${CONTADO_TIPO_DOC_LABELS[v.clienteTipoDocumento]} `
+                          : ""}
+                        {v.clienteCedula} · {v.clienteCelular}
+                      </p>
+                      {v.clienteDireccion || v.clienteCorreo ? (
+                        <p className="text-xs text-muted-foreground">
+                          {[v.clienteDireccion, v.clienteCorreo]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </p>
+                      ) : null}
                       <p className="text-muted-foreground">
                         {v.modelo} · {v.color}
                         {v.placa ? ` · Placa ${v.placa}` : ""}

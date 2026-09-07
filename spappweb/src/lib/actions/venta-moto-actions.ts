@@ -4,14 +4,37 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireAdminSession } from "@/lib/auth/session";
 import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  CONTADO_TIPO_DOC,
+  type ContadoTipoDocumento,
+} from "@/lib/venta-contado/contado-cliente";
+
+const clienteExtraSchema = {
+  clienteTipoDocumento: z.enum(CONTADO_TIPO_DOC, {
+    error: "Selecciona el tipo de documento.",
+  }),
+  clienteDireccion: z
+    .string()
+    .trim()
+    .min(1, "Dirección de residencia obligatoria"),
+  clienteCorreo: z.preprocess(
+    (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+    z.string().trim().email("Correo electrónico inválido").optional(),
+  ),
+  clienteFotoUrl: z.preprocess(
+    (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+    z.string().url("URL de foto inválida").optional(),
+  ),
+};
 
 const ventaMotoSchema = z.object({
   bikeId: z.number().int().positive("Selecciona una moto del catálogo."),
   modelo: z.string().trim().min(1, "Modelo obligatorio"),
   color: z.string().trim().min(1, "Color obligatorio"),
   clienteNombre: z.string().trim().min(1, "Nombre del cliente obligatorio"),
-  clienteCedula: z.string().trim().min(5, "Cédula inválida"),
+  clienteCedula: z.string().trim().min(5, "Documento inválido"),
   clienteCelular: z.string().trim().min(10, "Celular inválido"),
+  ...clienteExtraSchema,
   chasis: z.string().trim().optional(),
   cuotaInicial: z.number().int().nonnegative().optional(),
   valorVenta: z.number().int().positive().optional(),
@@ -47,6 +70,10 @@ export interface VentaMotoRow {
   clienteNombre: string;
   clienteCedula: string;
   clienteCelular: string;
+  clienteTipoDocumento: ContadoTipoDocumento | null;
+  clienteDireccion: string | null;
+  clienteCorreo: string | null;
+  clienteFotoUrl: string | null;
   cuotaInicial: number | null;
   valorVenta: number | null;
   montoPagado: number;
@@ -64,6 +91,15 @@ function toRow(raw: Record<string, unknown>): VentaMotoRow {
     | undefined;
   const bikeOne = Array.isArray(bike) ? bike[0] : bike;
 
+  const tipoRaw = raw.cliente_tipo_documento
+    ? String(raw.cliente_tipo_documento)
+    : null;
+  const clienteTipoDocumento = CONTADO_TIPO_DOC.includes(
+    tipoRaw as ContadoTipoDocumento,
+  )
+    ? (tipoRaw as ContadoTipoDocumento)
+    : null;
+
   return {
     id: String(raw.id),
     bikeId: raw.bike_id != null ? Number(raw.bike_id) : null,
@@ -74,15 +110,30 @@ function toRow(raw: Record<string, unknown>): VentaMotoRow {
     clienteNombre: String(raw.cliente_nombre),
     clienteCedula: String(raw.cliente_cedula),
     clienteCelular: String(raw.cliente_celular),
+    clienteTipoDocumento,
+    clienteDireccion: raw.cliente_direccion
+      ? String(raw.cliente_direccion)
+      : null,
+    clienteCorreo: raw.cliente_correo ? String(raw.cliente_correo) : null,
+    clienteFotoUrl: raw.cliente_foto_url
+      ? String(raw.cliente_foto_url)
+      : null,
     cuotaInicial: raw.cuota_inicial != null ? Number(raw.cuota_inicial) : null,
     valorVenta: raw.valor_venta != null ? Number(raw.valor_venta) : null,
     montoPagado: Number(raw.monto_pagado ?? 0),
     notas: raw.notas ? String(raw.notas) : null,
     createdAt: String(raw.created_at),
-    selfieUrl: raw.selfieUrl != null ? String(raw.selfieUrl) : null,
+    selfieUrl: raw.cliente_foto_url
+      ? String(raw.cliente_foto_url)
+      : raw.selfieUrl != null
+        ? String(raw.selfieUrl)
+        : null,
     motoImagenUrl: bikeOne?.imagen_url ? String(bikeOne.imagen_url) : null,
   };
 }
+
+const VENTA_MOTO_SELECT =
+  "id, bike_id, modelo, color, placa, chasis, cliente_nombre, cliente_cedula, cliente_celular, cliente_tipo_documento, cliente_direccion, cliente_correo, cliente_foto_url, cuota_inicial, valor_venta, monto_pagado, notas, created_at, bike_table(imagen_url)";
 
 export async function saveVentaMoto(input: VentaMotoInput): Promise<VentaMotoRow> {
   await requireAdminSession();
@@ -114,14 +165,16 @@ export async function saveVentaMoto(input: VentaMotoInput): Promise<VentaMotoRow
       cliente_nombre: parsed.clienteNombre,
       cliente_cedula: parsed.clienteCedula,
       cliente_celular: parsed.clienteCelular,
+      cliente_tipo_documento: parsed.clienteTipoDocumento,
+      cliente_direccion: parsed.clienteDireccion,
+      cliente_correo: parsed.clienteCorreo ?? null,
+      cliente_foto_url: parsed.clienteFotoUrl ?? null,
       cuota_inicial: parsed.cuotaInicial ?? null,
       valor_venta: parsed.valorVenta ?? null,
       monto_pagado: parsed.montoPagado ?? 0,
       notas: parsed.notas || null,
     })
-    .select(
-      "id, bike_id, modelo, color, placa, chasis, cliente_nombre, cliente_cedula, cliente_celular, cuota_inicial, valor_venta, monto_pagado, notas, created_at",
-    )
+    .select(VENTA_MOTO_SELECT)
     .single();
 
   if (error) throw new Error(error.message);
@@ -145,9 +198,6 @@ export async function saveVentaMoto(input: VentaMotoInput): Promise<VentaMotoRow
   revalidatePath("/caja");
   return toRow(data as Record<string, unknown>);
 }
-
-const VENTA_MOTO_SELECT =
-  "id, bike_id, modelo, color, placa, chasis, cliente_nombre, cliente_cedula, cliente_celular, cuota_inicial, valor_venta, monto_pagado, notas, created_at, bike_table(imagen_url)";
 
 export async function getVentasContado(): Promise<VentaMotoRow[]> {
   await requireAdminSession();
@@ -186,7 +236,10 @@ export async function getVentasContado(): Promise<VentaMotoRow[]> {
 
   return rows.map((row) => ({
     ...row,
-    selfieUrl: selfieByCedula.get(row.clienteCedula.trim()) ?? null,
+    selfieUrl:
+      row.clienteFotoUrl ??
+      selfieByCedula.get(row.clienteCedula.trim()) ??
+      null,
   }));
 }
 
@@ -257,8 +310,9 @@ const updateVentaMotoSchema = z
   .object({
     id: z.string().uuid(),
     clienteNombre: z.string().trim().min(1, "Nombre del cliente obligatorio"),
-    clienteCedula: z.string().trim().min(5, "Cédula inválida"),
+    clienteCedula: z.string().trim().min(5, "Documento inválido"),
     clienteCelular: z.string().trim().min(10, "Celular inválido"),
+    ...clienteExtraSchema,
     chasis: z.string().trim().optional(),
     valorVenta: z.number().int().positive().optional(),
     montoPagado: z.number().int().nonnegative(),
@@ -312,6 +366,14 @@ export async function updateVentaMoto(
       cliente_nombre: parsed.clienteNombre,
       cliente_cedula: parsed.clienteCedula,
       cliente_celular: parsed.clienteCelular,
+      cliente_tipo_documento: parsed.clienteTipoDocumento,
+      cliente_direccion: parsed.clienteDireccion,
+      cliente_correo: parsed.clienteCorreo ?? null,
+      cliente_foto_url:
+        parsed.clienteFotoUrl !== undefined
+          ? (parsed.clienteFotoUrl ?? null)
+          : ((current as { cliente_foto_url?: string | null }).cliente_foto_url ??
+            null),
       chasis: parsed.chasis || null,
       valor_venta: parsed.valorVenta ?? null,
       monto_pagado: parsed.montoPagado,

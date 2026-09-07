@@ -1,4 +1,5 @@
 import type { VentaMotoRow } from "@/lib/actions/venta-moto-actions";
+import { CONTADO_TIPO_DOC_LABELS } from "@/lib/venta-contado/contado-cliente";
 import { formatCop } from "@/lib/utils/format";
 
 function esc(s: string): string {
@@ -216,7 +217,27 @@ body {
 <div class="section">
   <div class="label">Cliente</div>
   <div class="value">${esc(venta.clienteNombre)}</div>
-  <div class="sub">CC ${esc(venta.clienteCedula)} · ${esc(venta.clienteCelular)}</div>
+  <div class="sub">${esc(
+    [
+      venta.clienteTipoDocumento
+        ? CONTADO_TIPO_DOC_LABELS[venta.clienteTipoDocumento]
+        : null,
+      venta.clienteCedula,
+      venta.clienteCelular,
+    ]
+      .filter(Boolean)
+      .join(" · "),
+  )}</div>
+  ${
+    venta.clienteDireccion
+      ? `<div class="sub">${esc(venta.clienteDireccion)}</div>`
+      : ""
+  }
+  ${
+    venta.clienteCorreo
+      ? `<div class="sub">${esc(venta.clienteCorreo)}</div>`
+      : ""
+  }
 </div>
 <hr class="divider" />
 <div class="section">
@@ -291,6 +312,10 @@ if (typeof process !== "undefined" && process.argv[1]?.includes("venta-moto-rece
     clienteNombre: "Juan Pérez",
     clienteCedula: "1234567890",
     clienteCelular: "3001234567",
+    clienteTipoDocumento: "cc",
+    clienteDireccion: "Calle 1 #2-3",
+    clienteCorreo: "juan@example.com",
+    clienteFotoUrl: null,
     cuotaInicial: 500000,
     valorVenta: 5_000_000,
     montoPagado: 2_000_000,

@@ -7,6 +7,13 @@ import {
   updateVentaMoto,
   type VentaMotoRow,
 } from "@/lib/actions/venta-moto-actions";
+import {
+  CONTADO_TIPO_DOC,
+  CONTADO_TIPO_DOC_LABELS,
+  contadoClienteFotoFolder,
+  type ContadoTipoDocumento,
+} from "@/lib/venta-contado/contado-cliente";
+import { STORAGE_BUCKETS } from "@/lib/supabase/storage-buckets";
 import { formatCop, formatDate } from "@/lib/utils/format";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,8 +23,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  ImageFileField,
+  uploadImageFile,
+} from "@/components/ui/image-file-field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { TouchSelect } from "@/components/ui/touch-select";
 
 interface EditarVentaContadoDialogProps {
   venta: VentaMotoRow | null;
@@ -40,8 +52,13 @@ export function EditarVentaContadoDialog({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [clienteNombre, setClienteNombre] = useState("");
+  const [clienteTipoDocumento, setClienteTipoDocumento] =
+    useState<ContadoTipoDocumento>("cc");
   const [clienteCedula, setClienteCedula] = useState("");
   const [clienteCelular, setClienteCelular] = useState("");
+  const [clienteDireccion, setClienteDireccion] = useState("");
+  const [clienteCorreo, setClienteCorreo] = useState("");
+  const [clienteFoto, setClienteFoto] = useState<File | null>(null);
   const [chasis, setChasis] = useState("");
   const [placa, setPlaca] = useState("");
   const [valorVenta, setValorVenta] = useState("");
@@ -54,8 +71,12 @@ export function EditarVentaContadoDialog({
   useEffect(() => {
     if (!open || !venta) return;
     setClienteNombre(venta.clienteNombre);
+    setClienteTipoDocumento(venta.clienteTipoDocumento ?? "cc");
     setClienteCedula(venta.clienteCedula);
     setClienteCelular(venta.clienteCelular);
+    setClienteDireccion(venta.clienteDireccion ?? "");
+    setClienteCorreo(venta.clienteCorreo ?? "");
+    setClienteFoto(null);
     setChasis(venta.chasis ?? "");
     setPlaca(venta.placa ?? "");
     setValorVenta(venta.valorVenta != null ? String(venta.valorVenta) : "");
@@ -74,11 +95,15 @@ export function EditarVentaContadoDialog({
       return;
     }
     if (clienteCedula.trim().length < 5) {
-      toast.error("Indica una cédula válida.");
+      toast.error("Indica un documento válido.");
       return;
     }
     if (clienteCelular.trim().length < 10) {
       toast.error("Indica un celular válido.");
+      return;
+    }
+    if (!clienteDireccion.trim()) {
+      toast.error("Indica la dirección de residencia.");
       return;
     }
     if (pagado < 0) {
@@ -96,11 +121,23 @@ export function EditarVentaContadoDialog({
 
     startTransition(async () => {
       try {
+        let clienteFotoUrl = venta.clienteFotoUrl ?? undefined;
+        if (clienteFoto) {
+          clienteFotoUrl = await uploadImageFile(
+            STORAGE_BUCKETS.userDocuments,
+            contadoClienteFotoFolder(clienteCedula.trim() || "sin-doc"),
+            clienteFoto,
+          );
+        }
         await updateVentaMoto({
           id: venta.id,
           clienteNombre: clienteNombre.trim(),
           clienteCedula: clienteCedula.trim(),
           clienteCelular: clienteCelular.trim(),
+          clienteTipoDocumento,
+          clienteDireccion: clienteDireccion.trim(),
+          clienteCorreo: clienteCorreo.trim() || undefined,
+          clienteFotoUrl,
           chasis: chasis.trim() || undefined,
           valorVenta: valor,
           montoPagado: pagado,
@@ -140,9 +177,41 @@ export function EditarVentaContadoDialog({
               />
             </div>
 
+            <ImageFileField
+              label="Foto del cliente"
+              file={clienteFoto}
+              onFileChange={setClienteFoto}
+              existingUrl={venta.clienteFotoUrl ?? venta.selfieUrl}
+              enableCamera
+              enableDialogPaste
+              disabled={pending}
+              fileInputId="edit-contado-cliente-foto"
+              cameraInputId="edit-contado-cliente-foto-cam"
+            />
+
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="edit-cliente-tipo-doc">Tipo de documento</Label>
+              <TouchSelect
+                id="edit-cliente-tipo-doc"
+                aria-label="Tipo de documento"
+                value={clienteTipoDocumento}
+                onChange={(v) =>
+                  setClienteTipoDocumento(
+                    CONTADO_TIPO_DOC.includes(v as ContadoTipoDocumento)
+                      ? (v as ContadoTipoDocumento)
+                      : "cc",
+                  )
+                }
+                options={CONTADO_TIPO_DOC.map((t) => ({
+                  value: t,
+                  label: CONTADO_TIPO_DOC_LABELS[t],
+                }))}
+              />
+            </div>
+
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-2">
-                <Label htmlFor="edit-cliente-cedula">Cédula</Label>
+                <Label htmlFor="edit-cliente-cedula">Número de documento</Label>
                 <Input
                   id="edit-cliente-cedula"
                   inputMode="numeric"
@@ -159,6 +228,29 @@ export function EditarVentaContadoDialog({
                   onChange={(e) => setClienteCelular(e.target.value)}
                 />
               </div>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="edit-cliente-direccion">
+                Dirección de residencia
+              </Label>
+              <Input
+                id="edit-cliente-direccion"
+                value={clienteDireccion}
+                onChange={(e) => setClienteDireccion(e.target.value)}
+              />
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="edit-cliente-correo">Correo electrónico</Label>
+              <Input
+                id="edit-cliente-correo"
+                type="email"
+                inputMode="email"
+                value={clienteCorreo}
+                onChange={(e) => setClienteCorreo(e.target.value)}
+                placeholder="Opcional"
+              />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
