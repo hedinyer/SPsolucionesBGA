@@ -89,6 +89,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { TouchSelect } from "@/components/ui/touch-select";
 import { ProductoInventarioCard } from "@/components/inventario/producto-inventario-card";
 import { ProductoNovedadesDialog } from "@/components/inventario/producto-novedades-dialog";
+import {
+  CostoMonto,
+  CostoRevealToggle,
+} from "@/components/inventario/costo-reveal";
 
 /** Genera SKU desde el nombre completo (sin truncar). */
 function skuFromNombre(nombre: string): string {
@@ -269,6 +273,7 @@ export function InventarioManager({
   const [costoMax, setCostoMax] = useState("");
   const [precioMin, setPrecioMin] = useState("");
   const [precioMax, setPrecioMax] = useState("");
+  const [costosVisibles, setCostosVisibles] = useState(false);
   const [pending, startTransition] = useTransition();
   const refreshDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refreshingRef = useRef(false);
@@ -626,12 +631,21 @@ export function InventarioManager({
         className="ml-auto text-right tabular-nums"
         aria-label="Valor total del inventario"
       >
-        <p className="text-xs text-muted-foreground">
-          Costo{" "}
-          <span className="font-medium text-foreground">
-            {formatCop(valorInventario.costo)}
-          </span>
-        </p>
+        <div className="flex items-center justify-end gap-0.5">
+          <p className="text-xs text-muted-foreground">
+            Costo{" "}
+            <span className="font-medium text-foreground">
+              <CostoMonto
+                amount={valorInventario.costo}
+                visible={costosVisibles}
+              />
+            </span>
+          </p>
+          <CostoRevealToggle
+            visible={costosVisibles}
+            onToggle={() => setCostosVisibles((v) => !v)}
+          />
+        </div>
         <p className="text-xs text-muted-foreground">
           Venta{" "}
           <span className="font-medium text-foreground">
@@ -989,6 +1003,7 @@ export function InventarioManager({
                     categoriaNombre={
                       categorias.find((c) => c.id === p.categoria_id)?.nombre
                     }
+                    costosVisibles={costosVisibles}
                     onEdit={() => {
                       setEditingProd(p);
                       setProdOpen(true);
