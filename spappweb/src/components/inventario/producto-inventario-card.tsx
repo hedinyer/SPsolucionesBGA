@@ -23,6 +23,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { PrintPriceLabelButton } from "@/components/inventario/print-price-label-button";
+import { CostoMonto } from "@/components/inventario/costo-reveal";
 
 function formatUbicacionProducto(
   ubicacion: InventarioUbicacion | undefined,
@@ -38,6 +39,7 @@ function formatUbicacionProducto(
 export type ProductoInventarioCardProps = {
   product: InventarioProductoRow;
   categoriaNombre?: string | null;
+  costosVisibles?: boolean;
   onEdit: () => void;
   onDelete: () => void;
   onNovedades: () => void;
@@ -47,6 +49,7 @@ export type ProductoInventarioCardProps = {
 export function ProductoInventarioCard({
   product,
   categoriaNombre: categoriaNombreProp,
+  costosVisibles = false,
   onEdit,
   onDelete,
   onNovedades,
@@ -128,7 +131,13 @@ export function ProductoInventarioCard({
           </div>
 
           <div className="flex flex-col gap-1 text-sm text-muted-foreground">
-            <p className="tabular-nums">Costo {formatCop(product.costo ?? 0)}</p>
+            <p>
+              Costo{" "}
+              <CostoMonto
+                amount={product.costo ?? 0}
+                visible={costosVisibles}
+              />
+            </p>
             <p>{ubicacionLabel}</p>
           </div>
         </div>
