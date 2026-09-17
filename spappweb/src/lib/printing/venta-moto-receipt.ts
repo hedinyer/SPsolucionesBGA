@@ -1,5 +1,6 @@
 import type { VentaMotoRow } from "@/lib/actions/venta-moto-actions";
 import { CONTADO_TIPO_DOC_LABELS } from "@/lib/venta-contado/contado-cliente";
+import { printHtmlInApp } from "@/lib/printing/print-html-in-app";
 import { formatCop } from "@/lib/utils/format";
 
 function esc(s: string): string {
@@ -257,48 +258,12 @@ ${notasHtml}
 </body></html>`;
 }
 
-function triggerPrint(win: Window): void {
-  window.setTimeout(() => {
-    try {
-      win.focus();
-      win.print();
-    } catch {
-      // el usuario imprime con Ctrl+P desde la pestaña abierta
-    }
-  }, 400);
-}
-
-/** Abre el ticket en pestaña nueva e intenta el diálogo de impresión. */
+/** Imprime el ticket dentro de la app (sin pestaña nueva). */
 export async function printVentaMotoReceipt(venta: VentaMotoRow): Promise<void> {
   const origin =
     typeof window !== "undefined" ? window.location.origin : "";
   const html = await buildVentaMotoReceiptHtml(venta, origin);
-  const popup = window.open("", "_blank", "noopener,noreferrer");
-  if (popup) {
-    popup.document.open();
-    popup.document.write(html);
-    popup.document.close();
-    triggerPrint(popup);
-    return;
-  }
-
-  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const iframe = document.createElement("iframe");
-  iframe.setAttribute(
-    "style",
-    "position:fixed;right:0;bottom:0;width:1px;height:1px;border:0",
-  );
-  iframe.src = url;
-  iframe.onload = () => {
-    const win = iframe.contentWindow;
-    if (win) triggerPrint(win);
-    window.setTimeout(() => {
-      URL.revokeObjectURL(url);
-      iframe.remove();
-    }, 120_000);
-  };
-  document.body.appendChild(iframe);
+  await printHtmlInApp(html);
 }
 
 if (typeof process !== "undefined" && process.argv[1]?.includes("venta-moto-receipt")) {

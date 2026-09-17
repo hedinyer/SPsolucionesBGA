@@ -510,6 +510,87 @@ export async function saveVentaProducto(
   revalidatePath("/inventario");
   revalidatePath("/venta");
   revalidatePath("/caja");
+  revalidatePath("/historial-ventas");
 
   return toVentaRow(ventaRaw as Record<string, unknown>, itemRows);
+}
+
+const abonoVentaProductoSchema = z.object({
+  id: z.string().uuid(),
+  monto: z.number().int().positive("El abono debe ser mayor a cero."),
+});
+
+export async function addAbonoVentaProducto(
+  id: string,
+  monto: number,
+): Promise<VentaProductoRow> {
+  await requireAdminSession();
+  const parsed = abonoVentaProductoSchema.parse({ id, monto });
+  const supabase = createAdminClient();
+
+  const { data: current, error: fetchError } = await supabase
+    .from("ventas_producto")
+    .select(
+      "id, cliente_nombre, cliente_cedula, cliente_celular, total, monto_pagado, notas, created_at, venta_producto_items(id, producto_id, cantidad, precio_unitario, subtotal, ubicacion, inventario_productos(sku, nombre))",
+    )
+    .eq("id", parsed.id)
+    .single();
+
+  if (fetchError || !current) {
+    throw new Error(fetchError?.message ?? "Venta no encontrada.");
+  }
+
+  const total = Number(current.total);
+  const montoPagado = Number(current.monto_pagado ?? 0);
+  const saldo = Math.max(0, total - montoPagado);
+  if (saldo <= 0) {
+    throw new Error("Esta venta ya está pagada por completo.");
+  }
+  if (parsed.monto > saldo) {
+    throw new Error(
+      `El abono supera el saldo pendiente (${saldo.toLocaleString("es-CO")}).`,
+    );
+  }
+
+  const nuevoPagado = montoPagado + parsed.monto;
+  const abonoNota = `Abono ${new Intl.DateTimeFormat("es-CO", {
+    dateStyle: "short",
+    timeStyle: "short",
+    timeZone: "America/Bogota",
+  }).format(new Date())}: $${parsed.monto.toLocaleString("es-CO")}`;
+  const notasPrevias = current.notas ? String(current.notas) : null;
+  const notas = notasPrevias ? `${notasPrevias}\n${abonoNota}` : abonoNota;
+
+  const { data: updated, error: updateError } = await supabase
+    .from("ventas_producto")
+    .update({ monto_pagado: nuevoPagado, notas })
+    .eq("id", parsed.id)
+    .select(VENTA_PRODUCTO_SELECT)
+    .single();
+
+  if (updateError || !updated) {
+    throw new Error(updateError?.message ?? "No se pudo registrar el abono.");
+  }
+
+  const rawItems =
+    (current.venta_producto_items as Record<string, unknown>[] | null) ?? [];
+  const items = rawItems.map((item) => {
+    const prod = item.inventario_productos as
+      | { sku?: string | null; nombre?: string | null }
+      | null;
+    return toItemRow(item, {
+      sku: prod?.sku ? String(prod.sku) : "—",
+      nombre: prod?.nombre ? String(prod.nombre) : "Producto eliminado",
+    });
+  });
+
+  const [enriched] = await enrichVentasConClienteMoto(supabase, [
+    toVentaRow(updated as Record<string, unknown>, items),
+  ]);
+
+  revalidatePath("/historial-ventas");
+  revalidatePath("/caja");
+  revalidatePath("/inbox");
+
+  return enriched;
 }

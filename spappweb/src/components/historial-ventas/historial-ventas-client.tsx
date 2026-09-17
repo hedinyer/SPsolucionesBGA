@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
-import { Bike, Printer, Search, User } from "lucide-react";
+import { CircleDollarSign, Bike, Printer, Search, User } from "lucide-react";
 import { toast } from "sonner";
 import type { VentaProductoRow } from "@/lib/actions/venta-producto-actions";
 import type { HistorialMotoVentaRow } from "@/lib/actions/historial-motos-actions";
 import { printVentaProductoReceipt } from "@/lib/printing/venta-producto-receipt";
 import { formatCop, formatDate } from "@/lib/utils/format";
+import { AbonoVentaProductoDialog } from "@/components/historial-ventas/abono-venta-producto-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -63,6 +64,7 @@ export function HistorialVentasClient({
   ventasMotos?: HistorialMotoVentaRow[];
 }) {
   const [query, setQuery] = useState("");
+  const [abonoVenta, setAbonoVenta] = useState<VentaProductoRow | null>(null);
 
   const filteredProductos = useMemo(() => {
     const q = normalize(query.trim());
@@ -161,7 +163,11 @@ export function HistorialVentasClient({
           ) : (
             <div className="grid gap-4 lg:grid-cols-2">
               {filteredProductos.map((venta) => (
-                <VentaCard key={venta.id} venta={venta} />
+                <VentaCard
+                  key={venta.id}
+                  venta={venta}
+                  onAbonar={() => setAbonoVenta(venta)}
+                />
               ))}
             </div>
           )}
@@ -243,6 +249,14 @@ export function HistorialVentasClient({
           )}
         </TabsContent>
       </Tabs>
+
+      <AbonoVentaProductoDialog
+        venta={abonoVenta}
+        open={abonoVenta != null}
+        onOpenChange={(open) => {
+          if (!open) setAbonoVenta(null);
+        }}
+      />
     </div>
   );
 }
@@ -288,7 +302,13 @@ function PhotoThumb({
   );
 }
 
-function VentaCard({ venta }: { venta: VentaProductoRow }) {
+function VentaCard({
+  venta,
+  onAbonar,
+}: {
+  venta: VentaProductoRow;
+  onAbonar: () => void;
+}) {
   const [printing, startPrint] = useTransition();
   const saldo = venta.total - venta.montoPagado;
   const titulo =
@@ -360,16 +380,28 @@ function VentaCard({ venta }: { venta: VentaProductoRow }) {
             Falta por pagar {formatCop(saldo)}
           </p>
         ) : null}
-        <Button
-          type="button"
-          variant="outline"
-          className="min-h-11 w-full"
-          disabled={printing}
-          onClick={handlePrint}
-        >
-          <Printer className="mr-2 h-4 w-4" aria-hidden="true" />
-          {printing ? "Imprimiendo…" : "Reimprimir"}
-        </Button>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          {saldo > 0 ? (
+            <Button
+              type="button"
+              className="min-h-11 w-full bg-primary text-primary-foreground hover:bg-primary/80 sm:flex-1"
+              onClick={onAbonar}
+            >
+              <CircleDollarSign className="mr-2 h-4 w-4" aria-hidden="true" />
+              Abonar
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            variant="outline"
+            className="min-h-11 w-full sm:flex-1"
+            disabled={printing}
+            onClick={handlePrint}
+          >
+            <Printer className="mr-2 h-4 w-4" aria-hidden="true" />
+            {printing ? "Imprimiendo…" : "Reimprimir"}
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );
