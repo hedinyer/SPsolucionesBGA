@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  ArrowLeftRight,
   Eye,
   EyeOff,
   MoreHorizontal,
@@ -8,9 +9,10 @@ import {
   ScrollText,
   Trash2,
 } from "lucide-react";
-import type {
-  InventarioProductoRow,
-  InventarioUbicacion,
+import type { InventarioProductoRow } from "@/lib/pipeline/types";
+import {
+  formatUbicacionConGaveta,
+  normalizeProductoStocks,
 } from "@/lib/pipeline/types";
 import { formatCop } from "@/lib/utils/format";
 import { getStoragePublicUrl } from "@/lib/utils/storage-urls";
@@ -31,17 +33,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { PrintPriceLabelButton } from "@/components/inventario/print-price-label-button";
 
-function formatUbicacionProducto(
-  ubicacion: InventarioUbicacion | undefined,
-  gaveta?: string | null,
-): string {
-  const base = ubicacion ?? "Soluciones";
-  if (base === "Bodega" && gaveta?.trim()) {
-    return `Bodega · Gaveta ${gaveta.trim()}`;
-  }
-  return base;
-}
-
 export type ProductoInventarioCardProps = {
   product: InventarioProductoRow;
   categoriaNombre?: string | null;
@@ -50,6 +41,7 @@ export type ProductoInventarioCardProps = {
   onEdit: () => void;
   onDelete: () => void;
   onNovedades: () => void;
+  onTrasladar: () => void;
   onPhoto: () => void;
 };
 
@@ -61,6 +53,7 @@ export function ProductoInventarioCard({
   onEdit,
   onDelete,
   onNovedades,
+  onTrasladar,
   onPhoto,
 }: ProductoInventarioCardProps) {
   const img = getStoragePublicUrl(
@@ -68,10 +61,7 @@ export function ProductoInventarioCard({
     product.imagen_url,
   );
   const lowStock = product.stock <= product.stock_minimo;
-  const ubicacionLabel = formatUbicacionProducto(
-    product.ubicacion,
-    product.gaveta,
-  );
+  const stocks = normalizeProductoStocks(product);
   const categoriaNombre =
     categoriaNombreProp?.trim() ||
     product.inventario_categorias?.nombre?.trim() ||
@@ -138,6 +128,27 @@ export function ProductoInventarioCard({
             ) : null}
           </div>
 
+          <ul
+            className="flex flex-wrap gap-2"
+            aria-label={`Stock por sede de ${product.nombre}`}
+          >
+            {stocks.map((s) => (
+              <li key={s.ubicacion}>
+                <span
+                  className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 text-xs"
+                  title={formatUbicacionConGaveta(s.ubicacion, s.gaveta)}
+                >
+                  <span className="font-medium">
+                    {formatUbicacionConGaveta(s.ubicacion, s.gaveta)}
+                  </span>
+                  <span className="tabular-nums text-muted-foreground">
+                    {s.cantidad}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+
           <div className="flex flex-col gap-1 text-sm text-muted-foreground">
             <p className="flex items-center gap-1.5 tabular-nums">
               <span>
@@ -162,7 +173,6 @@ export function ProductoInventarioCard({
                 )}
               </button>
             </p>
-            <p>{ubicacionLabel}</p>
           </div>
         </div>
       </CardContent>
@@ -177,6 +187,16 @@ export function ProductoInventarioCard({
         >
           <Pencil className="size-4" aria-hidden="true" />
           Editar
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          className="min-h-11 min-w-28 flex-1 sm:flex-none"
+          aria-label={`Trasladar ${product.nombre}`}
+          onClick={onTrasladar}
+        >
+          <ArrowLeftRight className="size-4" aria-hidden="true" />
+          Trasladar
         </Button>
         <PrintPriceLabelButton
           product={product}

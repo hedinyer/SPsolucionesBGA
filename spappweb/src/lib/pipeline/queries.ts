@@ -17,6 +17,7 @@ import type {
   InventarioCategoriaRow,
   InventarioProductoNovedadRow,
   InventarioProductoRow,
+  InventarioTrasladoRow,
   CompraProductoCreditoRow,
   ProductoCreditoRow,
   GarajeMotoRow,
@@ -1343,16 +1344,88 @@ export async function getAllCategorias(): Promise<InventarioCategoriaRow[]> {
   return (data as InventarioCategoriaRow[]) ?? [];
 }
 
+const productoSelectBase =
+  "id, categoria_id, sku, nombre, descripcion, precio, costo, stock, stock_minimo, ubicacion, gaveta, editado_por, motivo_edicion, editado_at, eliminado_por, motivo_eliminacion, eliminado_at, imagen_url, compatible_modelos, activo, inventario_categorias(id, nombre, slug, descripcion, activo, orden)";
+
+const productoSelectWithStocks = `${productoSelectBase}, inventario_stock_ubicaciones(producto_id, ubicacion, cantidad, gaveta, updated_at)`;
+
+function mapProductoWithStocks(row: unknown): InventarioProductoRow {
+  const r = row as InventarioProductoRow & {
+    inventario_stock_ubicaciones?: InventarioProductoRow["stocks"];
+  };
+  const stocks = Array.isArray(r.inventario_stock_ubicaciones)
+    ? r.inventario_stock_ubicaciones
+    : undefined;
+  const { inventario_stock_ubicaciones: _drop, ...rest } = r as typeof r & {
+    inventario_stock_ubicaciones?: unknown;
+  };
+  return { ...rest, stocks };
+}
+
+async function attachStocks(
+  supabase: ReturnType<typeof createAdminClient>,
+  productos: InventarioProductoRow[],
+): Promise<InventarioProductoRow[]> {
+  if (productos.length === 0) return productos;
+  const ids = productos.map((p) => p.id);
+  const { data, error } = await supabase
+    .from("inventario_stock_ubicaciones")
+    .select("producto_id, ubicacion, cantidad, gaveta, updated_at")
+    .in("producto_id", ids);
+  if (error || !data) {
+    // Tabla aún no migrada: UI usa fallback desde ubicacion/stock.
+    return productos;
+  }
+  const byProduct = new Map<number, InventarioProductoRow["stocks"]>();
+  for (const row of data as NonNullable<InventarioProductoRow["stocks"]>) {
+    const list = byProduct.get(row.producto_id) ?? [];
+    list.push(row);
+    byProduct.set(row.producto_id, list);
+  }
+  return productos.map((p) => ({
+    ...p,
+    stocks: byProduct.get(p.id) ?? p.stocks,
+  }));
+}
+
 export async function getAllProductos(): Promise<InventarioProductoRow[]> {
   const supabase = createAdminClient();
-  const { data } = await supabase
+  const withEmbed = await supabase
     .from("inventario_productos")
-    .select(
-      "id, categoria_id, sku, nombre, descripcion, precio, costo, stock, stock_minimo, ubicacion, gaveta, editado_por, motivo_edicion, editado_at, eliminado_por, motivo_eliminacion, eliminado_at, imagen_url, compatible_modelos, activo, inventario_categorias(id, nombre, slug, descripcion, activo, orden)",
-    )
+    .select(productoSelectWithStocks)
     .is("eliminado_at", null)
     .order("nombre");
-  return ((data ?? []) as unknown as InventarioProductoRow[]);
+
+  if (!withEmbed.error && withEmbed.data) {
+    return (withEmbed.data as unknown[]).map(mapProductoWithStocks);
+  }
+
+  // Fallback si falta la relación/tabla de stock por sede.
+  const { data, error } = await supabase
+    .from("inventario_productos")
+    .select(productoSelectBase)
+    .is("eliminado_at", null)
+    .order("nombre");
+  if (error) throw new Error(error.message);
+  const productos = (data ?? []) as unknown as InventarioProductoRow[];
+  return attachStocks(supabase, productos);
+}
+
+export async function getProductoTraslados(
+  productoId: number,
+  limit = 20,
+): Promise<InventarioTrasladoRow[]> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("inventario_traslados")
+    .select(
+      "id, producto_id, desde, hacia, cantidad, autor, nota, gaveta_destino, created_at",
+    )
+    .eq("producto_id", productoId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(error.message);
+  return (data as InventarioTrasladoRow[]) ?? [];
 }
 
 export async function getProductoNovedades(
@@ -1380,8 +1453,7 @@ export async function getAllProductosCredito(): Promise<ProductoCreditoRow[]> {
   return (data as ProductoCreditoRow[]) ?? [];
 }
 
-const productoSelect =
-  "id, categoria_id, sku, nombre, descripcion, precio, costo, stock, stock_minimo, ubicacion, gaveta, editado_por, motivo_edicion, editado_at, eliminado_por, motivo_eliminacion, eliminado_at, imagen_url, compatible_modelos, activo, inventario_categorias(id, nombre, slug, descripcion, activo, orden)";
+const productoSelect = productoSelectBase;
 
 export async function getProductoBySku(
   sku: string,
@@ -1390,14 +1462,19 @@ export async function getProductoBySku(
   if (!normalized) return null;
 
   const supabase = createAdminClient();
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("inventario_productos")
     .select(productoSelect)
     .eq("sku", normalized)
     .eq("activo", true)
     .is("eliminado_at", null)
     .maybeSingle();
-  return (data as InventarioProductoRow | null) ?? null;
+  if (error) throw new Error(error.message);
+  if (!data) return null;
+  const [withStocks] = await attachStocks(supabase, [
+    data as InventarioProductoRow,
+  ]);
+  return withStocks ?? null;
 }
 
 export async function searchProductos(
@@ -1422,7 +1499,7 @@ export async function searchProductos(
     .limit(limit);
 
   if (error) throw new Error(error.message);
-  return ((data ?? []) as unknown as InventarioProductoRow[]);
+  return attachStocks(supabase, (data ?? []) as InventarioProductoRow[]);
 }
 
 export async function getAllSolicitudesTaller(): Promise<SolicitudTallerRow[]> {

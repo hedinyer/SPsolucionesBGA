@@ -17,6 +17,7 @@ const ventaProductoSchema = z
         z.object({
           productoId: z.number().int().positive(),
           cantidad: z.number().int().positive(),
+          ubicacion: z.enum(["Soluciones", "Bera", "Bodega"]).optional(),
         }),
       )
       .min(1, "Agrega al menos un producto."),
@@ -42,6 +43,7 @@ export interface VentaProductoItemRow {
   cantidad: number;
   precioUnitario: number;
   subtotal: number;
+  ubicacion: "Soluciones" | "Bera" | "Bodega";
 }
 
 export interface VentaProductoRow {
@@ -73,6 +75,7 @@ interface ResolvedLine {
   precioUnitario: number;
   subtotal: number;
   stock: number;
+  ubicacion: "Soluciones" | "Bera" | "Bodega";
 }
 
 const VENTA_PRODUCTO_SELECT =
@@ -90,6 +93,10 @@ function toItemRow(
     cantidad: Number(raw.cantidad),
     precioUnitario: Number(raw.precio_unitario),
     subtotal: Number(raw.subtotal),
+    ubicacion: (String(raw.ubicacion || "Soluciones") as
+      | "Soluciones"
+      | "Bera"
+      | "Bodega"),
   };
 }
 
@@ -283,7 +290,7 @@ export async function listVentasProductoHistorial(
   const { data, error } = await supabase
     .from("ventas_producto")
     .select(
-      "id, cliente_nombre, cliente_cedula, cliente_celular, total, monto_pagado, notas, created_at, venta_producto_items(id, producto_id, cantidad, precio_unitario, subtotal, inventario_productos(sku, nombre))",
+      "id, cliente_nombre, cliente_cedula, cliente_celular, total, monto_pagado, notas, created_at, venta_producto_items(id, producto_id, cantidad, precio_unitario, subtotal, ubicacion, inventario_productos(sku, nombre))",
     )
     .order("created_at", { ascending: false })
     .limit(limit);
@@ -323,7 +330,9 @@ export async function saveVentaProducto(
   const ids = [...new Set(parsed.items.map((i) => i.productoId))];
   const { data: productos, error: prodError } = await supabase
     .from("inventario_productos")
-    .select("id, sku, nombre, precio, costo, stock, activo")
+    .select(
+      "id, sku, nombre, precio, costo, stock, activo, inventario_stock_ubicaciones(ubicacion, cantidad)",
+    )
     .in("id", ids);
 
   if (prodError) throw new Error(prodError.message);
@@ -332,24 +341,63 @@ export async function saveVentaProducto(
     (productos ?? []).map((p) => [Number(p.id), p as Record<string, unknown>]),
   );
 
-  const qtyByProduct = new Map<number, number>();
+  type QtyKey = string;
+  const qtyByKey = new Map<
+    QtyKey,
+    {
+      productoId: number;
+      ubicacion: "Soluciones" | "Bera" | "Bodega";
+      cantidad: number;
+    }
+  >();
   for (const item of parsed.items) {
-    qtyByProduct.set(
-      item.productoId,
-      (qtyByProduct.get(item.productoId) ?? 0) + item.cantidad,
-    );
+    const raw = byId.get(item.productoId);
+    const stocks = Array.isArray(raw?.inventario_stock_ubicaciones)
+      ? (raw!.inventario_stock_ubicaciones as {
+          ubicacion: string;
+          cantidad: number;
+        }[])
+      : [];
+    let ubicacion = item.ubicacion;
+    if (!ubicacion) {
+      const prefer = stocks.find(
+        (s) => s.ubicacion === "Soluciones" && s.cantidad > 0,
+      );
+      const any = stocks.find((s) => s.cantidad > 0);
+      ubicacion =
+        (prefer?.ubicacion as "Soluciones" | "Bera" | "Bodega" | undefined) ??
+        (any?.ubicacion as "Soluciones" | "Bera" | "Bodega" | undefined) ??
+        "Soluciones";
+    }
+    const key = `${item.productoId}:${ubicacion}`;
+    const prev = qtyByKey.get(key);
+    if (prev) prev.cantidad += item.cantidad;
+    else {
+      qtyByKey.set(key, {
+        productoId: item.productoId,
+        ubicacion,
+        cantidad: item.cantidad,
+      });
+    }
   }
 
   const lines: ResolvedLine[] = [];
-  for (const [productoId, cantidad] of qtyByProduct) {
+  for (const { productoId, ubicacion, cantidad } of qtyByKey.values()) {
     const raw = byId.get(productoId);
     if (!raw || !raw.activo) {
       throw new Error(`Producto #${productoId} no disponible.`);
     }
-    const stock = Number(raw.stock);
-    if (stock < cantidad) {
+    const stocks = Array.isArray(raw.inventario_stock_ubicaciones)
+      ? (raw.inventario_stock_ubicaciones as { ubicacion: string; cantidad: number }[])
+      : [];
+    const stockUbi =
+      stocks.find((s) => s.ubicacion === ubicacion)?.cantidad ??
+      (raw.ubicacion === ubicacion ? Number(raw.stock) : 0);
+    if (stockUbi < cantidad) {
+      const label =
+        ubicacion === "Soluciones" ? "Soluciones Pinilla" : ubicacion;
       throw new Error(
-        `Stock insuficiente para ${String(raw.nombre)} (disponible: ${stock}).`,
+        `Stock insuficiente de ${String(raw.nombre)} en ${label} (disponible: ${stockUbi}).`,
       );
     }
     const precioUnitario = Math.max(
@@ -363,7 +411,8 @@ export async function saveVentaProducto(
       cantidad,
       precioUnitario,
       subtotal: precioUnitario * cantidad,
-      stock,
+      stock: stockUbi,
+      ubicacion,
     });
   }
 
@@ -399,39 +448,49 @@ export async function saveVentaProducto(
         cantidad: l.cantidad,
         precio_unitario: l.precioUnitario,
         subtotal: l.subtotal,
+        ubicacion: l.ubicacion,
       })),
     )
-    .select("id, producto_id, cantidad, precio_unitario, subtotal");
+    .select("id, producto_id, cantidad, precio_unitario, subtotal, ubicacion");
 
   if (itemsError || !insertedItems) {
     await supabase.from("ventas_producto").delete().eq("id", ventaId);
     throw new Error(itemsError?.message ?? "Error al guardar ítems.");
   }
 
-  const decremented: { productoId: number; prevStock: number }[] = [];
+  const decremented: {
+    productoId: number;
+    ubicacion: "Soluciones" | "Bera" | "Bodega";
+    cantidad: number;
+  }[] = [];
   try {
     for (const line of lines) {
-      const { data: updated, error: stockError } = await supabase
-        .from("inventario_productos")
-        .update({ stock: line.stock - line.cantidad })
-        .eq("id", line.productoId)
-        .eq("stock", line.stock)
-        .select("id")
-        .maybeSingle();
-
-      if (stockError || !updated) {
+      const { error: stockError } = await supabase.rpc(
+        "descontar_stock_ubicacion",
+        {
+          p_producto_id: line.productoId,
+          p_ubicacion: line.ubicacion,
+          p_cantidad: line.cantidad,
+        },
+      );
+      if (stockError) {
         throw new Error(
-          `No se pudo descontar stock de ${line.nombre}. Intenta de nuevo.`,
+          `No se pudo descontar stock de ${line.nombre}. ${stockError.message}`,
         );
       }
-      decremented.push({ productoId: line.productoId, prevStock: line.stock });
+      decremented.push({
+        productoId: line.productoId,
+        ubicacion: line.ubicacion,
+        cantidad: line.cantidad,
+      });
     }
   } catch (err) {
     for (const d of [...decremented].reverse()) {
-      await supabase
-        .from("inventario_productos")
-        .update({ stock: d.prevStock })
-        .eq("id", d.productoId);
+      await supabase.rpc("devolver_stock_ubicacion", {
+        p_producto_id: d.productoId,
+        p_cantidad: d.cantidad,
+        p_ubicacion: d.ubicacion,
+      });
     }
     await supabase.from("venta_producto_items").delete().eq("venta_id", ventaId);
     await supabase.from("ventas_producto").delete().eq("id", ventaId);
@@ -439,7 +498,11 @@ export async function saveVentaProducto(
   }
 
   const itemRows = (insertedItems as Record<string, unknown>[]).map((raw) => {
-    const line = lines.find((l) => l.productoId === Number(raw.producto_id))!;
+    const line = lines.find(
+      (l) =>
+        l.productoId === Number(raw.producto_id) &&
+        l.ubicacion === String(raw.ubicacion),
+    )!;
     return toItemRow(raw, { sku: line.sku, nombre: line.nombre });
   });
 

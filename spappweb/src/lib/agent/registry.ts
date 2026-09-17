@@ -650,7 +650,8 @@ export const AGENT_TOOLS = {
   }),
   save_producto: tool({
     category: "inventario",
-    description: "Crea o edita un producto/repuesto de inventario.",
+    description:
+      "Crea o edita un producto/repuesto de inventario con stock por sede (Soluciones, Bera, Bodega).",
     input: z.object({
       id: z.number().int().positive().optional(),
       categoriaId: z.number().int().positive(),
@@ -659,12 +660,10 @@ export const AGENT_TOOLS = {
       descripcion: z.string().optional(),
       precio: z.number().int().min(0),
       costo: z.number().int().min(0),
-      stock: z.number().int().min(0),
+      stockSoluciones: z.number().int().min(0),
+      stockBera: z.number().int().min(0),
+      stockBodega: z.number().int().min(0),
       stockMinimo: z.number().int().min(0),
-      ubicacion: z
-        .enum(["Soluciones", "Bera", "Bodega"])
-        .optional()
-        .default("Soluciones"),
       gaveta: z.string().optional(),
       editadoPor: z
         .string()

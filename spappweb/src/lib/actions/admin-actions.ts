@@ -919,7 +919,12 @@ export async function deleteCategoria(id: number) {
   return adminDelete(supabase, "inventario_categorias", id, "/inventario");
 }
 
-type InventarioNovedadTipo = "anotacion" | "edicion" | "eliminacion" | "creacion";
+type InventarioNovedadTipo =
+  | "anotacion"
+  | "edicion"
+  | "eliminacion"
+  | "creacion"
+  | "traslado";
 
 async function logInventarioProductoNovedad(
   supabase: SupabaseClient,
@@ -977,9 +982,10 @@ const productoSchema = z
     descripcion: z.string().optional(),
     precio: z.number().int().min(0),
     costo: z.number().int().min(0),
-    stock: z.number().int().min(0),
+    stockSoluciones: z.number().int().min(0),
+    stockBera: z.number().int().min(0),
+    stockBodega: z.number().int().min(0),
     stockMinimo: z.number().int().min(0),
-    ubicacion: z.enum(["Soluciones", "Bera", "Bodega"]),
     gaveta: z.string().optional(),
     editadoPor: z.string().optional(),
     motivoEdicion: z.string().optional(),
@@ -988,10 +994,10 @@ const productoSchema = z
     activo: z.boolean(),
   })
   .superRefine((data, ctx) => {
-    if (data.ubicacion === "Bodega" && !data.gaveta?.trim()) {
+    if (data.stockBodega > 0 && !data.gaveta?.trim()) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: "Indica el número de gaveta.",
+        message: "Indica el número de gaveta en Bodega.",
         path: ["gaveta"],
       });
     }
@@ -1019,6 +1025,22 @@ const productoSchema = z
     }
   });
 
+function stockTotalFromParsed(parsed: z.infer<typeof productoSchema>) {
+  return parsed.stockSoluciones + parsed.stockBera + parsed.stockBodega;
+}
+
+function primaryUbicacionFromParsed(
+  parsed: z.infer<typeof productoSchema>,
+): "Soluciones" | "Bera" | "Bodega" {
+  const entries: { u: "Soluciones" | "Bera" | "Bodega"; n: number }[] = [
+    { u: "Soluciones", n: parsed.stockSoluciones },
+    { u: "Bera", n: parsed.stockBera },
+    { u: "Bodega", n: parsed.stockBodega },
+  ];
+  entries.sort((a, b) => b.n - a.n);
+  return entries[0]?.u ?? "Soluciones";
+}
+
 function buildProductoEditDetalle(
   prev: {
     nombre: string;
@@ -1033,6 +1055,7 @@ function buildProductoEditDetalle(
     activo: boolean;
     categoria_id: number;
     imagen_url: string | null;
+    stocks?: { ubicacion: string; cantidad: number }[];
   },
   parsed: z.infer<typeof productoSchema>,
 ): { cambios: string[] } {
@@ -1046,14 +1069,26 @@ function buildProductoEditDetalle(
   add("SKU", prev.sku, parsed.sku.trim().toUpperCase());
   add("Precio", prev.precio, parsed.precio);
   add("Costo", prev.costo, parsed.costo);
-  add("Cantidad", prev.stock, parsed.stock);
-  add("Stock mínimo", prev.stock_minimo, parsed.stockMinimo);
-  add("Ubicación", prev.ubicacion, parsed.ubicacion);
-  add(
-    "Gaveta",
-    prev.gaveta,
-    parsed.ubicacion === "Bodega" ? parsed.gaveta?.trim() || null : null,
+  const prevBy = new Map(
+    (prev.stocks ?? []).map((s) => [s.ubicacion, s.cantidad]),
   );
+  add(
+    "Soluciones Pinilla",
+    prevBy.get("Soluciones") ?? (prev.ubicacion === "Soluciones" ? prev.stock : 0),
+    parsed.stockSoluciones,
+  );
+  add(
+    "Bera",
+    prevBy.get("Bera") ?? (prev.ubicacion === "Bera" ? prev.stock : 0),
+    parsed.stockBera,
+  );
+  add(
+    "Bodega",
+    prevBy.get("Bodega") ?? (prev.ubicacion === "Bodega" ? prev.stock : 0),
+    parsed.stockBodega,
+  );
+  add("Stock mínimo", prev.stock_minimo, parsed.stockMinimo);
+  add("Gaveta", prev.gaveta, parsed.stockBodega > 0 ? parsed.gaveta?.trim() || null : null);
   add("Descripción", prev.descripcion, parsed.descripcion?.trim() || null);
   add("Activo", prev.activo ? "Sí" : "No", parsed.activo ? "Sí" : "No");
   add("Categoría", prev.categoria_id, parsed.categoriaId);
@@ -1061,6 +1096,46 @@ function buildProductoEditDetalle(
   const nextImg = parsed.imagenUrl?.trim() ? "Con foto" : "Sin foto";
   if (prevImg !== nextImg) cambios.push(`Foto: ${prevImg} → ${nextImg}`);
   return { cambios };
+}
+
+async function upsertProductoStocks(
+  supabase: SupabaseClient,
+  productoId: number,
+  parsed: z.infer<typeof productoSchema>,
+) {
+  await supabase.rpc("ensure_stock_ubicaciones", {
+    p_producto_id: productoId,
+  });
+  const rows = [
+    {
+      producto_id: productoId,
+      ubicacion: "Soluciones",
+      cantidad: parsed.stockSoluciones,
+      gaveta: null as string | null,
+    },
+    {
+      producto_id: productoId,
+      ubicacion: "Bera",
+      cantidad: parsed.stockBera,
+      gaveta: null,
+    },
+    {
+      producto_id: productoId,
+      ubicacion: "Bodega",
+      cantidad: parsed.stockBodega,
+      gaveta: parsed.stockBodega > 0 ? parsed.gaveta?.trim() || null : null,
+    },
+  ];
+  for (const row of rows) {
+    const { error } = await supabase.from("inventario_stock_ubicaciones").upsert(
+      { ...row, updated_at: new Date().toISOString() },
+      { onConflict: "producto_id,ubicacion" },
+    );
+    if (error) throw new Error(error.message);
+  }
+  await supabase.rpc("sync_producto_stock_total", {
+    p_producto_id: productoId,
+  });
 }
 
 async function skuDuplicadoMessage(
@@ -1083,6 +1158,8 @@ export async function saveProducto(input: z.infer<typeof productoSchema>) {
     const parsed = productoSchema.parse(input);
     const supabase = await assertAdmin();
     const sku = parsed.sku.trim().toUpperCase();
+    const total = stockTotalFromParsed(parsed);
+    const ubicacion = primaryUbicacionFromParsed(parsed);
     const payload: Record<string, unknown> = {
       categoria_id: parsed.categoriaId,
       sku,
@@ -1090,13 +1167,10 @@ export async function saveProducto(input: z.infer<typeof productoSchema>) {
       descripcion: parsed.descripcion?.trim() || null,
       precio: parsed.precio,
       costo: parsed.costo,
-      stock: parsed.stock,
+      stock: total,
       stock_minimo: parsed.stockMinimo,
-      ubicacion: parsed.ubicacion,
-      gaveta:
-        parsed.ubicacion === "Bodega"
-          ? parsed.gaveta?.trim() || null
-          : null,
+      ubicacion,
+      gaveta: parsed.stockBodega > 0 ? parsed.gaveta?.trim() || null : null,
       imagen_url: parsed.imagenUrl?.trim() || null,
       compatible_modelos: parsed.compatibleModelos ?? [],
       activo: parsed.activo,
@@ -1110,7 +1184,7 @@ export async function saveProducto(input: z.infer<typeof productoSchema>) {
       const { data: prev, error: prevError } = await supabase
         .from("inventario_productos")
         .select(
-          "nombre, sku, precio, costo, stock, stock_minimo, ubicacion, gaveta, descripcion, activo, categoria_id, imagen_url",
+          "nombre, sku, precio, costo, stock, stock_minimo, ubicacion, gaveta, descripcion, activo, categoria_id, imagen_url, inventario_stock_ubicaciones(ubicacion, cantidad)",
         )
         .eq("id", parsed.id)
         .single();
@@ -1128,12 +1202,32 @@ export async function saveProducto(input: z.infer<typeof productoSchema>) {
         }
         return { ok: false as const, error: error.message };
       }
+      try {
+        await upsertProductoStocks(supabase, parsed.id, parsed);
+      } catch (stockErr) {
+        return {
+          ok: false as const,
+          error:
+            stockErr instanceof Error
+              ? stockErr.message
+              : "No se pudo guardar el stock por sede.",
+        };
+      }
+      const prevRow = prev as typeof prev & {
+        inventario_stock_ubicaciones?: { ubicacion: string; cantidad: number }[];
+      };
       await logInventarioProductoNovedad(supabase, {
         productoId: parsed.id,
         tipo: "edicion",
         autor: autor!,
         contenido: parsed.motivoEdicion!.trim(),
-        detalle: buildProductoEditDetalle(prev, parsed),
+        detalle: buildProductoEditDetalle(
+          {
+            ...prevRow,
+            stocks: prevRow.inventario_stock_ubicaciones,
+          },
+          parsed,
+        ),
       });
     } else {
       const session = await getSession();
@@ -1150,6 +1244,17 @@ export async function saveProducto(input: z.infer<typeof productoSchema>) {
           };
         }
         return { ok: false as const, error: error.message };
+      }
+      try {
+        await upsertProductoStocks(supabase, created.id as number, parsed);
+      } catch (stockErr) {
+        return {
+          ok: false as const,
+          error:
+            stockErr instanceof Error
+              ? stockErr.message
+              : "No se pudo guardar el stock por sede.",
+        };
       }
       await logInventarioProductoNovedad(supabase, {
         productoId: created.id as number,
@@ -1519,10 +1624,13 @@ export async function addGarajeMantenimientoItem(
     );
   }
 
-  const { error: stockError } = await supabase
-    .from("inventario_productos")
-    .update({ stock: (producto.stock as number) - parsed.cantidad })
-    .eq("id", parsed.productoId);
+  const { error: stockError } = await supabase.rpc(
+    "descontar_stock_fifo_ubicaciones",
+    {
+      p_producto_id: parsed.productoId,
+      p_cantidad: parsed.cantidad,
+    },
+  );
   if (stockError) throw new Error(stockError.message);
 
   const { error: insertError } = await supabase
@@ -1536,10 +1644,11 @@ export async function addGarajeMantenimientoItem(
       created_by: session.username ?? "admin",
     });
   if (insertError) {
-    await supabase
-      .from("inventario_productos")
-      .update({ stock: producto.stock })
-      .eq("id", parsed.productoId);
+    await supabase.rpc("devolver_stock_ubicacion", {
+      p_producto_id: parsed.productoId,
+      p_cantidad: parsed.cantidad,
+      p_ubicacion: "Soluciones",
+    });
     throw new Error(insertError.message);
   }
 
@@ -1580,10 +1689,11 @@ export async function removeGarajeMantenimientoItem(itemId: string) {
   if (delError) throw new Error(delError.message);
 
   if (producto) {
-    await supabase
-      .from("inventario_productos")
-      .update({ stock: (producto.stock as number) + (item.cantidad as number) })
-      .eq("id", item.producto_id);
+    await supabase.rpc("devolver_stock_ubicacion", {
+      p_producto_id: item.producto_id,
+      p_cantidad: item.cantidad,
+      p_ubicacion: "Soluciones",
+    });
   }
 
   revalidatePath("/garaje");

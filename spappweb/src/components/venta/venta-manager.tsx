@@ -17,7 +17,16 @@ import {
   lookupProductoBySku,
   searchProductosVenta,
 } from "@/lib/actions/venta-actions";
-import type { InventarioProductoRow } from "@/lib/pipeline/types";
+import type {
+  InventarioProductoRow,
+  InventarioUbicacion,
+} from "@/lib/pipeline/types";
+import {
+  INVENTARIO_UBICACIONES,
+  defaultUbicacionConStock,
+  labelUbicacion,
+  normalizeProductoStocks,
+} from "@/lib/pipeline/types";
 import {
   cartTotal,
   type VentaCartLine,
@@ -40,41 +49,134 @@ import {
 type CartLine = VentaCartLine & {
   productoId: number;
   stockDisponible: number;
+  ubicacion: InventarioUbicacion;
+  stocksByUbicacion: Record<InventarioUbicacion, number>;
 };
 
 type CartAction =
   | { type: "add"; producto: InventarioProductoRow }
-  | { type: "setQty"; productoId: number; cantidad: number }
-  | { type: "remove"; productoId: number }
+  | {
+      type: "setQty";
+      productoId: number;
+      ubicacion: InventarioUbicacion;
+      cantidad: number;
+    }
+  | {
+      type: "setUbicacion";
+      productoId: number;
+      from: InventarioUbicacion;
+      to: InventarioUbicacion;
+    }
+  | { type: "remove"; productoId: number; ubicacion: InventarioUbicacion }
   | { type: "clear" };
+
+function stocksMap(producto: InventarioProductoRow): Record<InventarioUbicacion, number> {
+  const out = { Soluciones: 0, Bera: 0, Bodega: 0 } as Record<
+    InventarioUbicacion,
+    number
+  >;
+  for (const s of normalizeProductoStocks(producto)) {
+    out[s.ubicacion] = s.cantidad;
+  }
+  return out;
+}
 
 function cartReducer(state: CartLine[], action: CartAction): CartLine[] {
   switch (action.type) {
     case "clear":
       return [];
     case "remove":
-      return state.filter((l) => l.productoId !== action.productoId);
+      return state.filter(
+        (l) =>
+          !(
+            l.productoId === action.productoId &&
+            l.ubicacion === action.ubicacion
+          ),
+      );
     case "setQty": {
       if (action.cantidad <= 0) {
-        return state.filter((l) => l.productoId !== action.productoId);
+        return state.filter(
+          (l) =>
+            !(
+              l.productoId === action.productoId &&
+              l.ubicacion === action.ubicacion
+            ),
+        );
       }
       return state.map((l) => {
-        if (l.productoId !== action.productoId) return l;
+        if (
+          l.productoId !== action.productoId ||
+          l.ubicacion !== action.ubicacion
+        ) {
+          return l;
+        }
         const qty = Math.min(action.cantidad, l.stockDisponible);
         return { ...l, cantidad: qty };
       });
     }
+    case "setUbicacion": {
+      if (action.from === action.to) return state;
+      const moving = state.find(
+        (l) =>
+          l.productoId === action.productoId && l.ubicacion === action.from,
+      );
+      if (!moving) return state;
+      const destStock = moving.stocksByUbicacion[action.to] ?? 0;
+      if (destStock <= 0) return state;
+      const without = state.filter(
+        (l) =>
+          !(
+            l.productoId === action.productoId &&
+            l.ubicacion === action.from
+          ),
+      );
+      const existing = without.find(
+        (l) =>
+          l.productoId === action.productoId && l.ubicacion === action.to,
+      );
+      if (existing) {
+        return without.map((l) =>
+          l.productoId === action.productoId && l.ubicacion === action.to
+            ? {
+                ...l,
+                cantidad: Math.min(
+                  l.cantidad + moving.cantidad,
+                  destStock,
+                ),
+                stockDisponible: destStock,
+              }
+            : l,
+        );
+      }
+      return [
+        ...without,
+        {
+          ...moving,
+          ubicacion: action.to,
+          stockDisponible: destStock,
+          cantidad: Math.min(moving.cantidad, destStock),
+        },
+      ];
+    }
     case "add": {
       if (action.producto.stock <= 0) return state;
-      const existing = state.find((l) => l.productoId === action.producto.id);
+      const byUbi = stocksMap(action.producto);
+      const ubicacion = defaultUbicacionConStock(action.producto);
+      if (!ubicacion) return state;
+      const stockDisponible = byUbi[ubicacion];
+      const existing = state.find(
+        (l) =>
+          l.productoId === action.producto.id && l.ubicacion === ubicacion,
+      );
       if (existing) {
         if (existing.cantidad >= existing.stockDisponible) return state;
         return state.map((l) =>
-          l.productoId === action.producto.id
+          l.productoId === action.producto.id && l.ubicacion === ubicacion
             ? {
                 ...l,
-                cantidad: Math.min(l.cantidad + 1, l.stockDisponible),
-                stockDisponible: action.producto.stock,
+                cantidad: Math.min(l.cantidad + 1, stockDisponible),
+                stockDisponible,
+                stocksByUbicacion: byUbi,
               }
             : l,
         );
@@ -85,9 +187,14 @@ function cartReducer(state: CartLine[], action: CartAction): CartLine[] {
           productoId: action.producto.id,
           sku: action.producto.sku,
           nombre: action.producto.nombre,
-          precioUnitario: Math.max(action.producto.precio, action.producto.costo),
+          precioUnitario: Math.max(
+            action.producto.precio,
+            action.producto.costo,
+          ),
           cantidad: 1,
-          stockDisponible: action.producto.stock,
+          stockDisponible,
+          ubicacion,
+          stocksByUbicacion: byUbi,
         },
       ];
     }
@@ -171,13 +278,16 @@ export function VentaManager({
   useEffect(() => {
     const q = busqueda.trim();
     if (q.length < 2) {
-      setResultados([]);
-      setListaAbierta(false);
       return;
     }
     const t = window.setTimeout(() => runSearch(q), 250);
     return () => window.clearTimeout(t);
   }, [busqueda, runSearch]);
+
+  const resultadosVisibles =
+    busqueda.trim().length < 2 ? [] : resultados;
+  const listaAbiertaVisible =
+    busqueda.trim().length >= 2 && listaAbierta;
 
   async function resolverBusqueda() {
     const q = busqueda.trim();
@@ -250,6 +360,7 @@ export function VentaManager({
           items: lines.map((l) => ({
             productoId: l.productoId,
             cantidad: l.cantidad,
+            ubicacion: l.ubicacion,
           })),
         });
         await printVentaProductoReceipt(venta);
@@ -347,29 +458,30 @@ export function VentaManager({
           </Button>
         </div>
 
-        {listaAbierta && busqueda.trim().length >= 2 ? (
+        {listaAbiertaVisible ? (
           <ul
             className="max-h-[min(28rem,55dvh)] overflow-y-auto rounded-xl border border-border bg-muted/20"
             role="listbox"
             aria-label="Resultados de búsqueda"
           >
-            {searchPending && resultados.length === 0 ? (
+            {searchPending && resultadosVisibles.length === 0 ? (
               <li className="px-4 py-3 text-sm text-muted-foreground">
                 Buscando…
               </li>
             ) : null}
-            {!searchPending && resultados.length === 0 ? (
+            {!searchPending && resultadosVisibles.length === 0 ? (
               <li className="px-4 py-3 text-sm text-muted-foreground">
                 No hay productos con ese nombre. Prueba otro término.
               </li>
             ) : null}
-            {resultados.map((p) => {
+            {resultadosVisibles.map((p) => {
               const sinStock = p.stock <= 0;
               const precio = Math.max(p.precio, p.costo);
               const img = getStoragePublicUrl(
                 STORAGE_BUCKETS.inventarioImagenes,
                 p.imagen_url,
               );
+              const stocks = normalizeProductoStocks(p);
               return (
                 <li key={p.id} role="option" aria-selected={false}>
                   <button
@@ -410,6 +522,17 @@ export function VentaManager({
                         {sinStock ? "Sin existencias" : `Hay ${p.stock}`}
                         {p.sku ? ` · ${p.sku}` : null}
                       </span>
+                      {!sinStock ? (
+                        <span className="mt-1 block text-xs text-muted-foreground">
+                          {stocks
+                            .filter((s) => s.cantidad > 0)
+                            .map(
+                              (s) =>
+                                `${labelUbicacion(s.ubicacion)} ${s.cantidad}`,
+                            )
+                            .join(" · ")}
+                        </span>
+                      ) : null}
                     </div>
                   </button>
                 </li>
@@ -457,75 +580,114 @@ export function VentaManager({
           <ul className="flex flex-col gap-2">
             {lines.map((line) => (
               <li
-                key={line.productoId}
-                className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-muted/15 px-3 py-3 sm:flex-nowrap"
+                key={`${line.productoId}:${line.ubicacion}`}
+                className="flex flex-col gap-3 rounded-xl border border-border bg-muted/15 px-3 py-3"
               >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium">{line.nombre}</p>
-                  <p className="text-xs text-muted-foreground tabular-nums">
-                    {formatCop(line.precioUnitario)} c/u
+                <div className="flex flex-wrap items-center gap-3 sm:flex-nowrap">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-medium">{line.nombre}</p>
+                    <p className="text-xs text-muted-foreground tabular-nums">
+                      {formatCop(line.precioUnitario)} c/u
+                    </p>
+                  </div>
+                  <div
+                    className="flex items-center gap-1"
+                    role="group"
+                    aria-label={`Cantidad de ${line.nombre}`}
+                  >
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="min-h-11 min-w-11"
+                      aria-label={`Quitar una de ${line.nombre}`}
+                      onClick={() =>
+                        dispatch({
+                          type: "setQty",
+                          productoId: line.productoId,
+                          ubicacion: line.ubicacion,
+                          cantidad: line.cantidad - 1,
+                        })
+                      }
+                    >
+                      <Minus className="h-4 w-4" aria-hidden="true" />
+                    </Button>
+                    <span
+                      className="min-w-10 text-center text-base font-semibold tabular-nums"
+                      aria-live="polite"
+                    >
+                      {line.cantidad}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="min-h-11 min-w-11"
+                      aria-label={`Agregar una de ${line.nombre}`}
+                      disabled={line.cantidad >= line.stockDisponible}
+                      onClick={() =>
+                        dispatch({
+                          type: "setQty",
+                          productoId: line.productoId,
+                          ubicacion: line.ubicacion,
+                          cantidad: line.cantidad + 1,
+                        })
+                      }
+                    >
+                      <Plus className="h-4 w-4" aria-hidden="true" />
+                    </Button>
+                  </div>
+                  <p className="w-24 shrink-0 text-right font-semibold tabular-nums">
+                    {formatCop(line.precioUnitario * line.cantidad)}
                   </p>
-                </div>
-                <div
-                  className="flex items-center gap-1"
-                  role="group"
-                  aria-label={`Cantidad de ${line.nombre}`}
-                >
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="ghost"
                     size="icon"
                     className="min-h-11 min-w-11"
-                    aria-label={`Quitar una de ${line.nombre}`}
+                    aria-label={`Quitar ${line.nombre} del carrito`}
                     onClick={() =>
                       dispatch({
-                        type: "setQty",
+                        type: "remove",
                         productoId: line.productoId,
-                        cantidad: line.cantidad - 1,
+                        ubicacion: line.ubicacion,
                       })
                     }
                   >
-                    <Minus className="h-4 w-4" aria-hidden="true" />
-                  </Button>
-                  <span
-                    className="min-w-10 text-center text-base font-semibold tabular-nums"
-                    aria-live="polite"
-                  >
-                    {line.cantidad}
-                  </span>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    className="min-h-11 min-w-11"
-                    aria-label={`Agregar una de ${line.nombre}`}
-                    disabled={line.cantidad >= line.stockDisponible}
-                    onClick={() =>
-                      dispatch({
-                        type: "setQty",
-                        productoId: line.productoId,
-                        cantidad: line.cantidad + 1,
-                      })
-                    }
-                  >
-                    <Plus className="h-4 w-4" aria-hidden="true" />
+                    <Trash2 className="h-4 w-4" aria-hidden="true" />
                   </Button>
                 </div>
-                <p className="w-24 shrink-0 text-right font-semibold tabular-nums">
-                  {formatCop(line.precioUnitario * line.cantidad)}
-                </p>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="min-h-11 min-w-11"
-                  aria-label={`Quitar ${line.nombre} del carrito`}
-                  onClick={() =>
-                    dispatch({ type: "remove", productoId: line.productoId })
-                  }
-                >
-                  <Trash2 className="h-4 w-4" aria-hidden="true" />
-                </Button>
+                <div className="flex flex-col gap-1.5 sm:max-w-xs">
+                  <Label
+                    htmlFor={`venta-sede-${line.productoId}-${line.ubicacion}`}
+                    className="text-xs"
+                  >
+                    Descontar de
+                  </Label>
+                  <select
+                    id={`venta-sede-${line.productoId}-${line.ubicacion}`}
+                    className="flex h-11 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    value={line.ubicacion}
+                    onChange={(e) =>
+                      dispatch({
+                        type: "setUbicacion",
+                        productoId: line.productoId,
+                        from: line.ubicacion,
+                        to: e.target.value as InventarioUbicacion,
+                      })
+                    }
+                    aria-label={`Sede de descuento para ${line.nombre}`}
+                  >
+                    {INVENTARIO_UBICACIONES.map((u) => {
+                      const available = line.stocksByUbicacion[u] ?? 0;
+                      return (
+                        <option key={u} value={u} disabled={available <= 0}>
+                          {labelUbicacion(u)} ({available})
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
               </li>
             ))}
           </ul>

@@ -643,11 +643,103 @@ export const INVENTARIO_UBICACIONES: InventarioUbicacion[] = [
   "Bodega",
 ];
 
+export function labelUbicacion(ubicacion: InventarioUbicacion): string {
+  if (ubicacion === "Soluciones") return "Soluciones Pinilla";
+  return ubicacion;
+}
+
+export function formatUbicacionConGaveta(
+  ubicacion: InventarioUbicacion,
+  gaveta?: string | null,
+): string {
+  const base = labelUbicacion(ubicacion);
+  if (ubicacion === "Bodega" && gaveta?.trim()) {
+    return `${base} · Gaveta ${gaveta.trim()}`;
+  }
+  return base;
+}
+
+export interface InventarioStockUbicacionRow {
+  producto_id: number;
+  ubicacion: InventarioUbicacion;
+  cantidad: number;
+  gaveta?: string | null;
+  updated_at?: string;
+}
+
+export interface InventarioTrasladoRow {
+  id: string;
+  producto_id: number;
+  desde: InventarioUbicacion;
+  hacia: InventarioUbicacion;
+  cantidad: number;
+  autor: string;
+  nota: string | null;
+  gaveta_destino: string | null;
+  created_at: string;
+}
+
+/** Stocks normalizados (siempre las 3 sedes). */
+export function normalizeProductoStocks(
+  product: Pick<InventarioProductoRow, "id" | "stock" | "ubicacion" | "gaveta" | "stocks">,
+): InventarioStockUbicacionRow[] {
+  const byLoc = new Map<InventarioUbicacion, InventarioStockUbicacionRow>();
+  for (const u of INVENTARIO_UBICACIONES) {
+    byLoc.set(u, {
+      producto_id: product.id,
+      ubicacion: u,
+      cantidad: 0,
+      gaveta: u === "Bodega" ? product.gaveta ?? null : null,
+    });
+  }
+  if (product.stocks?.length) {
+    for (const s of product.stocks) {
+      byLoc.set(s.ubicacion, {
+        producto_id: product.id,
+        ubicacion: s.ubicacion,
+        cantidad: Math.max(0, Number(s.cantidad) || 0),
+        gaveta: s.ubicacion === "Bodega" ? s.gaveta ?? null : null,
+        updated_at: s.updated_at,
+      });
+    }
+  } else {
+    const loc = product.ubicacion ?? "Soluciones";
+    byLoc.set(loc, {
+      producto_id: product.id,
+      ubicacion: loc,
+      cantidad: Math.max(0, Number(product.stock) || 0),
+      gaveta: loc === "Bodega" ? product.gaveta ?? null : null,
+    });
+  }
+  return INVENTARIO_UBICACIONES.map((u) => byLoc.get(u)!);
+}
+
+export function stockEnUbicacion(
+  product: Pick<InventarioProductoRow, "id" | "stock" | "ubicacion" | "gaveta" | "stocks">,
+  ubicacion: InventarioUbicacion,
+): number {
+  return (
+    normalizeProductoStocks(product).find((s) => s.ubicacion === ubicacion)
+      ?.cantidad ?? 0
+  );
+}
+
+export function defaultUbicacionConStock(
+  product: Pick<InventarioProductoRow, "id" | "stock" | "ubicacion" | "gaveta" | "stocks">,
+): InventarioUbicacion | null {
+  const stocks = normalizeProductoStocks(product);
+  const prefer = stocks.find((s) => s.ubicacion === "Soluciones" && s.cantidad > 0);
+  if (prefer) return "Soluciones";
+  const any = stocks.find((s) => s.cantidad > 0);
+  return any?.ubicacion ?? null;
+}
+
 export type InventarioProductoNovedadTipo =
   | "anotacion"
   | "edicion"
   | "eliminacion"
-  | "creacion";
+  | "creacion"
+  | "traslado";
 
 export interface InventarioProductoNovedadRow {
   id: string;
@@ -655,7 +747,13 @@ export interface InventarioProductoNovedadRow {
   tipo: InventarioProductoNovedadTipo;
   autor: string;
   contenido: string;
-  detalle: { cambios?: string[] } | null;
+  detalle: {
+    cambios?: string[];
+    traslado_id?: string;
+    desde?: InventarioUbicacion;
+    hacia?: InventarioUbicacion;
+    cantidad?: number;
+  } | null;
   created_at: string;
 }
 
@@ -671,6 +769,7 @@ export interface InventarioProductoRow {
   stock_minimo: number;
   ubicacion?: InventarioUbicacion;
   gaveta?: string | null;
+  stocks?: InventarioStockUbicacionRow[];
   editado_por?: string | null;
   motivo_edicion?: string | null;
   editado_at?: string | null;

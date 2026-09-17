@@ -41,6 +41,7 @@ const TIPO_LABEL: Record<InventarioProductoNovedadTipo, string> = {
   edicion: "Edición",
   eliminacion: "Eliminación",
   creacion: "Creación",
+  traslado: "Traslado",
 };
 
 const TIPO_VARIANT: Record<
@@ -51,6 +52,7 @@ const TIPO_VARIANT: Record<
   edicion: "secondary",
   eliminacion: "destructive",
   creacion: "default",
+  traslado: "secondary",
 };
 
 function NovedadItem({ item }: { item: InventarioProductoNovedadRow }) {

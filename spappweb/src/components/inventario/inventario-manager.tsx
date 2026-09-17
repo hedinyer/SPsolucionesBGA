@@ -35,7 +35,13 @@ import type {
   InventarioProductoRow,
   InventarioUbicacion,
 } from "@/lib/pipeline/types";
-import { INVENTARIO_UBICACIONES } from "@/lib/pipeline/types";
+import {
+  INVENTARIO_UBICACIONES,
+  formatUbicacionConGaveta,
+  labelUbicacion,
+  normalizeProductoStocks,
+  stockEnUbicacion,
+} from "@/lib/pipeline/types";
 import {
   normalizeSearch,
   rankBySimilarity,
@@ -92,6 +98,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { TouchSelect } from "@/components/ui/touch-select";
 import { ProductoInventarioCard } from "@/components/inventario/producto-inventario-card";
 import { ProductoNovedadesDialog } from "@/components/inventario/producto-novedades-dialog";
+import { ProductoTrasladarDialog } from "@/components/inventario/producto-trasladar-dialog";
 
 /** Genera SKU desde el nombre completo (sin truncar). */
 function skuFromNombre(nombre: string): string {
@@ -127,10 +134,12 @@ function inventarioFingerprint(
     .map((c) => `${c.id}:${c.nombre}:${Number(c.activo)}:${c.orden}`)
     .join("|");
   const prods = productos
-    .map(
-      (p) =>
-        `${p.id}:${p.stock}:${p.costo}:${p.precio}:${p.nombre}:${p.categoria_id}:${p.ubicacion ?? ""}:${p.gaveta ?? ""}:${p.imagen_url ?? ""}:${Number(p.activo)}`,
-    )
+    .map((p) => {
+      const stocks = normalizeProductoStocks(p)
+        .map((s) => `${s.ubicacion}:${s.cantidad}:${s.gaveta ?? ""}`)
+        .join(",");
+      return `${p.id}:${p.stock}:${p.costo}:${p.precio}:${p.nombre}:${p.categoria_id}:${stocks}:${p.imagen_url ?? ""}:${Number(p.activo)}`;
+    })
     .join("|");
   return `${cats}#${prods}`;
 }
@@ -259,6 +268,8 @@ export function InventarioManager({
     useState<InventarioProductoRow | null>(null);
   const [novedadesProd, setNovedadesProd] =
     useState<InventarioProductoRow | null>(null);
+  const [trasladarProd, setTrasladarProd] =
+    useState<InventarioProductoRow | null>(null);
   const [nombreQuery, setNombreQuery] = useState("");
   const [categoriaQuery, setCategoriaQuery] = useState("");
   const [filtrosOpen, setFiltrosOpen] = useState(false);
@@ -348,6 +359,16 @@ export function InventarioManager({
         "postgres_changes",
         { event: "*", schema: "public", table: "inventario_categorias" },
         () => refreshInventarioLive(),
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "inventario_stock_ubicaciones" },
+        () => refreshInventarioLive(),
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "inventario_traslados" },
+        () => refreshInventarioLive(),
       );
 
     void channel.subscribe();
@@ -432,7 +453,10 @@ export function InventarioManager({
       }
       if (
         ubicacionFiltro !== "all" &&
-        (producto.ubicacion ?? "Soluciones") !== ubicacionFiltro
+        stockEnUbicacion(
+          producto,
+          ubicacionFiltro as InventarioUbicacion,
+        ) <= 0
       ) {
         return false;
       }
@@ -552,7 +576,7 @@ export function InventarioManager({
     if (ubicacionFiltro !== "all") {
       chips.push({
         key: "ubicacion",
-        label: `Lugar: ${ubicacionFiltro}`,
+        label: `Lugar: ${labelUbicacion(ubicacionFiltro as InventarioUbicacion)}`,
         onClear: () => setUbicacionFiltro("all"),
       });
     }
@@ -873,7 +897,7 @@ export function InventarioManager({
                     { value: "all", label: "En cualquier lugar" },
                     ...INVENTARIO_UBICACIONES.map((u) => ({
                       value: u,
-                      label: u,
+                      label: labelUbicacion(u),
                     })),
                   ]}
                 />
@@ -1022,6 +1046,7 @@ export function InventarioManager({
                     }}
                     onDelete={() => setDeletingProd(p)}
                     onNovedades={() => setNovedadesProd(p)}
+                    onTrasladar={() => setTrasladarProd(p)}
                     onPhoto={() => openPhoto(p)}
                   />
                 </li>
@@ -1383,6 +1408,18 @@ export function InventarioManager({
             if (!open) setNovedadesProd(null);
           }}
         />
+
+        <ProductoTrasladarDialog
+          product={trasladarProd}
+          open={!!trasladarProd}
+          onOpenChange={(open) => {
+            if (!open) setTrasladarProd(null);
+          }}
+          onDone={() => {
+            refreshInventarioLive(true);
+            router.refresh();
+          }}
+        />
       </Tabs>
     </div>
   );
@@ -1709,10 +1746,11 @@ function CategoriaDialog({
 
 type ProductoFormErrors = {
   nombre?: string;
-  stock?: string;
+  stockSoluciones?: string;
+  stockBera?: string;
+  stockBodega?: string;
   costo?: string;
   precio?: string;
-  ubicacion?: string;
   gaveta?: string;
   categoriaId?: string;
   sku?: string;
@@ -1743,9 +1781,10 @@ function ProductoDialog({
     descripcion: string;
     precio: number;
     costo: number;
-    stock: number;
+    stockSoluciones: number;
+    stockBera: number;
+    stockBodega: number;
     stockMinimo: number;
-    ubicacion: InventarioUbicacion;
     gaveta?: string;
     editadoPor?: string;
     motivoEdicion?: string;
@@ -1768,9 +1807,7 @@ function ProductoDialog({
 
   const otrosProductos = useMemo(
     () =>
-      editing
-        ? productos.filter((p) => p.id !== editing.id)
-        : productos,
+      editing ? productos.filter((p) => p.id !== editing.id) : productos,
     [productos, editing],
   );
 
@@ -1781,9 +1818,10 @@ function ProductoDialog({
   const [descripcion, setDescripcion] = useState("");
   const [precio, setPrecio] = useState("");
   const [costo, setCosto] = useState("");
-  const [stock, setStock] = useState("");
+  const [stockSoluciones, setStockSoluciones] = useState("");
+  const [stockBera, setStockBera] = useState("");
+  const [stockBodega, setStockBodega] = useState("");
   const [stockMinimo, setStockMinimo] = useState("0");
-  const [ubicacion, setUbicacion] = useState<InventarioUbicacion>("Soluciones");
   const [gaveta, setGaveta] = useState("");
   const [editadoPor, setEditadoPor] = useState("");
   const [motivoEdicion, setMotivoEdicion] = useState("");
@@ -1795,11 +1833,12 @@ function ProductoDialog({
   const [errors, setErrors] = useState<ProductoFormErrors>({});
 
   const nombreId = `${formId}-nombre`;
-  const stockId = `${formId}-stock`;
+  const stockSolucionesId = `${formId}-stock-soluciones`;
+  const stockBeraId = `${formId}-stock-bera`;
+  const stockBodegaId = `${formId}-stock-bodega`;
   const costoId = `${formId}-costo`;
   const precioId = `${formId}-precio`;
   const skuId = `${formId}-sku`;
-  const ubicacionId = `${formId}-ubicacion`;
   const gavetaId = `${formId}-gaveta`;
   const categoriaFieldId = `${formId}-categoria`;
   const editadoPorId = `${formId}-editado-por`;
@@ -1807,6 +1846,12 @@ function ProductoDialog({
 
   function focusField(id: string) {
     document.getElementById(id)?.focus();
+  }
+
+  function parseStockField(raw: string): number | null {
+    if (raw.trim() === "") return null;
+    const n = Number(raw.replace(/\D/g, ""));
+    return Number.isFinite(n) && n >= 0 ? n : null;
   }
 
   function load() {
@@ -1819,10 +1864,29 @@ function ProductoDialog({
     setDescripcion(editing?.descripcion ?? "");
     setPrecio(editing ? formatMilesFromNumber(editing.precio) : "");
     setCosto(editing ? formatMilesFromNumber(editing.costo ?? 0) : "");
-    setStock(editing ? String(editing.stock) : "");
+    if (editing) {
+      const stocks = normalizeProductoStocks(editing);
+      setStockSoluciones(
+        String(stocks.find((s) => s.ubicacion === "Soluciones")?.cantidad ?? 0),
+      );
+      setStockBera(
+        String(stocks.find((s) => s.ubicacion === "Bera")?.cantidad ?? 0),
+      );
+      setStockBodega(
+        String(stocks.find((s) => s.ubicacion === "Bodega")?.cantidad ?? 0),
+      );
+      setGaveta(
+        stocks.find((s) => s.ubicacion === "Bodega")?.gaveta ??
+          editing.gaveta ??
+          "",
+      );
+    } else {
+      setStockSoluciones("");
+      setStockBera("0");
+      setStockBodega("0");
+      setGaveta("");
+    }
     setStockMinimo(String(editing?.stock_minimo ?? 0));
-    setUbicacion(editing?.ubicacion ?? "Soluciones");
-    setGaveta(editing?.gaveta ?? "");
     setEditadoPor("");
     setMotivoEdicion("");
     setImagenUrl(editing?.imagen_url ?? "");
@@ -1893,9 +1957,17 @@ function ProductoDialog({
     } else if (skuExistente) {
       next.nombre = `Ese nombre genera el mismo código que «${skuExistente.nombre}». Cámbialo un poco.`;
     }
-    const stockNum = Number(stock.replace(/\D/g, ""));
-    if (stock.trim() === "" || !Number.isFinite(stockNum) || stockNum < 0) {
-      next.stock = "Indica cuántas unidades hay (0 o más).";
+    if (parseStockField(stockSoluciones) == null) {
+      next.stockSoluciones = "Indica unidades en Soluciones Pinilla (0 o más).";
+    }
+    if (parseStockField(stockBera) == null) {
+      next.stockBera = "Indica unidades en Bera (0 o más).";
+    }
+    const bodegaNum = parseStockField(stockBodega);
+    if (bodegaNum == null) {
+      next.stockBodega = "Indica unidades en Bodega (0 o más).";
+    } else if (bodegaNum > 0 && !gaveta.trim()) {
+      next.gaveta = "Indica el número de gaveta en Bodega.";
     }
     const costoNum = parseMilesInput(costo);
     if (costo.trim() === "" || !Number.isFinite(costoNum) || costoNum < 0) {
@@ -1904,10 +1976,6 @@ function ProductoDialog({
     const precioNum = parseMilesInput(precio);
     if (precio.trim() === "" || !Number.isFinite(precioNum) || precioNum < 0) {
       next.precio = "Indica a cuánto lo vendes (0 o más).";
-    }
-    if (!ubicacion) next.ubicacion = "Elige dónde está el producto.";
-    if (ubicacion === "Bodega" && !gaveta.trim()) {
-      next.gaveta = "Indica el número de gaveta.";
     }
     if (!categoriaId) next.categoriaId = "Elige una categoría.";
     if (isEditing) {
@@ -1922,7 +1990,8 @@ function ProductoDialog({
       }
     }
     const resolvedSku = sku.trim() || skuFromNombre(nombre);
-    if (!resolvedSku) next.sku = "El SKU se genera del nombre; revísalo en Más opciones.";
+    if (!resolvedSku)
+      next.sku = "El SKU se genera del nombre; revísalo en Más opciones.";
     return next;
   }
 
@@ -1933,11 +2002,12 @@ function ProductoDialog({
       if (next.editadoPor) focusField(editadoPorId);
       else if (next.motivoEdicion) focusField(motivoEdicionId);
       else if (next.nombre) focusField(nombreId);
-      else if (next.stock) focusField(stockId);
+      else if (next.stockSoluciones) focusField(stockSolucionesId);
+      else if (next.stockBera) focusField(stockBeraId);
+      else if (next.stockBodega) focusField(stockBodegaId);
       else if (next.costo) focusField(costoId);
       else if (next.precio) focusField(precioId);
       else if (next.gaveta) focusField(gavetaId);
-      else if (next.ubicacion) focusField(ubicacionId);
       else if (next.categoriaId) focusField(categoriaFieldId);
       else if (next.sku) {
         setMoreOpen(true);
@@ -1947,6 +2017,7 @@ function ProductoDialog({
     }
 
     const resolvedSku = (sku.trim() || skuFromNombre(nombre)).toUpperCase();
+    const bodegaQty = parseStockField(stockBodega) ?? 0;
     onSave({
       id: editing?.id,
       categoriaId: Number(categoriaId),
@@ -1955,10 +2026,11 @@ function ProductoDialog({
       descripcion,
       precio: parseMilesInput(precio),
       costo: parseMilesInput(costo),
-      stock: Number(stock.replace(/\D/g, "")),
+      stockSoluciones: parseStockField(stockSoluciones) ?? 0,
+      stockBera: parseStockField(stockBera) ?? 0,
+      stockBodega: bodegaQty,
       stockMinimo: Number(stockMinimo) || 0,
-      ubicacion,
-      gaveta: ubicacion === "Bodega" ? gaveta.trim() : undefined,
+      gaveta: bodegaQty > 0 ? gaveta.trim() : undefined,
       editadoPor: isEditing ? editadoPor.trim() : undefined,
       motivoEdicion: isEditing ? motivoEdicion.trim() : undefined,
       imagenUrl,
@@ -1974,17 +2046,18 @@ function ProductoDialog({
   const basicosCompletos =
     nombre.trim().length > 0 &&
     !nombreBloqueado &&
-    stock.trim() !== "" &&
+    parseStockField(stockSoluciones) != null &&
+    parseStockField(stockBera) != null &&
+    parseStockField(stockBodega) != null &&
     costo.trim() !== "" &&
     precio.trim() !== "" &&
     Boolean(categoriaId) &&
-    Boolean(ubicacion) &&
-    (ubicacion !== "Bodega" || gaveta.trim().length > 0) &&
+    (parseStockField(stockBodega) === 0 || gaveta.trim().length > 0) &&
     (!isEditing ||
       (resolveInventarioEditorCodigo(editadoPor) != null &&
         motivoEdicion.trim().length > 0));
 
-  const autorEdicionResuelto = isEditing
+const autorEdicionResuelto = isEditing
     ? resolveInventarioEditorCodigo(editadoPor)
     : null;
 
@@ -2016,7 +2089,7 @@ function ProductoDialog({
           <DialogDescription>
             {isEditing
               ? "Indica tu clave, por qué editas y los datos del producto."
-              : "Escribe el nombre, cuántas hay, cuánto costó y a cuánto se vende."}
+              : "Escribe el nombre, stock por sede, cuánto costó y a cuánto se vende."}
           </DialogDescription>
         </DialogHeader>
 
@@ -2158,8 +2231,13 @@ function ProductoDialog({
                         <span className="text-muted-foreground">
                           {" "}
                           · {p.stock} und
-                          {p.ubicacion ? ` · ${p.ubicacion}` : ""}
-                          {p.gaveta ? ` gav. ${p.gaveta}` : ""}
+                          {normalizeProductoStocks(p)
+                            .filter((s) => s.cantidad > 0)
+                            .map(
+                              (s) =>
+                                ` · ${formatUbicacionConGaveta(s.ubicacion, s.gaveta)} ${s.cantidad}`,
+                            )
+                            .join("")}
                         </span>
                       </li>
                     ))}
@@ -2167,15 +2245,6 @@ function ProductoDialog({
                 </div>
               ) : null}
             </div>
-            <Field
-              id={stockId}
-              label="Cuántas hay"
-              value={stock}
-              onChange={(v) => setStock(v.replace(/\D/g, ""))}
-              inputMode="numeric"
-              placeholder="Ej. 5"
-              error={errors.stock}
-            />
             <Field
               id={costoId}
               label="Cuánto te costó"
@@ -2204,32 +2273,36 @@ function ProductoDialog({
               id={`${formId}-sec-lugar`}
               className="text-sm font-medium text-foreground sm:col-span-2 md:col-span-3"
             >
-              Dónde está
+              Stock por sede
             </h3>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor={ubicacionId}>Ubicación</Label>
-              <TouchSelect
-                id={ubicacionId}
-                aria-label="Ubicación"
-                aria-invalid={!!errors.ubicacion}
-                value={ubicacion}
-                onChange={(v) => {
-                  const next = v as InventarioUbicacion;
-                  setUbicacion(next);
-                  if (next !== "Bodega") setGaveta("");
-                }}
-                options={INVENTARIO_UBICACIONES.map((u) => ({
-                  value: u,
-                  label: u,
-                }))}
-              />
-              {errors.ubicacion ? (
-                <p className="text-sm text-destructive" role="alert">
-                  {errors.ubicacion}
-                </p>
-              ) : null}
-            </div>
-            {ubicacion === "Bodega" ? (
+            <Field
+              id={stockSolucionesId}
+              label="Soluciones Pinilla"
+              value={stockSoluciones}
+              onChange={(v) => setStockSoluciones(v.replace(/\D/g, ""))}
+              inputMode="numeric"
+              placeholder="Ej. 5"
+              error={errors.stockSoluciones}
+            />
+            <Field
+              id={stockBeraId}
+              label="Bera"
+              value={stockBera}
+              onChange={(v) => setStockBera(v.replace(/\D/g, ""))}
+              inputMode="numeric"
+              placeholder="0"
+              error={errors.stockBera}
+            />
+            <Field
+              id={stockBodegaId}
+              label="Bodega"
+              value={stockBodega}
+              onChange={(v) => setStockBodega(v.replace(/\D/g, ""))}
+              inputMode="numeric"
+              placeholder="0"
+              error={errors.stockBodega}
+            />
+            {(parseStockField(stockBodega) ?? 0) > 0 ? (
               <Field
                 id={gavetaId}
                 label="Gaveta número"
