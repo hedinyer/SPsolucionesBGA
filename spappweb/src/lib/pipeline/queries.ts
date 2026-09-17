@@ -1472,7 +1472,7 @@ export async function getProductoBySku(
   if (error) throw new Error(error.message);
   if (!data) return null;
   const [withStocks] = await attachStocks(supabase, [
-    data as InventarioProductoRow,
+    data as unknown as InventarioProductoRow,
   ]);
   return withStocks ?? null;
 }
@@ -1499,7 +1499,10 @@ export async function searchProductos(
     .limit(limit);
 
   if (error) throw new Error(error.message);
-  return attachStocks(supabase, (data ?? []) as InventarioProductoRow[]);
+  return attachStocks(
+    supabase,
+    (data ?? []) as unknown as InventarioProductoRow[],
+  );
 }
 
 export async function getAllSolicitudesTaller(): Promise<SolicitudTallerRow[]> {
