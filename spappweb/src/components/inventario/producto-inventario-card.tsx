@@ -1,6 +1,13 @@
 "use client";
 
-import { MoreHorizontal, Pencil, ScrollText, Trash2 } from "lucide-react";
+import {
+  Eye,
+  EyeOff,
+  MoreHorizontal,
+  Pencil,
+  ScrollText,
+  Trash2,
+} from "lucide-react";
 import type {
   InventarioProductoRow,
   InventarioUbicacion,
@@ -38,6 +45,8 @@ function formatUbicacionProducto(
 export type ProductoInventarioCardProps = {
   product: InventarioProductoRow;
   categoriaNombre?: string | null;
+  mostrarCosto: boolean;
+  onToggleMostrarCosto: () => void;
   onEdit: () => void;
   onDelete: () => void;
   onNovedades: () => void;
@@ -47,6 +56,8 @@ export type ProductoInventarioCardProps = {
 export function ProductoInventarioCard({
   product,
   categoriaNombre: categoriaNombreProp,
+  mostrarCosto,
+  onToggleMostrarCosto,
   onEdit,
   onDelete,
   onNovedades,
@@ -128,7 +139,29 @@ export function ProductoInventarioCard({
           </div>
 
           <div className="flex flex-col gap-1 text-sm text-muted-foreground">
-            <p className="tabular-nums">Costo {formatCop(product.costo ?? 0)}</p>
+            <p className="flex items-center gap-1.5 tabular-nums">
+              <span>
+                Costo{" "}
+                {mostrarCosto ? formatCop(product.costo ?? 0) : "••••"}
+              </span>
+              <button
+                type="button"
+                className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                aria-label={
+                  mostrarCosto
+                    ? `Ocultar costo de ${product.nombre}`
+                    : `Mostrar costo de ${product.nombre}`
+                }
+                aria-pressed={mostrarCosto}
+                onClick={onToggleMostrarCosto}
+              >
+                {mostrarCosto ? (
+                  <EyeOff className="size-4" aria-hidden="true" />
+                ) : (
+                  <Eye className="size-4" aria-hidden="true" />
+                )}
+              </button>
+            </p>
             <p>{ubicacionLabel}</p>
           </div>
         </div>

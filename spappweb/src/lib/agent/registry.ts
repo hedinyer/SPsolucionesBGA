@@ -666,7 +666,10 @@ export const AGENT_TOOLS = {
         .optional()
         .default("Soluciones"),
       gaveta: z.string().optional(),
-      editadoPor: z.string().optional(),
+      editadoPor: z
+        .string()
+        .optional()
+        .describe("Clave personal de quien edita (ej. 0929)."),
       motivoEdicion: z.string().optional(),
       imagenUrl: z.string().optional(),
       compatibleModelos: z.array(z.string()).optional(),
@@ -677,10 +680,13 @@ export const AGENT_TOOLS = {
   delete_producto: tool({
     category: "inventario",
     description:
-      "Elimina (archiva) un producto de inventario. Requiere quién elimina y el motivo.",
+      "Elimina (archiva) un producto de inventario. Requiere clave personal de quien elimina y el motivo.",
     input: z.object({
       id: z.number().int().positive(),
-      eliminadoPor: z.string().min(1),
+      eliminadoPor: z
+        .string()
+        .min(1)
+        .describe("Clave personal de quien elimina (ej. 0929)."),
       motivoEliminacion: z.string().min(1),
     }),
     handler: async (args) => (await loadAdminActions()).deleteProducto(args),

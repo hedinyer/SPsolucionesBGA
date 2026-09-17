@@ -2,7 +2,15 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bike, CircleDollarSign, Pencil, Plus, Printer, Tag, User } from "lucide-react";
+import {
+  Bike,
+  CircleDollarSign,
+  Pencil,
+  Plus,
+  Printer,
+  Tag,
+  User,
+} from "lucide-react";
 import type { VentaMotoRow } from "@/lib/actions/venta-moto-actions";
 import { CONTADO_TIPO_DOC_LABELS } from "@/lib/venta-contado/contado-cliente";
 import { AbonoVentaDialog } from "@/components/venta-contado/abono-venta-dialog";
@@ -13,14 +21,6 @@ import { printVentaMotoReceipt } from "@/lib/printing/venta-moto-receipt";
 import type { BikeRow } from "@/lib/pipeline/types";
 import { formatCop, formatDate } from "@/lib/utils/format";
 import { Button } from "@/components/ui/button";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 
 function saldo(venta: VentaMotoRow): number | null {
@@ -43,23 +43,34 @@ function PhotoThumb({
   src,
   alt,
   fallback,
+  className,
 }: {
   src: string | null | undefined;
   alt: string;
   fallback: "user" | "bike";
+  className?: string;
 }) {
   if (src) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
-      <img src={src} alt={alt} className="h-full w-full object-cover" />
+      <img
+        src={src}
+        alt={alt}
+        className={cn("h-full w-full object-cover", className)}
+      />
     );
   }
   return (
-    <div className="flex h-full w-full items-center justify-center bg-muted text-muted-foreground">
+    <div
+      className={cn(
+        "flex h-full w-full items-center justify-center bg-muted text-muted-foreground",
+        className,
+      )}
+    >
       {fallback === "user" ? (
-        <User className="h-4 w-4" />
+        <User className="h-4 w-4" aria-hidden="true" />
       ) : (
-        <Bike className="h-4 w-4" />
+        <Bike className="h-4 w-4" aria-hidden="true" />
       )}
     </div>
   );
@@ -70,7 +81,7 @@ function EstadoBadge({ venta }: { venta: VentaMotoRow }) {
   return (
     <span
       className={cn(
-        "inline-flex rounded-full px-2 py-0.5 text-xs font-medium",
+        "inline-flex rounded-full px-2.5 py-1 text-xs font-medium",
         label === "Contado" && "bg-green-100 text-green-800",
         label === "Abono" && "bg-amber-100 text-amber-800",
         label === "Pendiente" && "bg-red-100 text-red-800",
@@ -79,6 +90,156 @@ function EstadoBadge({ venta }: { venta: VentaMotoRow }) {
     >
       {label}
     </span>
+  );
+}
+
+function ClienteMeta({ venta }: { venta: VentaMotoRow }) {
+  const tipo = venta.clienteTipoDocumento
+    ? CONTADO_TIPO_DOC_LABELS[venta.clienteTipoDocumento]
+    : null;
+  return (
+    <div className="min-w-0 space-y-1">
+      <p className="truncate font-medium leading-snug text-foreground">
+        {venta.clienteNombre}
+      </p>
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        {tipo ? `${tipo} ` : null}
+        {venta.clienteCedula}
+        <span className="text-border"> · </span>
+        {venta.clienteCelular}
+      </p>
+      {venta.clienteDireccion ? (
+        <p className="text-xs leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">
+          {venta.clienteDireccion}
+        </p>
+      ) : null}
+      {venta.clienteCorreo ? (
+        <p className="truncate text-xs leading-relaxed text-muted-foreground">
+          {venta.clienteCorreo}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function MotoMeta({ venta }: { venta: VentaMotoRow }) {
+  return (
+    <div className="min-w-0 space-y-1">
+      <p className="font-medium leading-snug">
+        {venta.modelo}
+        <span className="font-normal text-muted-foreground">
+          {" "}
+          · {venta.color}
+        </span>
+      </p>
+      {venta.placa ? (
+        <p className="text-xs font-medium text-foreground">
+          Placa {venta.placa}
+        </p>
+      ) : (
+        <p className="text-xs text-muted-foreground">Sin placa</p>
+      )}
+      {venta.chasis ? (
+        <p className="truncate text-xs text-muted-foreground">
+          Chasis {venta.chasis}
+        </p>
+      ) : (
+        <p className="text-xs text-muted-foreground">Chasis pendiente</p>
+      )}
+    </div>
+  );
+}
+
+function MoneyBlock({ venta }: { venta: VentaMotoRow }) {
+  const s = saldo(venta);
+  return (
+    <dl className="grid min-w-0 grid-cols-3 gap-x-3 gap-y-1 text-sm tabular-nums">
+      <div className="min-w-0">
+        <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">
+          Precio
+        </dt>
+        <dd className="truncate font-medium">
+          {venta.valorVenta != null ? formatCop(venta.valorVenta) : "—"}
+        </dd>
+      </div>
+      <div className="min-w-0">
+        <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">
+          Pagado
+        </dt>
+        <dd className="truncate">{formatCop(venta.montoPagado)}</dd>
+      </div>
+      <div className="min-w-0">
+        <dt className="text-[11px] uppercase tracking-wide text-muted-foreground">
+          Saldo
+        </dt>
+        <dd className="truncate font-medium">
+          {s != null ? formatCop(s) : "—"}
+        </dd>
+      </div>
+    </dl>
+  );
+}
+
+function RowActions({
+  venta,
+  onEdit,
+  onPlaca,
+  onAbono,
+  onPrint,
+}: {
+  venta: VentaMotoRow;
+  onEdit: () => void;
+  onPlaca: () => void;
+  onAbono: () => void;
+  onPrint: () => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="h-9 min-h-9 gap-1.5 px-3"
+        onClick={onEdit}
+      >
+        <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+        Editar
+      </Button>
+      {!venta.placa ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-9 min-h-9 gap-1.5 px-3"
+          onClick={onPlaca}
+        >
+          <Tag className="h-3.5 w-3.5" aria-hidden="true" />
+          Placa
+        </Button>
+      ) : null}
+      {puedeAbonar(venta) ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-9 min-h-9 gap-1.5 px-3"
+          onClick={onAbono}
+        >
+          <CircleDollarSign className="h-3.5 w-3.5" aria-hidden="true" />
+          Abonar
+        </Button>
+      ) : null}
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="h-9 w-9 min-h-9 min-w-9"
+        aria-label={`Reimprimir recibo de ${venta.clienteNombre}`}
+        onClick={onPrint}
+      >
+        <Printer className="h-4 w-4" aria-hidden="true" />
+      </Button>
+    </div>
   );
 }
 
@@ -137,23 +298,27 @@ export function VentaContadoManager({
   return (
     <>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div className="flex-1">
-          <label className="mb-1.5 block text-sm font-medium text-foreground">
+        <div className="min-w-0 flex-1">
+          <label
+            htmlFor="contado-buscar"
+            className="mb-1.5 block text-sm font-medium text-foreground"
+          >
             Buscar
           </label>
           <input
+            id="contado-buscar"
             type="search"
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}
             placeholder="Cliente, documento, celular, correo, dirección, placa…"
-            className="flex h-11 w-full rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-neutral-400"
+            className="flex h-11 w-full rounded-lg border border-border bg-background px-3 text-base outline-none focus-visible:border-neutral-400 focus-visible:ring-2 focus-visible:ring-ring/40 sm:text-sm"
           />
         </div>
         <Button
-          className="gap-2 bg-primary text-primary-foreground hover:bg-primary/80 sm:shrink-0"
+          className="h-11 gap-2 bg-primary text-primary-foreground hover:bg-primary/80 sm:shrink-0"
           onClick={() => setSheetOpen(true)}
         >
-          <Plus className="h-4 w-4" />
+          <Plus className="h-4 w-4" aria-hidden="true" />
           Nueva venta contado
         </Button>
       </div>
@@ -167,261 +332,58 @@ export function VentaContadoManager({
           Sin resultados para &ldquo;{busqueda.trim()}&rdquo;.
         </p>
       ) : (
-        <>
-          <div className="hidden overflow-x-auto rounded-lg border border-border lg:block">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Fecha</TableHead>
-                  <TableHead>Cliente</TableHead>
-                  <TableHead>Moto</TableHead>
-                  <TableHead>Precio</TableHead>
-                  <TableHead>Pagado</TableHead>
-                  <TableHead>Saldo</TableHead>
-                  <TableHead>Estado</TableHead>
-                  <TableHead className="w-48" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {ventasFiltradas.map((v) => (
-                  <TableRow key={v.id}>
-                    <TableCell className="whitespace-nowrap">
+        <ul className="flex flex-col gap-3">
+          {ventasFiltradas.map((v) => (
+            <li
+              key={v.id}
+              className="rounded-xl border border-border bg-background p-4 shadow-sm sm:p-5"
+            >
+              {/* φ ≈ 1.618: cliente 1.618fr · moto 1fr · pago/acciones 0.618fr */}
+              <div className="flex flex-col gap-4 xl:grid xl:grid-cols-[minmax(0,1.618fr)_minmax(0,1fr)_minmax(14rem,0.618fr)] xl:items-start xl:gap-6">
+                <div className="flex min-w-0 gap-3">
+                  <div className="h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-border bg-muted/50 outline outline-1 outline-black/10">
+                    <PhotoThumb
+                      src={v.selfieUrl}
+                      alt={`Foto de ${v.clienteNombre}`}
+                      fallback="user"
+                    />
+                  </div>
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <ClienteMeta venta={v} />
+                    <p className="text-xs text-muted-foreground">
                       {formatDate(v.createdAt)}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2.5">
-                        <div className="h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-border bg-muted/50">
-                          <PhotoThumb
-                            src={v.selfieUrl}
-                            alt={`Foto de ${v.clienteNombre}`}
-                            fallback="user"
-                          />
-                        </div>
-                        <div>
-                          <div className="font-medium">{v.clienteNombre}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {v.clienteTipoDocumento
-                              ? `${CONTADO_TIPO_DOC_LABELS[v.clienteTipoDocumento]} `
-                              : ""}
-                            {v.clienteCedula} · {v.clienteCelular}
-                          </div>
-                          {v.clienteDireccion || v.clienteCorreo ? (
-                            <div className="text-xs text-muted-foreground">
-                              {[v.clienteDireccion, v.clienteCorreo]
-                                .filter(Boolean)
-                                .join(" · ")}
-                            </div>
-                          ) : null}
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2.5">
-                        <div className="h-11 w-11 shrink-0 overflow-hidden rounded-lg border border-border bg-muted/50">
-                          <PhotoThumb
-                            src={v.motoImagenUrl}
-                            alt={`Moto ${v.modelo}`}
-                            fallback="bike"
-                          />
-                        </div>
-                        <div>
-                          <div>
-                            {v.modelo} · {v.color}
-                          </div>
-                          {v.placa ? (
-                            <div className="text-xs font-medium text-foreground">
-                              Placa {v.placa}
-                            </div>
-                          ) : null}
-                          {v.chasis ? (
-                            <div className="text-xs text-muted-foreground">
-                              Chasis {v.chasis}
-                            </div>
-                          ) : null}
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {v.valorVenta != null ? formatCop(v.valorVenta) : "—"}
-                    </TableCell>
-                    <TableCell>{formatCop(v.montoPagado)}</TableCell>
-                    <TableCell>
-                      {saldo(v) != null ? formatCop(saldo(v)!) : "—"}
-                    </TableCell>
-                    <TableCell>
-                      <EstadoBadge venta={v} />
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap items-center justify-end gap-1">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="h-8 gap-1 px-2 text-xs"
-                          onClick={() => setEditVenta(v)}
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                          Editar
-                        </Button>
-                        {!v.placa ? (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="h-8 gap-1 px-2 text-xs"
-                            onClick={() => setPlacaVenta(v)}
-                          >
-                            <Tag className="h-3.5 w-3.5" />
-                            Agregar placa
-                          </Button>
-                        ) : null}
-                        {puedeAbonar(v) ? (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="h-8 gap-1 px-2 text-xs"
-                            onClick={() => setAbonoVenta(v)}
-                          >
-                            <CircleDollarSign className="h-3.5 w-3.5" />
-                            Abonar
-                          </Button>
-                        ) : null}
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          aria-label="Reimprimir recibo"
-                          onClick={() => handlePrint(v)}
-                        >
-                          <Printer className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-
-          <div className="flex flex-col gap-3 lg:hidden">
-            {ventasFiltradas.map((v) => (
-              <div
-                key={v.id}
-                className="rounded-lg border border-border p-4 text-sm"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex min-w-0 items-start gap-3">
-                    <div className="flex shrink-0 gap-1.5">
-                      <div className="h-11 w-11 overflow-hidden rounded-lg border border-border bg-muted/50">
-                        <PhotoThumb
-                          src={v.selfieUrl}
-                          alt={`Foto de ${v.clienteNombre}`}
-                          fallback="user"
-                        />
-                      </div>
-                      <div className="h-11 w-11 overflow-hidden rounded-lg border border-border bg-muted/50">
-                        <PhotoThumb
-                          src={v.motoImagenUrl}
-                          alt={`Moto ${v.modelo}`}
-                          fallback="bike"
-                        />
-                      </div>
-                    </div>
-                    <div className="min-w-0">
-                      <p className="font-medium">{v.clienteNombre}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {v.clienteTipoDocumento
-                          ? `${CONTADO_TIPO_DOC_LABELS[v.clienteTipoDocumento]} `
-                          : ""}
-                        {v.clienteCedula} · {v.clienteCelular}
-                      </p>
-                      {v.clienteDireccion || v.clienteCorreo ? (
-                        <p className="text-xs text-muted-foreground">
-                          {[v.clienteDireccion, v.clienteCorreo]
-                            .filter(Boolean)
-                            .join(" · ")}
-                        </p>
-                      ) : null}
-                      <p className="text-muted-foreground">
-                        {v.modelo} · {v.color}
-                        {v.placa ? ` · Placa ${v.placa}` : ""}
-                      </p>
-                    </div>
+                    </p>
                   </div>
-                  <EstadoBadge venta={v} />
                 </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {formatDate(v.createdAt)}
-                </p>
-                <dl className="mt-3 flex flex-col gap-1">
-                  <div className="flex justify-between">
-                    <dt className="text-muted-foreground">Precio</dt>
-                    <dd>
-                      {v.valorVenta != null ? formatCop(v.valorVenta) : "—"}
-                    </dd>
+
+                <div className="flex min-w-0 gap-3 border-t border-border/70 pt-4 xl:border-t-0 xl:pt-0">
+                  <div className="h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-border bg-muted/50 outline outline-1 outline-black/10">
+                    <PhotoThumb
+                      src={v.motoImagenUrl}
+                      alt={`Moto ${v.modelo}`}
+                      fallback="bike"
+                    />
                   </div>
-                  <div className="flex justify-between">
-                    <dt className="text-muted-foreground">Pagado</dt>
-                    <dd>{formatCop(v.montoPagado)}</dd>
+                  <MotoMeta venta={v} />
+                </div>
+
+                <div className="flex min-w-0 flex-col gap-3 border-t border-border/70 pt-4 xl:border-t-0 xl:pt-0">
+                  <div className="flex items-start justify-between gap-3">
+                    <MoneyBlock venta={v} />
+                    <EstadoBadge venta={v} />
                   </div>
-                  <div className="flex justify-between">
-                    <dt className="text-muted-foreground">Saldo</dt>
-                    <dd>
-                      {saldo(v) != null ? formatCop(saldo(v)!) : "—"}
-                    </dd>
-                  </div>
-                </dl>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="flex-1 gap-2"
-                    onClick={() => setEditVenta(v)}
-                  >
-                    <Pencil className="h-4 w-4" />
-                    Editar
-                  </Button>
-                  {!v.placa ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="flex-1 gap-2"
-                      onClick={() => setPlacaVenta(v)}
-                    >
-                      <Tag className="h-4 w-4" />
-                      Agregar placa
-                    </Button>
-                  ) : null}
-                  {puedeAbonar(v) ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="flex-1 gap-2"
-                      onClick={() => setAbonoVenta(v)}
-                    >
-                      <CircleDollarSign className="h-4 w-4" />
-                      Abonar
-                    </Button>
-                  ) : null}
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className={cn("gap-2", puedeAbonar(v) ? "flex-1" : "w-full")}
-                    onClick={() => handlePrint(v)}
-                  >
-                    <Printer className="h-4 w-4" />
-                    Reimprimir
-                  </Button>
+                  <RowActions
+                    venta={v}
+                    onEdit={() => setEditVenta(v)}
+                    onPlaca={() => setPlacaVenta(v)}
+                    onAbono={() => setAbonoVenta(v)}
+                    onPrint={() => handlePrint(v)}
+                  />
                 </div>
               </div>
-            ))}
-          </div>
-        </>
+            </li>
+          ))}
+        </ul>
       )}
 
       <VenderMotoSheet

@@ -28,6 +28,7 @@ import {
 } from "@/lib/admin/titularidad";
 import { assertVisitadorAllowedForReferral } from "@/lib/referrals";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { resolveInventarioEditorCodigo } from "@/lib/inventario/editor-codigos";
 import { STORAGE_BUCKETS } from "@/lib/supabase/storage-buckets";
 import { storagePathFromPublicUrl } from "@/lib/utils/storage-urls";
 
@@ -998,7 +999,13 @@ const productoSchema = z
       if (!data.editadoPor?.trim()) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: "Indica quién edita el producto.",
+          message: "Indica la clave de quién edita.",
+          path: ["editadoPor"],
+        });
+      } else if (!resolveInventarioEditorCodigo(data.editadoPor)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Esa clave no es válida.",
           path: ["editadoPor"],
         });
       }
@@ -1095,7 +1102,9 @@ export async function saveProducto(input: z.infer<typeof productoSchema>) {
       activo: parsed.activo,
     };
     if (parsed.id) {
-      payload.editado_por = parsed.editadoPor?.trim() || null;
+      const autor =
+        resolveInventarioEditorCodigo(parsed.editadoPor ?? "") ?? null;
+      payload.editado_por = autor;
       payload.motivo_edicion = parsed.motivoEdicion?.trim() || null;
       payload.editado_at = new Date().toISOString();
       const { data: prev, error: prevError } = await supabase
@@ -1122,7 +1131,7 @@ export async function saveProducto(input: z.infer<typeof productoSchema>) {
       await logInventarioProductoNovedad(supabase, {
         productoId: parsed.id,
         tipo: "edicion",
-        autor: parsed.editadoPor!.trim(),
+        autor: autor!,
         contenido: parsed.motivoEdicion!.trim(),
         detalle: buildProductoEditDetalle(prev, parsed),
       });
@@ -1165,25 +1174,39 @@ export async function saveProducto(input: z.infer<typeof productoSchema>) {
   }
 }
 
-const deleteProductoSchema = z.object({
-  id: z.number().int().positive(),
-  eliminadoPor: z.string().trim().min(1, "Indica quién elimina el producto."),
-  motivoEliminacion: z
-    .string()
-    .trim()
-    .min(1, "Indica por qué eliminas el producto."),
-});
+const deleteProductoSchema = z
+  .object({
+    id: z.number().int().positive(),
+    eliminadoPor: z.string().trim().min(1, "Indica la clave de quién elimina."),
+    motivoEliminacion: z
+      .string()
+      .trim()
+      .min(1, "Indica por qué eliminas el producto."),
+  })
+  .superRefine((data, ctx) => {
+    if (
+      data.eliminadoPor &&
+      !resolveInventarioEditorCodigo(data.eliminadoPor)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Esa clave no es válida.",
+        path: ["eliminadoPor"],
+      });
+    }
+  });
 
 export async function deleteProducto(
   input: z.infer<typeof deleteProductoSchema>,
 ) {
   const parsed = deleteProductoSchema.parse(input);
+  const autor = resolveInventarioEditorCodigo(parsed.eliminadoPor)!;
   const supabase = await assertAdmin();
   const { data, error } = await supabase
     .from("inventario_productos")
     .update({
       activo: false,
-      eliminado_por: parsed.eliminadoPor,
+      eliminado_por: autor,
       motivo_eliminacion: parsed.motivoEliminacion,
       eliminado_at: new Date().toISOString(),
     })
@@ -1197,7 +1220,7 @@ export async function deleteProducto(
   await logInventarioProductoNovedad(supabase, {
     productoId: parsed.id,
     tipo: "eliminacion",
-    autor: parsed.eliminadoPor,
+    autor,
     contenido: parsed.motivoEliminacion,
   });
   revalidatePath("/inventario");

@@ -13,6 +13,8 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   ChevronDown,
+  Eye,
+  EyeOff,
   ListFilter,
   Pencil,
   Plus,
@@ -39,6 +41,7 @@ import {
   rankBySimilarity,
 } from "@/lib/search/fuzzy-text";
 import { formatCop } from "@/lib/utils/format";
+import { resolveInventarioEditorCodigo } from "@/lib/inventario/editor-codigos";
 import { getStoragePublicUrl } from "@/lib/utils/storage-urls";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -269,6 +272,7 @@ export function InventarioManager({
   const [costoMax, setCostoMax] = useState("");
   const [precioMin, setPrecioMin] = useState("");
   const [precioMax, setPrecioMax] = useState("");
+  const [mostrarCostos, setMostrarCostos] = useState(false);
   const [pending, startTransition] = useTransition();
   const refreshDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refreshingRef = useRef(false);
@@ -626,11 +630,30 @@ export function InventarioManager({
         className="ml-auto text-right tabular-nums"
         aria-label="Valor total del inventario"
       >
-        <p className="text-xs text-muted-foreground">
-          Costo{" "}
-          <span className="font-medium text-foreground">
-            {formatCop(valorInventario.costo)}
+        <p className="flex items-center justify-end gap-1 text-xs text-muted-foreground">
+          <span>
+            Costo{" "}
+            <span className="font-medium text-foreground">
+              {mostrarCostos ? formatCop(valorInventario.costo) : "••••"}
+            </span>
           </span>
+          <button
+            type="button"
+            className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+            aria-label={
+              mostrarCostos
+                ? "Ocultar costos del inventario"
+                : "Mostrar costos del inventario"
+            }
+            aria-pressed={mostrarCostos}
+            onClick={() => setMostrarCostos((v) => !v)}
+          >
+            {mostrarCostos ? (
+              <EyeOff className="size-3.5" aria-hidden="true" />
+            ) : (
+              <Eye className="size-3.5" aria-hidden="true" />
+            )}
+          </button>
         </p>
         <p className="text-xs text-muted-foreground">
           Venta{" "}
@@ -988,6 +1011,10 @@ export function InventarioManager({
                     product={p}
                     categoriaNombre={
                       categorias.find((c) => c.id === p.categoria_id)?.nombre
+                    }
+                    mostrarCosto={mostrarCostos}
+                    onToggleMostrarCosto={() =>
+                      setMostrarCostos((v) => !v)
                     }
                     onEdit={() => {
                       setEditingProd(p);
@@ -1408,8 +1435,11 @@ function DeleteProductoDialog({
   function handleSubmit() {
     if (!product) return;
     const next: { eliminadoPor?: string; motivo?: string } = {};
+    const autor = resolveInventarioEditorCodigo(eliminadoPor);
     if (!eliminadoPor.trim()) {
-      next.eliminadoPor = "Escribe quién elimina el producto.";
+      next.eliminadoPor = "Escribe tu clave.";
+    } else if (!autor) {
+      next.eliminadoPor = "Esa clave no es válida.";
     }
     if (!motivo.trim()) {
       next.motivo = "Explica por qué lo eliminas.";
@@ -1427,6 +1457,8 @@ function DeleteProductoDialog({
     });
   }
 
+  const autorResuelto = resolveInventarioEditorCodigo(eliminadoPor);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="bg-background sm:max-w-md">
@@ -1434,19 +1466,36 @@ function DeleteProductoDialog({
           <DialogTitle>Eliminar producto</DialogTitle>
           <DialogDescription>
             {product
-              ? `Vas a eliminar “${product.nombre}”. Indica quién lo elimina y por qué.`
-              : "Indica quién elimina y por qué."}
+              ? `Vas a eliminar “${product.nombre}”. Indica tu clave y por qué.`
+              : "Indica tu clave y por qué."}
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4">
-          <Field
-            id={porId}
-            label="Quién lo elimina"
-            value={eliminadoPor}
-            onChange={setEliminadoPor}
-            error={errors.eliminadoPor}
-            autoComplete="name"
-          />
+          <div className="flex flex-col gap-2">
+            <Field
+              id={porId}
+              label="Tu clave"
+              value={eliminadoPor}
+              onChange={(v) => {
+                setEliminadoPor(v);
+                if (errors.eliminadoPor) {
+                  setErrors((prev) => {
+                    const next = { ...prev };
+                    delete next.eliminadoPor;
+                    return next;
+                  });
+                }
+              }}
+              type="password"
+              inputMode="numeric"
+              autoComplete="off"
+              placeholder="Ej. 0929"
+              error={errors.eliminadoPor}
+            />
+            {autorResuelto && !errors.eliminadoPor ? (
+              <p className="text-sm text-muted-foreground">{autorResuelto}</p>
+            ) : null}
+          </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor={motivoId}>Por qué lo eliminas</Label>
             <Textarea
@@ -1862,8 +1911,11 @@ function ProductoDialog({
     }
     if (!categoriaId) next.categoriaId = "Elige una categoría.";
     if (isEditing) {
+      const autor = resolveInventarioEditorCodigo(editadoPor);
       if (!editadoPor.trim()) {
-        next.editadoPor = "Escribe quién hace la edición.";
+        next.editadoPor = "Escribe tu clave.";
+      } else if (!autor) {
+        next.editadoPor = "Esa clave no es válida.";
       }
       if (!motivoEdicion.trim()) {
         next.motivoEdicion = "Explica por qué editas este producto.";
@@ -1929,7 +1981,12 @@ function ProductoDialog({
     Boolean(ubicacion) &&
     (ubicacion !== "Bodega" || gaveta.trim().length > 0) &&
     (!isEditing ||
-      (editadoPor.trim().length > 0 && motivoEdicion.trim().length > 0));
+      (resolveInventarioEditorCodigo(editadoPor) != null &&
+        motivoEdicion.trim().length > 0));
+
+  const autorEdicionResuelto = isEditing
+    ? resolveInventarioEditorCodigo(editadoPor)
+    : null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1958,7 +2015,7 @@ function ProductoDialog({
           </DialogTitle>
           <DialogDescription>
             {isEditing
-              ? "Indica quién edita, por qué y los datos del producto."
+              ? "Indica tu clave, por qué editas y los datos del producto."
               : "Escribe el nombre, cuántas hay, cuánto costó y a cuánto se vende."}
           </DialogDescription>
         </DialogHeader>
@@ -1975,14 +2032,33 @@ function ProductoDialog({
               >
                 Motivo de la edición
               </h3>
-              <Field
-                id={editadoPorId}
-                label="Quién lo edita"
-                value={editadoPor}
-                onChange={setEditadoPor}
-                error={errors.editadoPor}
-                autoComplete="name"
-              />
+              <div className="flex flex-col gap-2">
+                <Field
+                  id={editadoPorId}
+                  label="Tu clave"
+                  value={editadoPor}
+                  onChange={(v) => {
+                    setEditadoPor(v);
+                    if (errors.editadoPor) {
+                      setErrors((prev) => {
+                        const next = { ...prev };
+                        delete next.editadoPor;
+                        return next;
+                      });
+                    }
+                  }}
+                  type="password"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  placeholder="Ej. 0929"
+                  error={errors.editadoPor}
+                />
+                {autorEdicionResuelto && !errors.editadoPor ? (
+                  <p className="text-sm text-muted-foreground">
+                    {autorEdicionResuelto}
+                  </p>
+                ) : null}
+              </div>
               <div className="flex flex-col gap-2">
                 <Label htmlFor={motivoEdicionId}>Por qué lo editas</Label>
                 <Textarea
