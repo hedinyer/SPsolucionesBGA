@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import {
   Bike,
+  CircleCheck,
   CircleDollarSign,
   Pencil,
   Plus,
@@ -11,7 +13,10 @@ import {
   Tag,
   User,
 } from "lucide-react";
-import type { VentaMotoRow } from "@/lib/actions/venta-moto-actions";
+import {
+  marcarEntregadaVentaMoto,
+  type VentaMotoRow,
+} from "@/lib/actions/venta-moto-actions";
 import { CONTADO_TIPO_DOC_LABELS } from "@/lib/venta-contado/contado-cliente";
 import { AbonoVentaDialog } from "@/components/venta-contado/abono-venta-dialog";
 import { EditarVentaContadoDialog } from "@/components/venta-contado/editar-venta-contado-dialog";
@@ -186,12 +191,16 @@ function RowActions({
   onPlaca,
   onAbono,
   onPrint,
+  onEntregar,
+  entregando,
 }: {
   venta: VentaMotoRow;
   onEdit: () => void;
   onPlaca: () => void;
   onAbono: () => void;
   onPrint: () => void;
+  onEntregar: () => void;
+  entregando: boolean;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -231,6 +240,18 @@ function RowActions({
       ) : null}
       <Button
         type="button"
+        variant="outline"
+        size="sm"
+        className="h-9 min-h-9 gap-1.5 px-3"
+        onClick={onEntregar}
+        disabled={entregando}
+        aria-label={`Marcar entregada la moto de ${venta.clienteNombre}`}
+      >
+        <CircleCheck className="h-3.5 w-3.5" aria-hidden="true" />
+        {entregando ? "Entregando…" : "Entregar"}
+      </Button>
+      <Button
+        type="button"
         variant="ghost"
         size="icon"
         className="h-9 w-9 min-h-9 min-w-9"
@@ -261,6 +282,8 @@ export function VentaContadoManager({
   const [abonoVenta, setAbonoVenta] = useState<VentaMotoRow | null>(null);
   const [placaVenta, setPlacaVenta] = useState<VentaMotoRow | null>(null);
   const [editVenta, setEditVenta] = useState<VentaMotoRow | null>(null);
+  const [entregandoId, setEntregandoId] = useState<string | null>(null);
+  const [entregando, startEntregar] = useTransition();
 
   useEffect(() => {
     if (!openNuevo) return;
@@ -293,6 +316,28 @@ export function VentaContadoManager({
     } catch {
       // el recibo abre en pestaña; errores raros no bloquean la UI
     }
+  }
+
+  function handleEntregar(venta: VentaMotoRow) {
+    const ok = window.confirm(
+      `¿Marcar como entregada la moto de ${venta.clienteNombre}? Saldrá de esta lista.`,
+    );
+    if (!ok) return;
+
+    setEntregandoId(venta.id);
+    startEntregar(async () => {
+      try {
+        await marcarEntregadaVentaMoto(venta.id);
+        toast.success("Moto marcada como entregada.");
+        router.refresh();
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : "No se pudo marcar como entregada.",
+        );
+      } finally {
+        setEntregandoId(null);
+      }
+    });
   }
 
   return (
@@ -378,6 +423,8 @@ export function VentaContadoManager({
                     onPlaca={() => setPlacaVenta(v)}
                     onAbono={() => setAbonoVenta(v)}
                     onPrint={() => handlePrint(v)}
+                    onEntregar={() => handleEntregar(v)}
+                    entregando={entregando && entregandoId === v.id}
                   />
                 </div>
               </div>

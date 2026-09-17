@@ -286,6 +286,7 @@ if (typeof process !== "undefined" && process.argv[1]?.includes("venta-moto-rece
     montoPagado: 2_000_000,
     notas: null,
     createdAt: new Date().toISOString(),
+    entregadaAt: null,
   };
   buildVentaMotoReceiptHtml(sample, "http://localhost:3000").then((html) => {
     if (!html.includes("Juan Pérez") || !html.includes("Saldo")) {

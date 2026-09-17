@@ -11,6 +11,8 @@ import {
   CONTADO_TIPO_DOC,
   CONTADO_TIPO_DOC_LABELS,
   contadoClienteFotoFolder,
+  contadoDocumentoLabel,
+  contadoNombreLabel,
   type ContadoTipoDocumento,
 } from "@/lib/venta-contado/contado-cliente";
 import { STORAGE_BUCKETS } from "@/lib/supabase/storage-buckets";
@@ -67,6 +69,9 @@ export function EditarVentaContadoDialog({
 
   const valorNum = Number(valorVenta.replace(/\D/g, ""));
   const pagadoNum = Number(montoPagado.replace(/\D/g, ""));
+  const esEmpresa = clienteTipoDocumento === "nit";
+  const nombreLabel = contadoNombreLabel(clienteTipoDocumento);
+  const documentoLabel = contadoDocumentoLabel(clienteTipoDocumento);
 
   useEffect(() => {
     if (!open || !venta) return;
@@ -91,11 +96,17 @@ export function EditarVentaContadoDialog({
     const pagado = Number.isFinite(pagadoNum) && pagadoNum >= 0 ? pagadoNum : -1;
 
     if (!clienteNombre.trim()) {
-      toast.error("Indica el nombre del cliente.");
+      toast.error(
+        esEmpresa
+          ? "Indica la razón social."
+          : "Indica el nombre del cliente.",
+      );
       return;
     }
     if (clienteCedula.trim().length < 5) {
-      toast.error("Indica un documento válido.");
+      toast.error(
+        esEmpresa ? "Indica un NIT válido." : "Indica un documento válido.",
+      );
       return;
     }
     if (clienteCelular.trim().length < 10) {
@@ -169,16 +180,17 @@ export function EditarVentaContadoDialog({
         {venta ? (
           <div className="flex flex-col gap-4">
             <div className="flex flex-col gap-2">
-              <Label htmlFor="edit-cliente-nombre">Nombre del cliente</Label>
+              <Label htmlFor="edit-cliente-nombre">{nombreLabel}</Label>
               <Input
                 id="edit-cliente-nombre"
+                className="min-h-11"
                 value={clienteNombre}
                 onChange={(e) => setClienteNombre(e.target.value)}
               />
             </div>
 
             <ImageFileField
-              label="Foto del cliente"
+              label={esEmpresa ? "Foto (opcional)" : "Foto del cliente"}
               file={clienteFoto}
               onFileChange={setClienteFoto}
               existingUrl={venta.clienteFotoUrl ?? venta.selfieUrl}
@@ -211,10 +223,11 @@ export function EditarVentaContadoDialog({
 
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-2">
-                <Label htmlFor="edit-cliente-cedula">Número de documento</Label>
+                <Label htmlFor="edit-cliente-cedula">{documentoLabel}</Label>
                 <Input
                   id="edit-cliente-cedula"
-                  inputMode="numeric"
+                  className="min-h-11"
+                  inputMode={esEmpresa ? "text" : "numeric"}
                   value={clienteCedula}
                   onChange={(e) => setClienteCedula(e.target.value)}
                 />
@@ -223,6 +236,7 @@ export function EditarVentaContadoDialog({
                 <Label htmlFor="edit-cliente-celular">Celular</Label>
                 <Input
                   id="edit-cliente-celular"
+                  className="min-h-11"
                   inputMode="tel"
                   value={clienteCelular}
                   onChange={(e) => setClienteCelular(e.target.value)}
@@ -232,10 +246,11 @@ export function EditarVentaContadoDialog({
 
             <div className="flex flex-col gap-2">
               <Label htmlFor="edit-cliente-direccion">
-                Dirección de residencia
+                {esEmpresa ? "Dirección" : "Dirección de residencia"}
               </Label>
               <Input
                 id="edit-cliente-direccion"
+                className="min-h-11"
                 value={clienteDireccion}
                 onChange={(e) => setClienteDireccion(e.target.value)}
               />

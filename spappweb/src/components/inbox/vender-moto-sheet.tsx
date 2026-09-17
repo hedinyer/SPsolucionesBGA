@@ -8,6 +8,8 @@ import {
   CONTADO_TIPO_DOC,
   CONTADO_TIPO_DOC_LABELS,
   contadoClienteFotoFolder,
+  contadoDocumentoLabel,
+  contadoNombreLabel,
   type ContadoTipoDocumento,
 } from "@/lib/venta-contado/contado-cliente";
 import { printVentaMotoReceipt } from "@/lib/printing/venta-moto-receipt";
@@ -54,6 +56,9 @@ export function VenderMotoSheet({
   const [montoPagado, setMontoPagado] = useState("");
   const activeBikes = bikes.filter((b) => b.activo && b.stock > 0);
   const selected = activeBikes.find((b) => String(b.id) === bikeId);
+  const esEmpresa = tipoDocumento === "nit";
+  const nombreLabel = contadoNombreLabel(tipoDocumento);
+  const documentoLabel = contadoDocumentoLabel(tipoDocumento);
 
   useEffect(() => {
     if (!open || !initialBikeId) return;
@@ -101,17 +106,20 @@ export function VenderMotoSheet({
         onOpenChange(next);
       }}
     >
-      <SheetContent side="right" className="overflow-y-auto sm:max-w-md">
-        <SheetHeader>
+      <SheetContent
+        side="right"
+        className="flex flex-col gap-0 overflow-hidden p-0 data-[side=right]:sm:max-w-lg sm:max-w-lg"
+      >
+        <SheetHeader className="shrink-0 border-b border-border px-4 py-4 sm:px-6">
           <SheetTitle className="flex items-center gap-2">
-            <Bike className="h-5 w-5" />
+            <Bike className="h-5 w-5" aria-hidden="true" />
             Vender moto
           </SheetTitle>
         </SheetHeader>
 
         <form
           id="vender-moto-form"
-          className="mt-6 flex flex-col gap-4"
+          className="flex min-h-0 flex-1 flex-col"
           onSubmit={(e) => {
             e.preventDefault();
             if (!bikeId || !selected) {
@@ -140,7 +148,8 @@ export function VenderMotoSheet({
                   clienteCelular: String(fd.get("clienteCelular")),
                   clienteTipoDocumento: tipoDocumento,
                   clienteDireccion: String(fd.get("clienteDireccion") || ""),
-                  clienteCorreo: String(fd.get("clienteCorreo") || "") || undefined,
+                  clienteCorreo:
+                    String(fd.get("clienteCorreo") || "") || undefined,
                   clienteFotoUrl,
                   chasis: String(fd.get("chasis") || "") || undefined,
                   cuotaInicial: selected?.cuota_inicial,
@@ -150,9 +159,7 @@ export function VenderMotoSheet({
                 });
                 printVentaMotoReceipt(venta).catch(() => {});
                 onSaved?.();
-                toast.success(
-                  "Venta guardada. Si no ves impresión, permite ventanas emergentes o usa Ctrl+P en la pestaña del recibo.",
-                );
+                toast.success("Venta guardada.");
                 resetForm();
                 onOpenChange(false);
               } catch (err) {
@@ -163,165 +170,215 @@ export function VenderMotoSheet({
             });
           }}
         >
-          <div className="flex flex-col gap-2">
-            <Label>Moto del catálogo</Label>
-            <TouchSelect
-              value={bikeId}
-              onChange={onBikeChange}
-              placeholder="Selecciona modelo y color"
-              options={activeBikes.map((b) => ({
-                value: String(b.id),
-                label: `${b.modelo} — ${b.color} (stock ${b.stock})`,
-              }))}
-            />
-            {activeBikes.length === 0 ? (
-              <p className="text-sm text-amber-700">
-                No hay motos con stock en catálogo.
-              </p>
-            ) : null}
-            {selected && (
-              <p className="text-sm text-muted-foreground">
-                {selected.precio_venta != null && selected.precio_venta > 0
-                  ? `Precio de la moto: ${formatCop(selected.precio_venta)}`
-                  : "Sin precio de venta en catálogo — ingrésalo abajo o configúralo en Catálogo."}
-              </p>
-            )}
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-4 py-5 sm:px-6">
+            <div className="flex flex-col gap-6">
+              <section className="flex flex-col gap-3" aria-labelledby="vender-moto-seccion">
+                <h3
+                  id="vender-moto-seccion"
+                  className="text-sm font-semibold text-foreground"
+                >
+                  Moto
+                </h3>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="vender-moto-catalogo">Moto del catálogo</Label>
+                  <TouchSelect
+                    id="vender-moto-catalogo"
+                    value={bikeId}
+                    onChange={onBikeChange}
+                    placeholder="Selecciona modelo y color"
+                    options={activeBikes.map((b) => ({
+                      value: String(b.id),
+                      label: `${b.modelo} — ${b.color} (stock ${b.stock})`,
+                    }))}
+                  />
+                  {activeBikes.length === 0 ? (
+                    <p className="text-sm text-amber-700" role="status">
+                      No hay motos con stock en catálogo.
+                    </p>
+                  ) : null}
+                  {selected ? (
+                    <p className="text-sm text-muted-foreground">
+                      {selected.precio_venta != null && selected.precio_venta > 0
+                        ? `Precio de la moto: ${formatCop(selected.precio_venta)}`
+                        : "Sin precio de venta en catálogo — ingrésalo abajo o configúralo en Catálogo."}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="chasis">Chasis</Label>
+                  <Input id="chasis" name="chasis" className="min-h-11" />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="notas">Notas</Label>
+                  <Input id="notas" name="notas" className="min-h-11" />
+                </div>
+              </section>
+
+              <section
+                className="flex flex-col gap-3 rounded-lg border border-border bg-muted/50 p-4"
+                aria-labelledby="vender-pago-seccion"
+              >
+                <h3
+                  id="vender-pago-seccion"
+                  className="text-sm font-semibold text-foreground"
+                >
+                  Pago
+                </h3>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="valorVenta">Precio total de la moto</Label>
+                    <Input
+                      id="valorVenta"
+                      inputMode="numeric"
+                      placeholder="0"
+                      className="min-h-11"
+                      value={valorVenta}
+                      onChange={(e) => setValorVenta(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="montoPagado">Pagado hoy</Label>
+                    <Input
+                      id="montoPagado"
+                      inputMode="numeric"
+                      placeholder="0"
+                      className="min-h-11"
+                      value={montoPagado}
+                      onChange={(e) => setMontoPagado(e.target.value)}
+                    />
+                  </div>
+                </div>
+                {saldo != null && valorNum > 0 ? (
+                  <p className="text-sm text-muted-foreground" role="status">
+                    {pagadoNum >= valorNum
+                      ? "Pago de contado."
+                      : pagadoNum > 0
+                        ? `Abono parcial. Saldo: ${formatCop(saldo)}`
+                        : `Sin pago hoy. Saldo: ${formatCop(valorNum)}`}
+                  </p>
+                ) : null}
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="min-h-11 w-full"
+                  onClick={() => {
+                    if (valorNum > 0) setMontoPagado(String(valorNum));
+                  }}
+                  disabled={valorNum <= 0}
+                >
+                  Marcar pago de contado
+                </Button>
+              </section>
+
+              <section className="flex flex-col gap-3" aria-labelledby="vender-cliente-seccion">
+                <h3
+                  id="vender-cliente-seccion"
+                  className="text-sm font-semibold text-foreground"
+                >
+                  Cliente
+                </h3>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="clienteNombre">{nombreLabel}</Label>
+                  <Input
+                    id="clienteNombre"
+                    name="clienteNombre"
+                    required
+                    className="min-h-11"
+                    autoComplete="organization"
+                  />
+                </div>
+                <ImageFileField
+                  label={esEmpresa ? "Foto (opcional)" : "Foto del cliente"}
+                  file={clienteFoto}
+                  onFileChange={setClienteFoto}
+                  enableCamera
+                  disabled={pending}
+                  fileInputId="contado-cliente-foto"
+                  cameraInputId="contado-cliente-foto-cam"
+                />
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="clienteTipoDocumento">Tipo de documento</Label>
+                  <TouchSelect
+                    id="clienteTipoDocumento"
+                    aria-label="Tipo de documento"
+                    value={tipoDocumento}
+                    onChange={(v) =>
+                      setTipoDocumento(
+                        CONTADO_TIPO_DOC.includes(v as ContadoTipoDocumento)
+                          ? (v as ContadoTipoDocumento)
+                          : "cc",
+                      )
+                    }
+                    options={CONTADO_TIPO_DOC.map((t) => ({
+                      value: t,
+                      label: CONTADO_TIPO_DOC_LABELS[t],
+                    }))}
+                  />
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="clienteCedula">{documentoLabel}</Label>
+                    <Input
+                      id="clienteCedula"
+                      name="clienteCedula"
+                      inputMode={esEmpresa ? "text" : "numeric"}
+                      autoComplete="off"
+                      required
+                      className="min-h-11"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="clienteCelular">Celular</Label>
+                    <Input
+                      id="clienteCelular"
+                      name="clienteCelular"
+                      inputMode="tel"
+                      autoComplete="tel"
+                      required
+                      className="min-h-11"
+                    />
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="clienteDireccion">
+                    {esEmpresa ? "Dirección" : "Dirección de residencia"}
+                  </Label>
+                  <Input
+                    id="clienteDireccion"
+                    name="clienteDireccion"
+                    required
+                    className="min-h-11"
+                    autoComplete="street-address"
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="clienteCorreo">Correo electrónico</Label>
+                  <Input
+                    id="clienteCorreo"
+                    name="clienteCorreo"
+                    type="email"
+                    inputMode="email"
+                    autoComplete="email"
+                    placeholder="Opcional"
+                    className="min-h-11"
+                  />
+                </div>
+              </section>
+            </div>
           </div>
 
-          <div className="flex flex-col gap-3 rounded-lg border border-border bg-muted/50 p-3">
-            <p className="text-sm font-medium">Pago</p>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="valorVenta">Precio total de la moto</Label>
-                <Input
-                  id="valorVenta"
-                  inputMode="numeric"
-                  placeholder="0"
-                  value={valorVenta}
-                  onChange={(e) => setValorVenta(e.target.value)}
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="montoPagado">Pagado hoy</Label>
-                <Input
-                  id="montoPagado"
-                  inputMode="numeric"
-                  placeholder="0"
-                  value={montoPagado}
-                  onChange={(e) => setMontoPagado(e.target.value)}
-                />
-              </div>
-            </div>
-            {saldo != null && valorNum > 0 && (
-              <p className="text-sm text-muted-foreground">
-                {pagadoNum >= valorNum
-                  ? "Pago de contado."
-                  : pagadoNum > 0
-                    ? `Abono parcial. Saldo: ${formatCop(saldo)}`
-                    : `Sin pago hoy. Saldo: ${formatCop(valorNum)}`}
-              </p>
-            )}
+          <SheetFooter className="shrink-0 border-t border-border bg-background px-4 py-4 sm:px-6">
             <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="w-full"
-              onClick={() => {
-                if (valorNum > 0) setMontoPagado(String(valorNum));
-              }}
-              disabled={valorNum <= 0}
+              type="submit"
+              form="vender-moto-form"
+              disabled={pending || !bikeId || activeBikes.length === 0}
+              className="min-h-11 w-full gap-2"
             >
-              Marcar pago de contado
+              <Printer className="h-4 w-4" aria-hidden="true" />
+              {pending ? "Guardando…" : "Guardar e imprimir"}
             </Button>
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="clienteNombre">Nombre del cliente</Label>
-            <Input id="clienteNombre" name="clienteNombre" required />
-          </div>
-          <ImageFileField
-            label="Foto del cliente"
-            file={clienteFoto}
-            onFileChange={setClienteFoto}
-            enableCamera
-            disabled={pending}
-            fileInputId="contado-cliente-foto"
-            cameraInputId="contado-cliente-foto-cam"
-          />
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="clienteTipoDocumento">Tipo de documento</Label>
-            <TouchSelect
-              id="clienteTipoDocumento"
-              aria-label="Tipo de documento"
-              value={tipoDocumento}
-              onChange={(v) =>
-                setTipoDocumento(
-                  CONTADO_TIPO_DOC.includes(v as ContadoTipoDocumento)
-                    ? (v as ContadoTipoDocumento)
-                    : "cc",
-                )
-              }
-              options={CONTADO_TIPO_DOC.map((t) => ({
-                value: t,
-                label: CONTADO_TIPO_DOC_LABELS[t],
-              }))}
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="clienteCedula">Número de documento</Label>
-              <Input
-                id="clienteCedula"
-                name="clienteCedula"
-                inputMode="numeric"
-                required
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="clienteCelular">Celular</Label>
-              <Input
-                id="clienteCelular"
-                name="clienteCelular"
-                inputMode="tel"
-                required
-              />
-            </div>
-          </div>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="clienteDireccion">Dirección de residencia</Label>
-            <Input id="clienteDireccion" name="clienteDireccion" required />
-          </div>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="clienteCorreo">Correo electrónico</Label>
-            <Input
-              id="clienteCorreo"
-              name="clienteCorreo"
-              type="email"
-              inputMode="email"
-              placeholder="Opcional"
-            />
-          </div>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="chasis">Chasis</Label>
-            <Input id="chasis" name="chasis" />
-          </div>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="notas">Notas</Label>
-            <Input id="notas" name="notas" />
-          </div>
+          </SheetFooter>
         </form>
-
-        <SheetFooter className="mt-6">
-          <Button
-            type="submit"
-            form="vender-moto-form"
-            disabled={pending || !bikeId || activeBikes.length === 0}
-            className="w-full gap-2"
-          >
-            <Printer className="h-4 w-4" />
-            {pending ? "Guardando…" : "Guardar e imprimir"}
-          </Button>
-        </SheetFooter>
       </SheetContent>
     </Sheet>
   );

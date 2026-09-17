@@ -79,6 +79,7 @@ export interface VentaMotoRow {
   montoPagado: number;
   notas: string | null;
   createdAt: string;
+  entregadaAt: string | null;
   selfieUrl?: string | null;
   motoImagenUrl?: string | null;
 }
@@ -123,6 +124,7 @@ function toRow(raw: Record<string, unknown>): VentaMotoRow {
     montoPagado: Number(raw.monto_pagado ?? 0),
     notas: raw.notas ? String(raw.notas) : null,
     createdAt: String(raw.created_at),
+    entregadaAt: raw.entregada_at ? String(raw.entregada_at) : null,
     selfieUrl: raw.cliente_foto_url
       ? String(raw.cliente_foto_url)
       : raw.selfieUrl != null
@@ -133,7 +135,7 @@ function toRow(raw: Record<string, unknown>): VentaMotoRow {
 }
 
 const VENTA_MOTO_SELECT =
-  "id, bike_id, modelo, color, placa, chasis, cliente_nombre, cliente_cedula, cliente_celular, cliente_tipo_documento, cliente_direccion, cliente_correo, cliente_foto_url, cuota_inicial, valor_venta, monto_pagado, notas, created_at, bike_table(imagen_url)";
+  "id, bike_id, modelo, color, placa, chasis, cliente_nombre, cliente_cedula, cliente_celular, cliente_tipo_documento, cliente_direccion, cliente_correo, cliente_foto_url, cuota_inicial, valor_venta, monto_pagado, notas, created_at, entregada_at, bike_table(imagen_url)";
 
 export async function saveVentaMoto(input: VentaMotoInput): Promise<VentaMotoRow> {
   await requireAdminSession();
@@ -205,6 +207,7 @@ export async function getVentasContado(): Promise<VentaMotoRow[]> {
   const { data, error } = await supabase
     .from("ventas_moto")
     .select(VENTA_MOTO_SELECT)
+    .is("entregada_at", null)
     .order("created_at", { ascending: false })
     .limit(200);
 
@@ -411,5 +414,48 @@ export async function setPlacaVentaMoto(
 
   revalidatePath("/inbox");
   revalidatePath("/venta-contado");
+  return toRow(data as Record<string, unknown>);
+}
+
+const marcarEntregadaSchema = z.object({
+  id: z.string().uuid(),
+});
+
+export async function marcarEntregadaVentaMoto(
+  id: string,
+): Promise<VentaMotoRow> {
+  await requireAdminSession();
+  const parsed = marcarEntregadaSchema.parse({ id });
+  const supabase = createAdminClient();
+
+  const { data: current, error: fetchError } = await supabase
+    .from("ventas_moto")
+    .select(VENTA_MOTO_SELECT)
+    .eq("id", parsed.id)
+    .single();
+
+  if (fetchError || !current) {
+    throw new Error(fetchError?.message ?? "Venta no encontrada.");
+  }
+
+  const row = toRow(current as Record<string, unknown>);
+  if (row.entregadaAt) {
+    throw new Error("Esta moto ya está marcada como entregada.");
+  }
+
+  const { data, error } = await supabase
+    .from("ventas_moto")
+    .update({ entregada_at: new Date().toISOString() })
+    .eq("id", parsed.id)
+    .is("entregada_at", null)
+    .select(VENTA_MOTO_SELECT)
+    .single();
+
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("No se pudo marcar como entregada.");
+
+  revalidatePath("/inbox");
+  revalidatePath("/venta-contado");
+  revalidatePath("/historial-ventas");
   return toRow(data as Record<string, unknown>);
 }
