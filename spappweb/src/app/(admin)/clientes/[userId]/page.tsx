@@ -31,6 +31,11 @@ export default async function ClientPage({
 
   if (!pipeline) notFound();
 
+  const esRenovacion =
+    pipeline.compra?.admin_data?.es_renovacion === true ||
+    (pipeline.contract?.contrato_data as { es_renovacion?: unknown } | undefined)
+      ?.es_renovacion === true;
+
   return (
     <div className="flex flex-col gap-6">
       <Button variant="ghost" asChild className="w-fit gap-2 px-0">
@@ -41,7 +46,16 @@ export default async function ClientPage({
       </Button>
 
       <PageHeader
-        title={pipeline.displayName}
+        title={
+          <span className="inline-flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <span>{pipeline.displayName}</span>
+            {esRenovacion ? (
+              <span className="text-base font-bold uppercase tracking-wide text-red-600 sm:text-lg">
+                RENOVACION
+              </span>
+            ) : null}
+          </span>
+        }
         description={`Usuario @${pipeline.user.user} · ID ${pipeline.user.id}`}
         action={<ClientHeaderActions pipeline={pipeline} />}
       />

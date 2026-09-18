@@ -8,6 +8,8 @@ import {
   buildContratoComercial,
   colombiaDateParts,
   condicionFromAdminData,
+  diasContratoFromAdminData,
+  esRenovacionFromAdminData,
   type ContratoData,
 } from "@/lib/contracts/contrato-renting-clausulas";
 import { documentoAbreviatura } from "@/lib/contracts/hoja-vida-schema";
@@ -96,6 +98,8 @@ export async function signContract(input: z.infer<typeof signSchema>) {
       cuota_inicial_monto: compra.cuota_inicial_monto as number,
       monto_cuota_periodo: compra.monto_cuota_periodo as number,
       condicion: condicionFromAdminData(compra.admin_data),
+      diasContrato: diasContratoFromAdminData(compra.admin_data),
+      esRenovacion: esRenovacionFromAdminData(compra.admin_data),
     }),
     celularContratante: String(hojaRaw.celular ?? ""),
   };
@@ -173,6 +177,8 @@ export async function signContract(input: z.infer<typeof signSchema>) {
         total_contrato: contratoData.totalContrato,
         celular_contratante: String(hojaRaw.celular ?? ""),
         moto_estado: contratoData.estado,
+        dias_contrato: contratoData.diasContrato,
+        es_renovacion: contratoData.esRenovacion,
       },
       signature_path: signaturePath,
       hoja_vida_pdf_path: hojaVidaPath,

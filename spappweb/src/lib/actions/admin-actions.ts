@@ -13,6 +13,8 @@ import {
 import { MONTO_VISITA_DEFAULT } from "@/lib/payments/visita-monto";
 import {
   condicionFromAdminData,
+  diasContratoFromAdminData,
+  esRenovacionFromAdminData,
   type CompraContratoInput,
 } from "@/lib/contracts/contrato-renting-clausulas";
 import {
@@ -276,6 +278,8 @@ export async function updateContractHojaVida(
             cuota_inicial_monto: compra.cuota_inicial_monto as number,
             monto_cuota_periodo: compra.monto_cuota_periodo as number,
             condicion: condicionFromAdminData(compra.admin_data),
+            diasContrato: diasContratoFromAdminData(compra.admin_data),
+            esRenovacion: esRenovacionFromAdminData(compra.admin_data),
           }
         : null;
 

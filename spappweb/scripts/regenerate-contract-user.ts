@@ -27,6 +27,8 @@ async function main() {
   );
   const {
     condicionFromAdminData,
+    diasContratoFromAdminData,
+    esRenovacionFromAdminData,
     buildContratoDataFromStored,
   } = await import("../src/lib/contracts/contrato-renting-clausulas");
 
@@ -82,6 +84,8 @@ async function main() {
             cuota_inicial_monto: compra.cuota_inicial_monto as number,
             monto_cuota_periodo: compra.monto_cuota_periodo as number,
             condicion: condicionFromAdminData(compra.admin_data),
+            diasContrato: diasContratoFromAdminData(compra.admin_data),
+            esRenovacion: esRenovacionFromAdminData(compra.admin_data),
           }
         : null;
 

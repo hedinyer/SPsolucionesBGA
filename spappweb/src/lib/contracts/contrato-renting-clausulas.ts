@@ -55,6 +55,12 @@ export interface ContratoData {
   totalContrato: string;
   formaPagoSaldo: string;
   mediosPago: string;
+  /** Cuotas/periodos del contrato (p. ej. 324 en renovación diaria). */
+  diasContrato: number;
+  /** Contrato de renovación (etiqueta en PDF y ficha). */
+  esRenovacion: boolean;
+  /** Texto de la cláusula de duración (ej. "un 12 meses" o "324 días"). */
+  duracionTexto: string;
 }
 
 export type CondicionMotoContrato = "nueva" | "segunda_mano" | "recuperada";
@@ -69,6 +75,9 @@ export interface CompraContratoInput {
   cuota_inicial_monto: number;
   monto_cuota_periodo: number;
   condicion?: CondicionMotoContrato | null;
+  /** Override del plazo en días/periodos (default anual según frecuencia). */
+  diasContrato?: number | null;
+  esRenovacion?: boolean;
 }
 
 export function estadoContratoFromCondicion(
@@ -85,6 +94,17 @@ export function condicionFromAdminData(
   const c = (adminData as Record<string, unknown>).condicion;
   if (c === "nueva" || c === "segunda_mano" || c === "recuperada") return c;
   return undefined;
+}
+
+export function diasContratoFromAdminData(adminData: unknown): number | undefined {
+  if (!adminData || typeof adminData !== "object") return undefined;
+  const d = Number((adminData as Record<string, unknown>).dias_contrato);
+  return Number.isFinite(d) && d > 0 ? Math.floor(d) : undefined;
+}
+
+export function esRenovacionFromAdminData(adminData: unknown): boolean {
+  if (!adminData || typeof adminData !== "object") return false;
+  return (adminData as Record<string, unknown>).es_renovacion === true;
 }
 
 export interface Clausula {
@@ -104,18 +124,56 @@ const PERIODOS_ANUALES: Record<FrecuenciaPago, number> = {
   mensual: 12,
 };
 
-const PERIODO_LABEL: Record<FrecuenciaPago, string> = {
-  diario: "365 CUOTAS DIARIAS",
-  semanal: "52 CUOTAS SEMANALES",
-  quincenal: "24 CUOTAS QUINCENALES",
-  mensual: "12 CUOTAS MENSUALES",
+const PERIODO_UNIDAD: Record<FrecuenciaPago, string> = {
+  diario: "CUOTAS DIARIAS",
+  semanal: "CUOTAS SEMANALES",
+  quincenal: "CUOTAS QUINCENALES",
+  mensual: "CUOTAS MENSUALES",
 };
+
+/** Periodos del contrato; si hay override de días, lo usa (diario = N días). */
+export function periodosContrato(
+  frecuencia: FrecuenciaPago,
+  diasContrato?: number | null,
+): number {
+  if (diasContrato != null && diasContrato > 0) {
+    if (frecuencia === "diario") return diasContrato;
+    if (frecuencia === "semanal") return Math.max(1, Math.round(diasContrato / 7));
+    if (frecuencia === "quincenal") return Math.max(1, Math.round(diasContrato / 15));
+    if (frecuencia === "mensual") return Math.max(1, Math.round(diasContrato / 30));
+  }
+  return PERIODOS_ANUALES[frecuencia];
+}
+
+export function labelPeriodosContrato(
+  frecuencia: FrecuenciaPago,
+  periodos: number,
+): string {
+  return `${periodos} ${PERIODO_UNIDAD[frecuencia]}`;
+}
+
+export function duracionContratoTexto(
+  frecuencia: FrecuenciaPago,
+  diasContrato?: number | null,
+): string {
+  const periodos = periodosContrato(frecuencia, diasContrato);
+  if (diasContrato != null && diasContrato > 0 && frecuencia === "diario") {
+    return `${diasContrato} días`;
+  }
+  if (periodos === PERIODOS_ANUALES[frecuencia] && frecuencia === "diario") {
+    return "un 12 meses";
+  }
+  if (frecuencia === "mensual" && periodos === 12) return "un 12 meses";
+  return `${periodos} ${PERIODO_UNIDAD[frecuencia].toLowerCase()}`;
+}
 
 export function buildFormaPagoSaldoText(
   frecuencia: FrecuenciaPago,
   valorCuota: string,
+  diasContrato?: number | null,
 ): string {
-  return `El saldo restante, será cancelado directamente por el CONTRANTANTE a favor de la PROPIETARIA en ${PERIODO_LABEL[frecuencia]} DE ${valorCuota} MCTE (${valorCuota}).`;
+  const periodos = periodosContrato(frecuencia, diasContrato);
+  return `El saldo restante, será cancelado directamente por el CONTRANTANTE a favor de la PROPIETARIA en ${labelPeriodosContrato(frecuencia, periodos)} DE ${valorCuota} MCTE (${valorCuota}).`;
 }
 
 export function buildMediosPagoText(): string {
@@ -127,8 +185,12 @@ export function totalContratoMonto(
   cuotaInicial: number,
   montoCuotaPeriodo: number,
   frecuencia: FrecuenciaPago,
+  diasContrato?: number | null,
 ): number {
-  return cuotaInicial + montoCuotaPeriodo * PERIODOS_ANUALES[frecuencia];
+  return (
+    cuotaInicial +
+    montoCuotaPeriodo * periodosContrato(frecuencia, diasContrato)
+  );
 }
 
 export function buildContratoComercial(compra: CompraContratoInput): Omit<
@@ -146,11 +208,17 @@ export function buildContratoComercial(compra: CompraContratoInput): Omit<
 > {
   const valorCuota = formatCop(compra.monto_cuota_periodo);
   const cuotaInicial = formatCop(compra.cuota_inicial_monto);
+  const diasContrato =
+    compra.diasContrato != null && compra.diasContrato > 0
+      ? compra.diasContrato
+      : periodosContrato(compra.frecuencia_pago);
+  const esRenovacion = compra.esRenovacion === true;
   const total = formatCop(
     totalContratoMonto(
       compra.cuota_inicial_monto,
       compra.monto_cuota_periodo,
       compra.frecuencia_pago,
+      compra.diasContrato,
     ),
   );
   return {
@@ -167,8 +235,18 @@ export function buildContratoComercial(compra: CompraContratoInput): Omit<
     valorCuota,
     frecuenciaPago: FRECUENCIA_LABELS[compra.frecuencia_pago],
     totalContrato: total,
-    formaPagoSaldo: buildFormaPagoSaldoText(compra.frecuencia_pago, valorCuota),
+    formaPagoSaldo: buildFormaPagoSaldoText(
+      compra.frecuencia_pago,
+      valorCuota,
+      compra.diasContrato,
+    ),
     mediosPago: buildMediosPagoText(),
+    diasContrato,
+    esRenovacion,
+    duracionTexto: duracionContratoTexto(
+      compra.frecuencia_pago,
+      compra.diasContrato,
+    ),
   };
 }
 
@@ -186,15 +264,24 @@ export function buildContratoDataFromStored(
   compra?: CompraContratoInput | null,
 ): ContratoData {
   const storedEstado = String(stored.moto_estado ?? "").toLowerCase();
+  const frecuencia = asFrecuencia(
+    compra?.frecuencia_pago ?? stored.frecuencia_pago,
+  );
+  const diasFromStored = Number(stored.dias_contrato);
+  const diasContrato =
+    compra?.diasContrato ??
+    (Number.isFinite(diasFromStored) && diasFromStored > 0
+      ? Math.floor(diasFromStored)
+      : undefined);
+  const esRenovacion =
+    compra?.esRenovacion === true || stored.es_renovacion === true;
   const comercial = buildContratoComercial({
     modelo: String(compra?.modelo ?? stored.moto_modelo ?? ""),
     color: String(compra?.color ?? stored.moto_color ?? ""),
     placa: String(compra?.placa ?? stored.moto_placa ?? ""),
     chasis: String(compra?.chasis ?? stored.moto_chasis ?? ""),
     referencia: compra?.referencia ?? null,
-    frecuencia_pago: asFrecuencia(
-      compra?.frecuencia_pago ?? stored.frecuencia_pago,
-    ),
+    frecuencia_pago: frecuencia,
     cuota_inicial_monto: Number(
       compra?.cuota_inicial_monto ?? stored.cuota_inicial ?? 0,
     ),
@@ -204,6 +291,8 @@ export function buildContratoDataFromStored(
     condicion:
       compra?.condicion ??
       (storedEstado === "usada" ? "segunda_mano" : "nueva"),
+    diasContrato,
+    esRenovacion,
   });
 
   const tipoRaw = String(stored.tipo_documento_contratante ?? "").toLowerCase();
@@ -231,7 +320,7 @@ export function buildContratoDataFromStored(
   };
 }
 
-export const introTemplate = `El día [DIA] del mes de [MES] de [ANIO], en la ciudad de Bucaramanga, Santander, entre los suscrito a saber, MARISOL PINILLA RUEDA, mayor de edad, vecina y domiciliada en la ciudad de Bucaramanga, identificada como aparece al pie de su firma, quien en adelante se denominará LA PROPIETARIA, y por otro [NOMBRE_CONTRATANTE], mayor de edad, vecino y domiciliado en Bucaramanga, quien se identifica como aparece al pie de su firma y en adelante se denominará quien en adelante será denominado "EL CONTRATANTE", acuerdan celebrar un "CONTRATO DE RENTING" regido por las siguientes cláusulas:`;
+export const introTemplate = `El día [DIA] del mes de [MES] de [ANIO], en la ciudad de Bucaramanga, Santander, entre los suscrito a saber, MARISOL PINILLA RUEDA, mayor de edad, vecina y domiciliada en la ciudad de Bucaramanga, identificada como aparece al pie de su firma, quien en adelante se denominará LA PROPIETARIA, y por otro [NOMBRE_CONTRATANTE], mayor de edad, vecino y domiciliado en Bucaramanga, quien se identifica como aparece al pie de su firma y en adelante se denominará quien en adelante será denominado "EL CONTRATANTE", acuerdan celebrar un "[TIPO_CONTRATO]" regido por las siguientes cláusulas:`;
 
 export const blocks: ClausulaBlock[] = [
   {
@@ -250,7 +339,7 @@ export const blocks: ClausulaBlock[] = [
       {
         titulo: "TERCERA – DURACIÓN",
         texto:
-          "El término del presente contrato es de un 12 meses contado a partir del día siguiente de la suscripción del presente contrato.",
+          "El término del presente contrato es de [DURACION] contado a partir del día siguiente de la suscripción del presente contrato.",
       },
       {
         titulo: "CUARTA",
@@ -432,7 +521,14 @@ function applyComercialPlaceholders(text: string, form: ContratoData): string {
     .replaceAll("[FORMA_PAGO_SALDO]", form.formaPagoSaldo)
     .replaceAll("[MEDIOS_PAGO]", form.mediosPago)
     .replaceAll("[VALOR_CUOTA]", form.valorCuota)
-    .replaceAll("[FRECUENCIA_PAGO]", form.frecuenciaPago);
+    .replaceAll("[FRECUENCIA_PAGO]", form.frecuenciaPago)
+    .replaceAll("[DURACION]", form.duracionTexto);
+}
+
+export function tipoContratoLabel(esRenovacion: boolean): string {
+  return esRenovacion
+    ? "CONTRATO DE RENTING DE RENOVACIÓN"
+    : "CONTRATO DE RENTING";
 }
 
 export function renderIntro(form: ContratoData): string {
@@ -441,7 +537,8 @@ export function renderIntro(form: ContratoData): string {
       .replaceAll("[DIA]", form.fechaFirmaDia)
       .replaceAll("[MES]", form.fechaFirmaMes)
       .replaceAll("[ANIO]", form.fechaFirmaAnio)
-      .replaceAll("[NOMBRE_CONTRATANTE]", form.nombreContratante),
+      .replaceAll("[NOMBRE_CONTRATANTE]", form.nombreContratante)
+      .replaceAll("[TIPO_CONTRATO]", tipoContratoLabel(form.esRenovacion)),
     form,
   );
 }
@@ -543,9 +640,43 @@ export function contratoClausulasSelfCheck(): void {
     totalContrato: "$1",
     formaPagoSaldo: "",
     mediosPago: "",
+    diasContrato: 365,
+    esRenovacion: false,
+    duracionTexto: "un 12 meses",
   });
   if (!intro.includes("MARISOL PINILLA RUEDA") || !intro.includes("LA PROPIETARIA")) {
     throw new Error("renderIntro pinilla");
+  }
+  if (!intro.includes("CONTRATO DE RENTING")) {
+    throw new Error("renderIntro tipo");
+  }
+
+  const renovacion = buildContratoComercial({
+    modelo: "X",
+    color: "Rojo",
+    placa: "ABC123",
+    chasis: "1",
+    referencia: null,
+    frecuencia_pago: "diario",
+    cuota_inicial_monto: 0,
+    monto_cuota_periodo: 38000,
+    diasContrato: 324,
+    esRenovacion: true,
+  });
+  if (!renovacion.esRenovacion || renovacion.diasContrato !== 324) {
+    throw new Error("buildContratoComercial renovacion");
+  }
+  if (!renovacion.formaPagoSaldo.includes("324 CUOTAS DIARIAS")) {
+    throw new Error("buildContratoComercial 324 cuotas");
+  }
+  if (renovacion.duracionTexto !== "324 días") {
+    throw new Error("buildContratoComercial duracion");
+  }
+  if (
+    !tipoContratoLabel(true).includes("RENOVACIÓN") ||
+    tipoContratoLabel(false) !== "CONTRATO DE RENTING"
+  ) {
+    throw new Error("tipoContratoLabel");
   }
 
   const rebuilt = buildContratoDataFromStored({

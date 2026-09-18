@@ -294,8 +294,17 @@ export async function generateContratoPdf(args: {
       <Page size="LETTER" style={styles.pageContrato}>
         <ContratoHeader pinillaLogo={logo} beraLogo={beraLogo} />
         <Footer />
-        <Text style={styles.titleContrato}>Contrato de Renting</Text>
+        <Text style={styles.titleContrato}>
+          {contrato.esRenovacion
+            ? "Contrato de Renting de Renovación"
+            : "Contrato de Renting"}
+        </Text>
         <Text style={styles.titleSub}>{e.razonSocial} · {e.ciudad}</Text>
+        {contrato.esRenovacion ? (
+          <Text style={styles.titleSub}>
+            Este es un contrato de renovación · {contrato.diasContrato} días
+          </Text>
+        ) : null}
         <Text style={styles.intro}>{renderIntro(contrato)}</Text>
         {blocks.map((block) => (
           <View key={block.title}>

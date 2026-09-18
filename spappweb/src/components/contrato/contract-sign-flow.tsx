@@ -250,7 +250,15 @@ export function ContractSignFlow({
 
   return (
     <div className="flex flex-col gap-6">
-      <FlowProgress step={step + 1} total={TOTAL_STEPS} title="Contrato de Renting" />
+      <FlowProgress
+        step={step + 1}
+        total={TOTAL_STEPS}
+        title={
+          comercial.esRenovacion
+            ? "Contrato de Renting de Renovación"
+            : "Contrato de Renting"
+        }
+      />
 
       {step === 0 && (
         <StepCard
@@ -381,12 +389,19 @@ export function ContractSignFlow({
             ]}
           />
           <SummarySection
-            title="Contrato de Renting"
+            title={
+              comercial.esRenovacion
+                ? "Contrato de Renting de Renovación"
+                : "Contrato de Renting"
+            }
             lines={[
               `Contratante: ${nombre}`,
               `Cédula: ${cedula}`,
               `Dirección: ${direccion}`,
               `Ciudad: ${ciudad}, ${departamento}`,
+              ...(comercial.esRenovacion
+                ? [`Plazo: ${comercial.diasContrato} días (renovación)`]
+                : []),
             ]}
           />
           <div>

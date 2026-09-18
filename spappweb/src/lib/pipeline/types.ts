@@ -185,6 +185,10 @@ export interface UserMotoCompraRow {
     condicion?: "nueva" | "segunda_mano" | "recuperada";
     hora_entrega?: string;
     nota_entrega?: string;
+    /** Contrato de renovación (etiqueta en ficha y PDF). */
+    es_renovacion?: boolean;
+    /** Plazo del contrato en días (override del año por defecto). */
+    dias_contrato?: number;
   };
 }
 
