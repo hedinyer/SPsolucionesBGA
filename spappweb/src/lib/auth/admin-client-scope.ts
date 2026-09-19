@@ -12,6 +12,7 @@ const ADMIN_CLIENT_REFERRAL_SCOPE: Record<number, string> = {
   4: "sebastianbateca",
   5: "amormio",
   6: "mauricio",
+  102: "andrealemus",
 };
 
 const ADMIN_CLIENT_REFERRAL_SCOPE_BY_USER: Record<string, string> = {
@@ -21,6 +22,7 @@ const ADMIN_CLIENT_REFERRAL_SCOPE_BY_USER: Record<string, string> = {
   sebastianbateca: "sebastianbateca",
   amormio: "amormio",
   mauricio: "mauricio",
+  andrealemus: "andrealemus",
 };
 
 /** Colas post-entrega que un admin scoped no ve. */

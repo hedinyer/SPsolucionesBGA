@@ -17,7 +17,9 @@ assert.equal(referralAllowedForScopedAdmin("guillen", "neisalinas"), true);
 assert.equal(referralAllowedForScopedAdmin("guillen", "sebastianbateca"), true);
 assert.equal(referralAllowedForScopedAdmin("guillen", "amormio"), true);
 assert.equal(referralAllowedForScopedAdmin("guillen", "mauricio"), true);
+assert.equal(referralAllowedForScopedAdmin("guillen", "andrealemus"), true);
 assert.equal(referralAllowedForScopedAdmin("neisalinas", "neisalinas"), true);
+assert.equal(referralAllowedForScopedAdmin("andrealemus", "andrealemus"), true);
 
 assert.equal(isPostDeliveryCompraEstado("entregada"), true);
 assert.equal(isPostDeliveryCompraEstado("saldada"), true);
@@ -41,6 +43,7 @@ for (const [userId, username, scope] of [
   [4, "Sebastiánbateca", "sebastianbateca"],
   [5, "amormio", "amormio"],
   [6, "Mauricio", "mauricio"],
+  [102, "andrealemus", "andrealemus"],
 ] as const) {
   assert.equal(
     resolveAdminClientReferralScope({
