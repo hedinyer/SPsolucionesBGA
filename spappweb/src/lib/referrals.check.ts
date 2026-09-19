@@ -46,12 +46,14 @@ assert.equal(parseReferralSource("neisalinas"), "neisalinas");
 assert.equal(parseReferralSource("sebastianbateca"), "sebastianbateca");
 assert.equal(parseReferralSource("amormio"), "amormio");
 assert.equal(parseReferralSource("mauricio"), "mauricio");
+assert.equal(parseReferralSource("andrealemus"), "andrealemus");
 assert.equal(parseReferralSource("call-center"), "call-center");
 assert.equal(parseReferralSource("punto-de-venta"), "punto-de-venta");
 assert.equal(parseReferralSource("hacker"), null);
 assert.equal(referralLabel("fabian"), "Fabian");
 assert.equal(referralLabel("olga"), "Olga");
 assert.equal(referralLabel("neisalinas"), "Neisalinas");
+assert.equal(referralLabel("andrealemus"), "Andrea Lemus");
 assert.equal(referralLabel("guillen"), "Guillen");
 assert.equal(referralLabel("call-center"), "Call center");
 assert.equal(resolveReferralSource(null), "punto-de-venta");
@@ -59,6 +61,7 @@ assert.equal(resolveReferralSource(""), "punto-de-venta");
 assert.equal(resolveReferralSource("guillen"), "guillen");
 assert.equal(resolveReferralSource("olga"), "olga");
 assert.equal(resolveReferralSource("mauricio"), "mauricio");
+assert.equal(resolveReferralSource("andrealemus"), "andrealemus");
 assert.equal(resolveReferralSource("call-center"), "call-center");
 assert.equal(purchaseLeaderboardReferral("guillen"), "punto-de-venta");
 assert.equal(purchaseLeaderboardReferral(null), "punto-de-venta");
@@ -80,8 +83,9 @@ assert.ok(board.some((r) => r.slug === "neisalinas"));
 assert.ok(board.some((r) => r.slug === "sebastianbateca"));
 assert.ok(board.some((r) => r.slug === "amormio"));
 assert.ok(board.some((r) => r.slug === "mauricio"));
+assert.ok(board.some((r) => r.slug === "andrealemus"));
 assert.ok(board.some((r) => r.slug === "call-center"));
-assert.equal(board.length, 8);
+assert.equal(board.length, 9);
 assert.equal(
   board.find((r) => r.slug === "guillen"),
   undefined,

@@ -9,6 +9,7 @@ export const REFERRAL_SOURCES = [
   { slug: "sebastianbateca", label: "Sebastián" },
   { slug: "amormio", label: "Amormio" },
   { slug: "mauricio", label: "Mauricio" },
+  { slug: "andrealemus", label: "Andrea Lemus" },
   { slug: "call-center", label: "Call center" },
 ] as const;
 
