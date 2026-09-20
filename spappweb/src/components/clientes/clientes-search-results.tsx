@@ -192,6 +192,12 @@ export function ClientesSearchResults({
                     <div className="flex flex-col gap-1.5">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="font-semibold">{client.displayName}</p>
+                        {client.vigilado ? (
+                          <span className="inline-flex items-center gap-1 text-sm font-bold text-foreground">
+                            <span aria-hidden>!</span>
+                            Cliente vigilado
+                          </span>
+                        ) : null}
                         {client.motoRecogida ? (
                           <span className="text-sm font-bold uppercase tracking-wide text-foreground">
                             MOTO RECOGIDA
@@ -226,6 +232,11 @@ export function ClientesSearchResults({
                             </Badge>
                           ))}
                       </div>
+                      {client.vigilado && client.notaVigilancia ? (
+                        <p className="text-sm font-medium text-foreground">
+                          {client.notaVigilancia}
+                        </p>
+                      ) : null}
                       <p className="text-sm text-muted-foreground">
                         @{client.username}
                         {client.cedula ? ` · C.C. ${client.cedula}` : ""}

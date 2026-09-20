@@ -89,7 +89,8 @@ export function ClientInfoSummary({
     pipeline.visita?.direccion_visita ||
     selfieUrl ||
     motoImagenUrl ||
-    pipeline.document?.referral_source;
+    pipeline.document?.referral_source ||
+    pipeline.vigilado;
 
   const placaGps = compra?.placa?.trim() || null;
   const titularidadHistorial = parseTitularidadHistorial(
@@ -118,6 +119,17 @@ export function ClientInfoSummary({
             </div>
 
             <div className="grid flex-1 gap-4 p-6 sm:grid-cols-2">
+              {pipeline.vigilado && (
+                <div className="sm:col-span-2 rounded-lg border border-border bg-muted/40 p-3">
+                  <p className="text-xs font-bold uppercase tracking-wide text-foreground">
+                    ! Cliente vigilado
+                  </p>
+                  <p className="mt-1 text-sm font-medium text-foreground">
+                    {pipeline.notaVigilancia?.trim() ||
+                      "Sin nota de vigilancia."}
+                  </p>
+                </div>
+              )}
               {cedula && <InfoItem label="Cédula" value={cedula} />}
               {celular && <InfoItem label="Celular" value={celular} />}
               {pipeline.document?.referral_source && (

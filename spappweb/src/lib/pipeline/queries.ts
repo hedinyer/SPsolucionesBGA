@@ -238,7 +238,7 @@ export async function getClientPipeline(
 
   const { data: user, error: userError } = await supabase
     .from("users")
-    .select("id, user")
+    .select("id, user, vigilado, nota_vigilancia")
     .eq("id", userId)
     .maybeSingle();
 
@@ -2218,7 +2218,7 @@ export async function searchClients(
       supabase
         .from("users")
         .select(
-          "id, user, users_documents(selfie_url, referral_source), user_moto_compra(id, modelo, color, placa, estado, estado_fisico, fecha_entrega, seleccionado_at, bike_table(imagen_url)), visitas(cliente_nombre), digital_contracts(hoja_vida_data, contrato_data, created_at)",
+          "id, user, vigilado, nota_vigilancia, users_documents(selfie_url, referral_source), user_moto_compra(id, modelo, color, placa, estado, estado_fisico, fecha_entrega, seleccionado_at, bike_table(imagen_url)), visitas(cliente_nombre), digital_contracts(hoja_vida_data, contrato_data, created_at)",
         )
         .in("id", userIds),
       supabase
@@ -2262,6 +2262,8 @@ export async function searchClients(
     const user = raw as {
       id: number;
       user: string;
+      vigilado?: boolean | null;
+      nota_vigilancia?: string | null;
       users_documents:
         | { selfie_url: string | null; referral_source: string | null }
         | { selfie_url: string | null; referral_source: string | null }[]
@@ -2374,6 +2376,11 @@ export async function searchClients(
         diasAtraso,
         motoRecogida,
         puedeMarcarRecogida,
+        vigilado: user.vigilado === true,
+        notaVigilancia:
+          typeof user.nota_vigilancia === "string" && user.nota_vigilancia.trim()
+            ? user.nota_vigilancia.trim()
+            : null,
         matchLabel: matchLabels.get(user.id) ?? "—",
         seleccionadoAt: compra?.seleccionado_at ?? null,
         // ponytail: fecha_entrega often null on entregadas → fall back to asignación
@@ -2386,9 +2393,10 @@ export async function searchClients(
     ];
   });
 
-  return results.sort((a, b) =>
-    a.displayName.localeCompare(b.displayName, "es"),
-  );
+  return results.sort((a, b) => {
+    if (a.vigilado !== b.vigilado) return a.vigilado ? -1 : 1;
+    return a.displayName.localeCompare(b.displayName, "es");
+  });
 }
 
 export async function listClientesMotoCredito(
@@ -2408,7 +2416,7 @@ export async function listClientesMotoCredito(
   const { data: compras, error } = await supabase
     .from("user_moto_compra")
     .select(
-      "id, modelo, color, placa, estado, estado_fisico, seleccionado_at, fecha_entrega, user_id, bike_table(imagen_url), users(id, user, users_documents(selfie_url, referral_source), visitas(cliente_nombre), digital_contracts(hoja_vida_data, contrato_data, created_at))",
+      "id, modelo, color, placa, estado, estado_fisico, seleccionado_at, fecha_entrega, user_id, bike_table(imagen_url), users(id, user, vigilado, nota_vigilancia, users_documents(selfie_url, referral_source), visitas(cliente_nombre), digital_contracts(hoja_vida_data, contrato_data, created_at))",
     )
     .neq("estado", "cancelada")
     .order("seleccionado_at", { ascending: false })
@@ -2484,6 +2492,8 @@ export async function listClientesMotoCredito(
         | {
             id: number;
             user: string;
+            vigilado?: boolean | null;
+            nota_vigilancia?: string | null;
             users_documents:
               | { selfie_url: string | null; referral_source: string | null }
               | { selfie_url: string | null; referral_source: string | null }[]
@@ -2508,6 +2518,8 @@ export async function listClientesMotoCredito(
         | {
             id: number;
             user: string;
+            vigilado?: boolean | null;
+            nota_vigilancia?: string | null;
             users_documents:
               | { selfie_url: string | null; referral_source: string | null }
               | { selfie_url: string | null; referral_source: string | null }[]
@@ -2553,6 +2565,11 @@ export async function listClientesMotoCredito(
         : null,
       estadoFisico: compra.estado_fisico,
     });
+    const vigiladoFlag = user?.vigilado === true;
+    const notaVigilanciaFlag =
+      typeof user?.nota_vigilancia === "string" && user.nota_vigilancia.trim()
+        ? user.nota_vigilancia.trim()
+        : null;
 
     if (!user) {
       return [
@@ -2568,6 +2585,8 @@ export async function listClientesMotoCredito(
           diasAtraso,
           motoRecogida: motoRecogidaFlag,
           puedeMarcarRecogida: puedeMarcarRecogidaFlag,
+          vigilado: false,
+          notaVigilancia: null,
           matchLabel: "",
           seleccionadoAt: compra.seleccionado_at,
           fechaVenta: compra.fecha_entrega ?? compra.seleccionado_at ?? null,
@@ -2632,6 +2651,8 @@ export async function listClientesMotoCredito(
         diasAtraso,
         motoRecogida: motoRecogidaFlag,
         puedeMarcarRecogida: puedeMarcarRecogidaFlag,
+        vigilado: vigiladoFlag,
+        notaVigilancia: notaVigilanciaFlag,
         matchLabel: "",
         seleccionadoAt: compra.seleccionado_at,
         // ponytail: fecha_entrega often null on entregadas → fall back to asignación
@@ -2645,6 +2666,7 @@ export async function listClientesMotoCredito(
   });
 
   return results.sort((a, b) => {
+    if (a.vigilado !== b.vigilado) return a.vigilado ? -1 : 1;
     if (b.diasAtraso !== a.diasAtraso) return b.diasAtraso - a.diasAtraso;
     const aAt = a.seleccionadoAt ? new Date(a.seleccionadoAt).getTime() : 0;
     const bAt = b.seleccionadoAt ? new Date(b.seleccionadoAt).getTime() : 0;

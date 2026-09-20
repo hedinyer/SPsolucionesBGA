@@ -318,6 +318,12 @@ export function buildClientPipeline(input: {
       input.contract,
       input.visita,
     ),
+    vigilado: input.user.vigilado === true,
+    notaVigilancia:
+      typeof input.user.nota_vigilancia === "string" &&
+      input.user.nota_vigilancia.trim()
+        ? input.user.nota_vigilancia.trim()
+        : null,
   };
 }
 

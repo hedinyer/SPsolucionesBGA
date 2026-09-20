@@ -2014,6 +2014,51 @@ async function removeStorageBucket(
   await supabase.storage.from(bucket).remove([...paths]);
 }
 
+const setClienteVigiladoSchema = z.object({
+  userId: z.number().int().positive(),
+  vigilado: z.boolean(),
+  nota: z.string().optional(),
+});
+
+/** Marca o quita vigilancia constante; la nota es obligatoria al activar. */
+export async function setClienteVigilado(
+  input: z.infer<typeof setClienteVigiladoSchema>,
+) {
+  const parsed = setClienteVigiladoSchema.parse(input);
+  const supabase = await assertAdmin();
+
+  const nota = (parsed.nota ?? "").trim();
+  if (parsed.vigilado && !nota) {
+    throw new Error("Indica el motivo de la vigilancia.");
+  }
+
+  const { data: existing, error: fetchError } = await supabase
+    .from("users")
+    .select("id, nota_vigilancia")
+    .eq("id", parsed.userId)
+    .maybeSingle();
+  if (fetchError) throw new Error(fetchError.message);
+  if (!existing) throw new Error("Cliente no encontrado.");
+
+  const update: { vigilado: boolean; nota_vigilancia?: string | null } = {
+    vigilado: parsed.vigilado,
+  };
+  if (parsed.vigilado) {
+    update.nota_vigilancia = nota;
+  }
+  // Al quitar, conserva la última nota por si se reactiva.
+
+  const { error } = await supabase
+    .from("users")
+    .update(update)
+    .eq("id", parsed.userId);
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/clientes");
+  revalidateClient(parsed.userId);
+  return { ok: true };
+}
+
 export async function deleteClienteSinVisita(userId: number) {
   const parsed = z.number().int().positive().parse(userId);
   const supabase = await assertAdmin();

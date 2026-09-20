@@ -51,6 +51,10 @@ export interface PipelineStep {
 export interface UserRow {
   id: number;
   user: string;
+  /** Cliente en vigilancia constante. */
+  vigilado?: boolean;
+  /** Motivo de la vigilancia. */
+  nota_vigilancia?: string | null;
 }
 
 export interface VisitaUbicacionVerificada {
@@ -426,6 +430,10 @@ export interface ClientPipeline {
   steps: PipelineStep[];
   currentAdminStep: PipelineStepId | null;
   displayName: string;
+  /** Cliente marcado para vigilancia constante. */
+  vigilado: boolean;
+  /** Motivo de la vigilancia (si aplica). */
+  notaVigilancia: string | null;
 }
 
 export type InboxQueueId =
@@ -489,6 +497,10 @@ export interface ClientSearchResult {
   motoRecogida: boolean;
   /** Elegible para botón "Moto recogida". */
   puedeMarcarRecogida: boolean;
+  /** Cliente en vigilancia constante. */
+  vigilado: boolean;
+  /** Motivo de la vigilancia. */
+  notaVigilancia: string | null;
   matchLabel: string;
   seleccionadoAt: string | null;
   /** Fecha de entrega / venta de la moto (ISO date). */

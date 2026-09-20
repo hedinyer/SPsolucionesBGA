@@ -62,6 +62,12 @@ export default async function ClientPage({
                 MOTO RECOGIDA
               </span>
             ) : null}
+            {pipeline.vigilado ? (
+              <span className="inline-flex items-center gap-1 text-base font-bold text-foreground sm:text-lg">
+                <span aria-hidden>!</span>
+                Cliente vigilado
+              </span>
+            ) : null}
           </span>
         }
         description={`Usuario @${pipeline.user.user} · ID ${pipeline.user.id}`}

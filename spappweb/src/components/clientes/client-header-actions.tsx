@@ -9,7 +9,7 @@ import {
   congelarCuotas,
   saldarCredito,
 } from "@/lib/actions/credito-operaciones-actions";
-import { transferirTitularidad, markMotoRecogidaByUserId, inactivarMotoCliente } from "@/lib/actions/admin-actions";
+import { transferirTitularidad, markMotoRecogidaByUserId, inactivarMotoCliente, setClienteVigilado } from "@/lib/actions/admin-actions";
 import {
   getMoraDisplay,
   getPlazoRecuperacion,
@@ -69,6 +69,7 @@ export function ClientHeaderActions({ pipeline }: { pipeline: ClientPipeline }) 
   const [freezeOpen, setFreezeOpen] = useState(false);
   const [settleOpen, setSettleOpen] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
+  const [vigiladoOpen, setVigiladoOpen] = useState(false);
 
   const compra = pipeline.compra;
   const renting = pipeline.rentingResumen;
@@ -129,6 +130,23 @@ export function ClientHeaderActions({ pipeline }: { pipeline: ClientPipeline }) 
     });
   }
 
+  function quitarVigilancia() {
+    startTransition(async () => {
+      try {
+        await setClienteVigilado({
+          userId: pipeline.user.id,
+          vigilado: false,
+        });
+        toast.success("Vigilancia quitada.");
+        router.refresh();
+      } catch (e) {
+        toast.error(
+          e instanceof Error ? e.message : "No se pudo quitar la vigilancia.",
+        );
+      }
+    });
+  }
+
   return (
     <div className="flex flex-wrap items-center gap-2">
       <Button variant="outline" asChild className="min-h-11">
@@ -136,6 +154,35 @@ export function ClientHeaderActions({ pipeline }: { pipeline: ClientPipeline }) 
           Formulario web
         </Link>
       </Button>
+      {pipeline.vigilado ? (
+        <>
+          <Button
+            variant="outline"
+            className="min-h-11"
+            disabled={pending}
+            onClick={() => setVigiladoOpen(true)}
+          >
+            Editar vigilancia
+          </Button>
+          <Button
+            variant="outline"
+            className="min-h-11"
+            disabled={pending}
+            onClick={quitarVigilancia}
+          >
+            Quitar vigilancia
+          </Button>
+        </>
+      ) : (
+        <Button
+          variant="outline"
+          className="min-h-11 border-foreground font-semibold text-foreground"
+          disabled={pending}
+          onClick={() => setVigiladoOpen(true)}
+        >
+          ! Vigilar cliente
+        </Button>
+      )}
       {showMarcarRecogida ? (
         <Button
           variant="destructive"
@@ -197,6 +244,13 @@ export function ClientHeaderActions({ pipeline }: { pipeline: ClientPipeline }) 
           Acción requerida
         </Badge>
       )}
+      <VigiladoDialog
+        open={vigiladoOpen}
+        onOpenChange={setVigiladoOpen}
+        userId={pipeline.user.id}
+        initialNota={pipeline.notaVigilancia ?? ""}
+        yaVigilado={pipeline.vigilado}
+      />
       {compra && (
         <>
           <CongelarCuotasDialog
@@ -232,6 +286,104 @@ export function ClientHeaderActions({ pipeline }: { pipeline: ClientPipeline }) 
         </>
       )}
     </div>
+  );
+}
+
+function VigiladoDialog({
+  open,
+  onOpenChange,
+  userId,
+  initialNota,
+  yaVigilado,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  userId: number;
+  initialNota: string;
+  yaVigilado: boolean;
+}) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [nota, setNota] = useState(initialNota);
+
+  useEffect(() => {
+    if (open) setNota(initialNota);
+  }, [open, initialNota]);
+
+  function guardar() {
+    const trimmed = nota.trim();
+    if (!trimmed) {
+      toast.error("Indica el motivo de la vigilancia.");
+      return;
+    }
+    startTransition(async () => {
+      try {
+        await setClienteVigilado({
+          userId,
+          vigilado: true,
+          nota: trimmed,
+        });
+        toast.success(
+          yaVigilado ? "Nota de vigilancia actualizada." : "Cliente vigilado.",
+        );
+        onOpenChange(false);
+        router.refresh();
+      } catch (e) {
+        toast.error(
+          e instanceof Error ? e.message : "No se pudo guardar la vigilancia.",
+        );
+      }
+    });
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="bg-background sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>
+            {yaVigilado ? "Editar vigilancia" : "Vigilar cliente"}
+          </DialogTitle>
+          <DialogDescription>
+            Explica por qué hay que vigilarlo: que no se atrase, recoger rápido,
+            etc. Esta nota se ve en la lista de clientes.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="nota-vigilancia">Motivo de la vigilancia</Label>
+          <Textarea
+            id="nota-vigilancia"
+            value={nota}
+            onChange={(e) => setNota(e.target.value)}
+            rows={4}
+            placeholder="Ej.: Ya lo recogimos una vez; no dejar que suba la deuda."
+            className="min-h-24"
+          />
+        </div>
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={pending}
+          >
+            Cancelar
+          </Button>
+          <Button
+            type="button"
+            disabled={pending || !nota.trim()}
+            onClick={guardar}
+          >
+            {pending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : yaVigilado ? (
+              "Guardar nota"
+            ) : (
+              "Marcar vigilado"
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
