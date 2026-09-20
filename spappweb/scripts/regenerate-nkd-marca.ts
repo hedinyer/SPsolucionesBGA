@@ -1,5 +1,5 @@
 /**
- * Regenera PDFs de contratos firmados de motos NKD (marca BERA → NKD).
+ * Regenera PDFs de contratos firmados de motos NKD (marca → AKT).
  * Run: npx tsx scripts/regenerate-nkd-marca.ts
  */
 import Module from "node:module";
@@ -114,7 +114,7 @@ async function main() {
       }
 
       const marca = marcaMotoFromModelo(compraInput.modelo);
-      if (marca !== "NKD") {
+      if (marca !== "AKT") {
         console.warn(
           `SKIP user ${userId}: modelo ${compraInput.modelo} → marca ${marca}`,
         );

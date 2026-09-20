@@ -27,10 +27,10 @@ export const EMPRESA_PROPIETARIA = {
   firmaFile: "marisolpinilla.png",
 } as const;
 
-/** Marca comercial según el modelo de catálogo (NKD125 → NKD, BERA150 → BERA). */
+/** Marca comercial según el modelo de catálogo (NKD125 → AKT, BERA150 → BERA). */
 export function marcaMotoFromModelo(modelo: string): string {
   const m = modelo.trim().toUpperCase();
-  if (m.includes("NKD")) return "NKD";
+  if (m.includes("NKD")) return "AKT";
   if (m.includes("BERA")) return "BERA";
   return EMPRESA_PROPIETARIA.marcaMoto;
 }
@@ -680,8 +680,8 @@ export function contratoClausulasSelfCheck(): void {
   if (renovacion.duracionTexto !== "324 días") {
     throw new Error("buildContratoComercial duracion");
   }
-  if (marcaMotoFromModelo("NKD125") !== "NKD") {
-    throw new Error("marcaMotoFromModelo NKD");
+  if (marcaMotoFromModelo("NKD125") !== "AKT") {
+    throw new Error("marcaMotoFromModelo NKD→AKT");
   }
   if (marcaMotoFromModelo("BERA150") !== "BERA") {
     throw new Error("marcaMotoFromModelo BERA");
@@ -695,8 +695,8 @@ export function contratoClausulasSelfCheck(): void {
     frecuencia_pago: "diario",
     cuota_inicial_monto: 0,
     monto_cuota_periodo: 38000,
-  }).marca !== "NKD") {
-    throw new Error("buildContratoComercial marca NKD");
+  }).marca !== "AKT") {
+    throw new Error("buildContratoComercial marca AKT");
   }
   if (
     !tipoContratoLabel(true).includes("RENOVACIÓN") ||
