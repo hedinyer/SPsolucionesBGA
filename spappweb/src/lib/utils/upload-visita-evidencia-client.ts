@@ -8,6 +8,8 @@ import { compressImageFile } from "@/lib/utils/compress-image-file";
 import { getStoragePublicUrl } from "@/lib/utils/storage-urls";
 
 const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
+const MAX_PHOTO_UPLOAD_BYTES = 3 * 1024 * 1024;
+const UPLOAD_ATTEMPTS = 3;
 const VIDEO_MIME = new Set([
   "video/mp4",
   "video/webm",
@@ -64,6 +66,10 @@ function validateVideo(file: File): string | null {
     return "Usa MP4, WebM o MOV.";
   }
   return null;
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /** ponytail: XHR directo a Storage para barra de progreso en conexiones lentas. */
@@ -126,15 +132,20 @@ function uploadWithProgress(
 }
 
 async function runWithRetry<T>(fn: () => Promise<T>): Promise<T> {
-  try {
-    return await fn();
-  } catch (first) {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < UPLOAD_ATTEMPTS; attempt++) {
     try {
       return await fn();
-    } catch {
-      throw first;
+    } catch (err) {
+      lastError = err;
+      if (attempt < UPLOAD_ATTEMPTS - 1) {
+        await sleep(600 * (attempt + 1));
+      }
     }
   }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("No se pudo subir el archivo. Intenta de nuevo.");
 }
 
 export async function uploadVisitaPhotoFromBrowser(
@@ -146,8 +157,23 @@ export async function uploadVisitaPhotoFromBrowser(
   if (file.size === 0) throw new Error("La foto está vacía.");
 
   onProgress?.(5);
-  const compressed = await compressImageFile(file);
+  let compressed: File;
+  try {
+    compressed = await compressImageFile(file);
+  } catch (err) {
+    throw err instanceof Error
+      ? err
+      : new Error(
+          "No se pudo optimizar la foto. Intenta de nuevo o usa la galería.",
+        );
+  }
   onProgress?.(15);
+
+  if (compressed.size > MAX_PHOTO_UPLOAD_BYTES) {
+    throw new Error(
+      "La foto sigue siendo demasiado pesada. Toma otra con menos resolución.",
+    );
+  }
 
   const path = buildPath(visitadorId, visitaId, "fotos", "jpg");
 

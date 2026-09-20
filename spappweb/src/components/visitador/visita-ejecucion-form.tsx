@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -24,6 +24,11 @@ import {
   uploadVisitaPhotoFromBrowser,
   uploadVisitaVideoFromBrowser,
 } from "@/lib/utils/upload-visita-evidencia-client";
+import {
+  clearVisitaEjecucionDraft,
+  loadVisitaEjecucionDraft,
+  saveVisitaEjecucionDraft,
+} from "@/lib/utils/visita-ejecucion-draft";
 import { formatDate } from "@/lib/utils/format";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -31,12 +36,100 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
+const GPS_ACCEPTABLE_ACCURACY_M = 100;
+const GPS_WATCH_MS = 8000;
+const GPS_MAX_SAMPLES = 3;
+
 function mapsUrl(direccion: string, barrio?: string | null) {
   const query = [direccion, barrio].filter(Boolean).join(", ");
   return `https://maps.apple.com/?q=${encodeURIComponent(query)}`;
 }
 
-function UploadProgressBar({ value }: { value: number }) {
+function geoErrorMessage(err: GeolocationPositionError): string {
+  if (err.code === 1) {
+    return "Activa el permiso de ubicación en tu celular.";
+  }
+  if (err.code === 2) {
+    return "GPS apagado o sin señal. Activa la ubicación e intenta de nuevo.";
+  }
+  if (err.code === 3) {
+    return "La ubicación tardó demasiado. Sal un momento al aire libre e intenta de nuevo.";
+  }
+  return err.message || "No se pudo obtener la ubicación.";
+}
+
+function getCurrentPositionPromise(
+  options: PositionOptions,
+): Promise<GeolocationPosition> {
+  return new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(resolve, reject, options);
+  });
+}
+
+/** Hasta 3 lecturas en ~8s; se queda con la mejor accuracy. */
+function watchBestPosition(
+  options: PositionOptions,
+  maxMs: number,
+  maxSamples: number,
+): Promise<GeolocationPosition> {
+  return new Promise((resolve, reject) => {
+    let best: GeolocationPosition | null = null;
+    let samples = 0;
+    let settled = false;
+
+    const finish = (pos: GeolocationPosition | null, err?: GeolocationPositionError) => {
+      if (settled) return;
+      settled = true;
+      navigator.geolocation.clearWatch(watchId);
+      window.clearTimeout(timer);
+      if (pos) resolve(pos);
+      else reject(err ?? new Error("No se pudo obtener la ubicación."));
+    };
+
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        samples += 1;
+        if (
+          !best ||
+          (pos.coords.accuracy ?? Infinity) < (best.coords.accuracy ?? Infinity)
+        ) {
+          best = pos;
+        }
+        const current = best;
+        if (
+          current &&
+          (samples >= maxSamples ||
+            (current.coords.accuracy != null &&
+              current.coords.accuracy <= GPS_ACCEPTABLE_ACCURACY_M))
+        ) {
+          finish(current);
+        }
+      },
+      (err) => {
+        if (best) finish(best);
+        else finish(null, err);
+      },
+      options,
+    );
+
+    const timer = window.setTimeout(() => {
+      if (best) finish(best);
+      else {
+        const timeoutErr = new Error("Timeout") as Error & { code: number };
+        timeoutErr.code = 3;
+        finish(null, timeoutErr as unknown as GeolocationPositionError);
+      }
+    }, maxMs);
+  });
+}
+
+function UploadProgressBar({
+  value,
+  label,
+}: {
+  value: number;
+  label?: string;
+}) {
   return (
     <div className="flex flex-col gap-1">
       <div className="h-2 overflow-hidden rounded-full bg-muted">
@@ -45,7 +138,9 @@ function UploadProgressBar({ value }: { value: number }) {
           style={{ width: `${Math.min(100, Math.max(0, value))}%` }}
         />
       </div>
-      <p className="text-center text-xs text-muted-foreground">Subiendo… {value}%</p>
+      <p className="text-center text-xs text-muted-foreground">
+        {label ?? `Subiendo… ${value}%`}
+      </p>
     </div>
   );
 }
@@ -89,6 +184,14 @@ export function VisitaEjecucionForm({
   const photoGalleryRef = useRef<HTMLInputElement>(null);
   const videoCameraRef = useRef<HTMLInputElement>(null);
   const videoGalleryRef = useRef<HTMLInputElement>(null);
+  const draftRef = useRef({
+    fotos: [] as VisitaEvidenciaFoto[],
+    videos: [] as VisitaEvidenciaVideo[],
+    ubicacion: null as VisitaUbicacionVerificada | null,
+    notas: "",
+  });
+  const restoredRef = useRef(false);
+
   const [pending, startTransition] = useTransition();
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [uploadingVideo, setUploadingVideo] = useState(false);
@@ -110,6 +213,69 @@ export function VisitaEjecucionForm({
 
   const isBusy = pending || uploadingPhoto || uploadingVideo;
 
+  function persistDraft(next?: {
+    fotos?: VisitaEvidenciaFoto[];
+    videos?: VisitaEvidenciaVideo[];
+    ubicacion?: VisitaUbicacionVerificada | null;
+    notas?: string;
+  }) {
+    const payload = {
+      fotos: next?.fotos ?? draftRef.current.fotos,
+      videos: next?.videos ?? draftRef.current.videos,
+      ubicacion:
+        next && "ubicacion" in next
+          ? (next.ubicacion ?? null)
+          : draftRef.current.ubicacion,
+      notas: next?.notas ?? draftRef.current.notas,
+    };
+    draftRef.current = payload;
+    saveVisitaEjecucionDraft(visita.id, payload);
+  }
+
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+    const draft = loadVisitaEjecucionDraft(visita.id);
+    if (!draft) return;
+    const hasProgress =
+      draft.fotos.length > 0 ||
+      draft.videos.length > 0 ||
+      draft.ubicacion != null ||
+      draft.notas.trim().length > 0;
+    if (!hasProgress) return;
+
+    setFotos(draft.fotos);
+    setVideos(draft.videos);
+    setUbicacion(draft.ubicacion);
+    setNotas(draft.notas);
+    draftRef.current = {
+      fotos: draft.fotos,
+      videos: draft.videos,
+      ubicacion: draft.ubicacion,
+      notas: draft.notas,
+    };
+    toast.message("Se recuperó el avance de esta visita.");
+  }, [visita.id]);
+
+  useEffect(() => {
+    draftRef.current = { fotos, videos, ubicacion, notas };
+  }, [fotos, videos, ubicacion, notas]);
+
+  useEffect(() => {
+    const flush = () => {
+      saveVisitaEjecucionDraft(visita.id, draftRef.current);
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") flush();
+    };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [visita.id]);
+
   async function handlePhotoUpload(file: File) {
     setUploadingPhoto(true);
     setPhotoProgress(0);
@@ -120,7 +286,11 @@ export function VisitaEjecucionForm({
         file,
         setPhotoProgress,
       );
-      setFotos((prev) => [...prev, foto]);
+      setFotos((prev) => {
+        const next = [...prev, foto];
+        persistDraft({ fotos: next });
+        return next;
+      });
       toast.success("Foto subida.");
     } catch (err) {
       toast.error(
@@ -143,7 +313,11 @@ export function VisitaEjecucionForm({
         file,
         setVideoProgress,
       );
-      setVideos((prev) => [...prev, video]);
+      setVideos((prev) => {
+        const next = [...prev, video];
+        persistDraft({ videos: next });
+        return next;
+      });
       toast.success("Video subido.");
     } catch (err) {
       toast.error(
@@ -174,47 +348,66 @@ export function VisitaEjecucionForm({
     }
   }
 
-  function captureLocation() {
+  async function captureLocation() {
     if (!navigator.geolocation) {
       toast.error("Tu navegador no soporta geolocalización.");
       return;
     }
 
     setCapturingLocation(true);
+    try {
+      const lowOpts: PositionOptions = {
+        enableHighAccuracy: false,
+        timeout: 20_000,
+        maximumAge: 0,
+      };
+      const highOpts: PositionOptions = {
+        enableHighAccuracy: true,
+        timeout: 30_000,
+        maximumAge: 0,
+      };
 
-    const save = (pos: GeolocationPosition) => {
-      setUbicacion({
+      let pos: GeolocationPosition;
+      try {
+        pos = await getCurrentPositionPromise(lowOpts);
+      } catch {
+        pos = await watchBestPosition(
+          highOpts,
+          GPS_WATCH_MS,
+          GPS_MAX_SAMPLES,
+        );
+      }
+
+      if ((pos.coords.accuracy ?? Infinity) > GPS_ACCEPTABLE_ACCURACY_M) {
+        try {
+          pos = await watchBestPosition(
+            highOpts,
+            GPS_WATCH_MS,
+            GPS_MAX_SAMPLES,
+          );
+        } catch {
+          // nos quedamos con el primer fix usable
+        }
+      }
+
+      const next: VisitaUbicacionVerificada = {
         lat: pos.coords.latitude,
         lng: pos.coords.longitude,
         accuracy: pos.coords.accuracy,
         captured_at: new Date().toISOString(),
-      });
-      setCapturingLocation(false);
+      };
+      setUbicacion(next);
+      persistDraft({ ubicacion: next });
       toast.success("Ubicación capturada.");
-    };
-
-    const fail = (err: GeolocationPositionError, retried: boolean) => {
-      if (!retried) {
-        navigator.geolocation.getCurrentPosition(
-          save,
-          (retryErr) => fail(retryErr, true),
-          { enableHighAccuracy: false, timeout: 25000, maximumAge: 120_000 },
-        );
-        return;
-      }
-      setCapturingLocation(false);
+    } catch (err) {
       toast.error(
-        err.code === 1
-          ? "Activa el permiso de ubicación en tu celular."
-          : err.message || "No se pudo obtener la ubicación.",
+        err && typeof err === "object" && "code" in err
+          ? geoErrorMessage(err as GeolocationPositionError)
+          : "No se pudo obtener la ubicación.",
       );
-    };
-
-    navigator.geolocation.getCurrentPosition(
-      save,
-      (err) => fail(err, false),
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60_000 },
-    );
+    } finally {
+      setCapturingLocation(false);
+    }
   }
 
   function handleComplete() {
@@ -229,6 +422,7 @@ export function VisitaEjecucionForm({
           ubicacion,
           notas,
         });
+        clearVisitaEjecucionDraft(visita.id);
         toast.success("Visita completada.");
         router.push("/visitador/mis-visitas");
         router.refresh();
@@ -238,9 +432,21 @@ export function VisitaEjecucionForm({
     });
   }
 
+  const photoProgressLabel =
+    photoProgress != null && photoProgress < 15
+      ? "Optimizando foto…"
+      : photoProgress != null
+        ? `Subiendo… ${photoProgress}%`
+        : undefined;
+
   return (
     <>
       <div className="flex flex-col gap-6 pb-28">
+        <p className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+          Si se cierra la app al sacar la foto, vuelve a esta visita: el avance
+          se guarda solo.
+        </p>
+
         <Card className="border-border shadow-none">
           <CardHeader>
             <CardTitle className="text-lg">{visita.cliente_nombre}</CardTitle>
@@ -320,7 +526,13 @@ export function VisitaEjecucionForm({
             <div className="flex gap-2">
               <MediaActionButton
                 icon={Camera}
-                label={uploadingPhoto ? "Subiendo…" : "Tomar foto"}
+                label={
+                  uploadingPhoto
+                    ? photoProgress != null && photoProgress < 15
+                      ? "Optimizando…"
+                      : "Subiendo…"
+                    : "Tomar foto"
+                }
                 disabled={isBusy}
                 onClick={() => photoCameraRef.current?.click()}
               />
@@ -332,7 +544,10 @@ export function VisitaEjecucionForm({
               />
             </div>
             {uploadingPhoto && photoProgress != null && (
-              <UploadProgressBar value={photoProgress} />
+              <UploadProgressBar
+                value={photoProgress}
+                label={photoProgressLabel}
+              />
             )}
             {fotos.length > 0 && (
               <div className="grid grid-cols-2 gap-2">
@@ -409,18 +624,26 @@ export function VisitaEjecucionForm({
               <UploadProgressBar value={videoProgress} />
             )}
             {videos.length > 0 && (
-              <div className="flex flex-col gap-3">
+              <ul className="flex flex-col gap-2">
                 {videos.map((video, i) => (
-                  <video
+                  <li
                     key={`${video.url}-${i}`}
-                    src={video.url}
-                    controls
-                    playsInline
-                    preload="metadata"
-                    className="w-full rounded-lg border border-border"
-                  />
+                    className="rounded-lg border border-border px-3 py-2 text-sm"
+                  >
+                    <a
+                      href={video.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-medium underline-offset-2 hover:underline"
+                    >
+                      Video {i + 1} subido
+                    </a>
+                    <p className="text-xs text-muted-foreground">
+                      Guardado. Ábrelo solo si necesitas verificarlo.
+                    </p>
+                  </li>
                 ))}
-              </div>
+              </ul>
             )}
           </CardContent>
         </Card>
@@ -437,7 +660,7 @@ export function VisitaEjecucionForm({
               variant="outline"
               className="min-h-11 w-full touch-manipulation"
               disabled={isBusy || capturingLocation}
-              onClick={captureLocation}
+              onClick={() => void captureLocation()}
             >
               <MapPin className="mr-2 h-4 w-4" />
               {capturingLocation ? "Obteniendo…" : "Obtener ubicación"}
@@ -457,7 +680,11 @@ export function VisitaEjecucionForm({
           <Textarea
             id="notas"
             value={notas}
-            onChange={(e) => setNotas(e.target.value)}
+            onChange={(e) => {
+              const value = e.target.value;
+              setNotas(value);
+              persistDraft({ notas: value });
+            }}
             rows={3}
           />
         </div>
