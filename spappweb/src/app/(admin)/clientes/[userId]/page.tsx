@@ -63,7 +63,7 @@ export default async function ClientPage({
               </span>
             ) : null}
             {pipeline.vigilado ? (
-              <span className="inline-flex items-center gap-1 text-base font-bold text-foreground sm:text-lg">
+              <span className="vigilado-pulse text-base font-bold sm:text-lg">
                 <span aria-hidden>!</span>
                 Cliente vigilado
               </span>

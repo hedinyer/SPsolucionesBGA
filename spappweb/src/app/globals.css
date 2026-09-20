@@ -164,3 +164,34 @@
     color: rgb(120 53 15);
   }
 }
+
+/* Fuera de @layer para que no lo pisen utilidades de Tailwind */
+.vigilado-pulse {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: 0.375rem;
+  padding: 0.125rem 0.4rem;
+  font-weight: 700;
+  color: rgb(153 27 27);
+  background-color: rgb(254 226 226);
+  animation: vigilado-pulse 0.8s ease-in-out infinite;
+}
+
+@keyframes vigilado-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgb(239 68 68 / 0.75);
+    background-color: rgb(254 226 226);
+    color: rgb(153 27 27);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.08);
+    box-shadow: 0 0 0 10px rgb(239 68 68 / 0);
+    background-color: rgb(239 68 68);
+    color: rgb(255 255 255);
+  }
+}

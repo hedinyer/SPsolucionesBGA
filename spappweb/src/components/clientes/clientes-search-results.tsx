@@ -193,7 +193,7 @@ export function ClientesSearchResults({
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="font-semibold">{client.displayName}</p>
                         {client.vigilado ? (
-                          <span className="inline-flex items-center gap-1 text-sm font-bold text-foreground">
+                          <span className="vigilado-pulse text-sm font-bold">
                             <span aria-hidden>!</span>
                             Cliente vigilado
                           </span>

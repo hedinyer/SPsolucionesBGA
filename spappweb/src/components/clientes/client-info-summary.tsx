@@ -120,8 +120,8 @@ export function ClientInfoSummary({
 
             <div className="grid flex-1 gap-4 p-6 sm:grid-cols-2">
               {pipeline.vigilado && (
-                <div className="sm:col-span-2 rounded-lg border border-border bg-muted/40 p-3">
-                  <p className="text-xs font-bold uppercase tracking-wide text-foreground">
+                <div className="sm:col-span-2 rounded-lg border border-red-200 bg-red-50 p-3">
+                  <p className="vigilado-pulse text-xs font-bold uppercase tracking-wide">
                     ! Cliente vigilado
                   </p>
                   <p className="mt-1 text-sm font-medium text-foreground">
