@@ -30,6 +30,7 @@ import {
 } from "@/lib/admin/titularidad";
 import { assertVisitadorAllowedForReferral } from "@/lib/referrals";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { DIAS_RECOGER_BANDEJA } from "@/lib/pipeline/mora-utils";
 import { resolveInventarioEditorCodigo } from "@/lib/inventario/editor-codigos";
 import { STORAGE_BUCKETS } from "@/lib/supabase/storage-buckets";
 import { storagePathFromPublicUrl } from "@/lib/utils/storage-urls";
@@ -1748,6 +1749,17 @@ const markMotoRecogidaSchema = z.object({
   userId: z.number(),
 });
 
+async function syncCompraEstadoFisicoRecogida(
+  supabase: Awaited<ReturnType<typeof assertAdmin>>,
+  userId: number,
+) {
+  await supabase
+    .from("user_moto_compra")
+    .update({ estado_fisico: "recogida" })
+    .eq("user_id", userId)
+    .eq("estado", "entregada");
+}
+
 export async function markMotoRecogida(
   input: z.infer<typeof markMotoRecogidaSchema>,
 ) {
@@ -1774,9 +1786,143 @@ export async function markMotoRecogida(
     .eq("id", parsed.recogerId);
   if (error) throw new Error(error.message);
 
+  await syncCompraEstadoFisicoRecogida(supabase, parsed.userId);
+
   revalidatePath("/garaje");
+  revalidatePath("/clientes");
   revalidateClient(parsed.userId);
   return { ok: true };
+}
+
+const markMotoRecogidaByUserSchema = z.object({
+  userId: z.number().int().positive(),
+});
+
+/** Marca recogida por userId: crea/reactiva fila en motos_para_recoger si falta. */
+export async function markMotoRecogidaByUserId(
+  input: z.infer<typeof markMotoRecogidaByUserSchema>,
+) {
+  const parsed = markMotoRecogidaByUserSchema.parse(input);
+  const supabase = await assertAdmin();
+
+  const { data: compra, error: compraError } = await supabase
+    .from("user_moto_compra")
+    .select("id, estado, estado_fisico")
+    .eq("user_id", parsed.userId)
+    .eq("estado", "entregada")
+    .maybeSingle();
+  if (compraError) throw new Error(compraError.message);
+  if (!compra) throw new Error("Compra entregada no encontrada.");
+  if (compra.estado_fisico === "recogida") {
+    throw new Error("Esta moto ya fue marcada como recogida.");
+  }
+
+  const { data: atraso } = await supabase
+    .from("atrasos")
+    .select("dias_atraso, monto_adeudado")
+    .eq("user_moto_compra_id", compra.id)
+    .maybeSingle();
+
+  const dias = Number(atraso?.dias_atraso) || 0;
+  const monto = Number(atraso?.monto_adeudado) || 0;
+  if (monto <= 0 || dias < DIAS_RECOGER_BANDEJA) {
+    throw new Error(
+      "Solo se puede marcar recogida con 4+ días de atraso y saldo pendiente.",
+    );
+  }
+
+  const { data: existing } = await supabase
+    .from("motos_para_recoger")
+    .select("id, estado")
+    .eq("user_moto_compra_id", compra.id)
+    .order("fecha_ingreso", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (existing?.estado === "recogida") {
+    await syncCompraEstadoFisicoRecogida(supabase, parsed.userId);
+    throw new Error("Esta moto ya fue marcada como recogida.");
+  }
+
+  const fechaRecogida = new Date().toISOString();
+
+  if (existing) {
+    const { error } = await supabase
+      .from("motos_para_recoger")
+      .update({
+        estado: "recogida",
+        fecha_recogida: fechaRecogida,
+        dias_atraso: dias,
+        monto_adeudado: monto,
+      })
+      .eq("id", existing.id);
+    if (error) throw new Error(error.message);
+  } else {
+    const { data: moroso } = await supabase
+      .from("morosos")
+      .select("id")
+      .eq("user_moto_compra_id", compra.id)
+      .order("fecha_ingreso", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const { error } = await supabase.from("motos_para_recoger").insert({
+      user_moto_compra_id: compra.id,
+      user_id: parsed.userId,
+      moroso_id: moroso?.id ?? null,
+      dias_atraso: dias,
+      monto_adeudado: monto,
+      estado: "recogida",
+      fecha_recogida: fechaRecogida,
+    });
+    if (error) throw new Error(error.message);
+  }
+
+  await syncCompraEstadoFisicoRecogida(supabase, parsed.userId);
+
+  revalidatePath("/garaje");
+  revalidatePath("/clientes");
+  revalidateClient(parsed.userId);
+  return { ok: true };
+}
+
+const inactivarMotoSchema = z.object({
+  userId: z.number().int().positive(),
+});
+
+/** Plazo de recuperación vencido → libera moto retenida para mantenimiento/reventa. */
+export async function inactivarMotoCliente(
+  input: z.infer<typeof inactivarMotoSchema>,
+) {
+  const parsed = inactivarMotoSchema.parse(input);
+  const supabase = await assertAdmin();
+
+  const { data: compra, error: compraError } = await supabase
+    .from("user_moto_compra")
+    .select("id")
+    .eq("user_id", parsed.userId)
+    .eq("estado", "entregada")
+    .maybeSingle();
+  if (compraError) throw new Error(compraError.message);
+  if (!compra) throw new Error("Compra entregada no encontrada.");
+
+  const { data: garaje, error: garajeError } = await supabase
+    .from("garaje_motos")
+    .select("id, estado")
+    .eq("user_moto_compra_id", compra.id)
+    .eq("estado", "retenida")
+    .maybeSingle();
+  if (garajeError) throw new Error(garajeError.message);
+  if (!garaje) {
+    throw new Error(
+      "No hay moto retenida en garaje para este cliente. Márcala como recogida primero.",
+    );
+  }
+
+  const result = await liberarGarajeMotoParaVenta({ garajeMotoId: garaje.id });
+  revalidatePath("/clientes");
+  revalidateClient(parsed.userId);
+  return result;
 }
 
 const vendidaEstadoFisicoSchema = z.object({

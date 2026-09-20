@@ -37,7 +37,7 @@ async function main() {
   let query = supabase
     .from("digital_contracts")
     .select(
-      "id, user_id, hoja_vida_data, contrato_data, signature_path, hoja_vida_pdf_path, contrato_pdf_path",
+      "id, user_id, hoja_vida_data, contrato_data, admin_data, signature_path, hoja_vida_pdf_path, contrato_pdf_path",
     )
     .eq("status", "firmado")
     .not("signature_path", "is", null);
@@ -113,7 +113,29 @@ async function main() {
           ...contratoData,
           moto_placa: rebuilt.placa,
           moto_estado: rebuilt.estado,
+          moto_modelo: rebuilt.modelo,
+          moto_color: rebuilt.color,
+          moto_chasis: rebuilt.chasis,
           celular_contratante: hojaVida.celular,
+          valor_cuota: compraInput?.monto_cuota_periodo ?? contratoData.valor_cuota,
+          cuota_inicial:
+            compraInput?.cuota_inicial_monto ?? contratoData.cuota_inicial,
+          frecuencia_pago:
+            compraInput?.frecuencia_pago ?? contratoData.frecuencia_pago,
+          total_contrato: rebuilt.totalContrato,
+          dias_contrato: rebuilt.diasContrato,
+        },
+        admin_data: {
+          ...((((row as { admin_data?: Record<string, unknown> }).admin_data) ??
+            {}) as Record<string, unknown>),
+          valor_cuota:
+            compraInput?.monto_cuota_periodo ??
+            Number(contratoData.valor_cuota ?? 0),
+          cuota_inicial:
+            compraInput?.cuota_inicial_monto ??
+            Number(contratoData.cuota_inicial ?? 0),
+          frecuencia_pago:
+            compraInput?.frecuencia_pago ?? contratoData.frecuencia_pago,
         },
         hoja_vida_pdf_path: paths.hojaVidaPdfPath,
         contrato_pdf_path: paths.contratoPdfPath,
@@ -123,7 +145,7 @@ async function main() {
     if (updateError) throw new Error(updateError.message);
 
     console.log(
-      `OK user ${userId} · placa ${rebuilt.placa} · ${paths.contratoPdfPath}`,
+      `OK user ${userId} · placa ${rebuilt.placa} · cuota ${rebuilt.valorCuota} · total ${rebuilt.totalContrato} · ${paths.contratoPdfPath}`,
     );
   }
 }

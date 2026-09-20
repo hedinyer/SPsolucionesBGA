@@ -160,7 +160,9 @@ export function ClientInfoSummary({
                 <>
                   <InfoItem
                     label="Estado de pagos"
-                    value={moraEstadoLabel(pipeline.atraso)}
+                    value={moraEstadoLabel(pipeline.atraso, {
+                      yaRecogida: mora.yaRecogida,
+                    })}
                   />
                   <InfoItem
                     label="Días de atraso"

@@ -1246,7 +1246,9 @@ export async function cerrarPrimerPago(input: {
 
   const { data: after, error: afterError } = await supabase
     .from("user_moto_compra")
-    .select("estado, pago_inicial_confirmado, pago_cuota_confirmado")
+    .select(
+      "estado, pago_inicial_confirmado, pago_cuota_confirmado, pago_visita_confirmado",
+    )
     .eq("id", parsed.compraId)
     .maybeSingle();
 
@@ -1254,9 +1256,13 @@ export async function cerrarPrimerPago(input: {
   if (!after) throw new Error("Compra no encontrada tras sincronizar.");
 
   if (after.estado === "pendiente_pago") {
-    // Edge: sync flags but estado trigger only fires on flag change �
-    // force lista_retiro when both flags are true.
-    if (after.pago_inicial_confirmado && after.pago_cuota_confirmado) {
+    // Edge: sync flags but estado trigger only fires on flag change —
+    // force lista_retiro when los tres conceptos están cubiertos.
+    if (
+      after.pago_inicial_confirmado &&
+      after.pago_cuota_confirmado &&
+      after.pago_visita_confirmado
+    ) {
       const { error: estadoError } = await supabase
         .from("user_moto_compra")
         .update({ estado: "lista_retiro" })
@@ -1306,6 +1312,7 @@ export async function registrarCobroPrimerPago(
       compraId: z.string().uuid(),
       referencia: z.string().optional(),
       monto: z.number().int().positive("El monto debe ser mayor a 0"),
+      concepto: z.enum(["inicial", "cuota_adelantada", "visita"]).optional(),
       fechaComprobante: z.string().optional(),
       medioPagoAdmin: z.enum(MEDIO_PAGO_ADMIN_VALUES),
       bancoOrigen: z.enum([
@@ -1326,6 +1333,9 @@ export async function registrarCobroPrimerPago(
         ? String(formData.get("referencia")).trim()
         : undefined,
       monto: Number(formData.get("monto")),
+      concepto: formData.get("concepto")
+        ? String(formData.get("concepto"))
+        : undefined,
       fechaComprobante: formData.get("fechaComprobante")
         ? String(formData.get("fechaComprobante"))
         : undefined,
@@ -1370,13 +1380,19 @@ export async function registrarCobroPrimerPago(
   const compraRow = compra as UserMotoCompraRow;
   const pagoRows = (pagos ?? []) as PagoRow[];
   const faltante = faltanteTotal(compraRow, pagoRows);
+  const faltanteDestino = parsed.concepto
+    ? faltanteConcepto(compraRow, pagoRows, parsed.concepto)
+    : faltante;
 
   if (faltante <= 0) {
-    throw new Error("El primer pago ya est� cubierto.");
+    throw new Error("El primer pago ya está cubierto.");
   }
-  if (parsed.monto > faltante) {
+  if (parsed.concepto && faltanteDestino <= 0) {
+    throw new Error("Ese concepto ya está cubierto.");
+  }
+  if (parsed.monto > faltanteDestino) {
     throw new Error(
-      `El monto supera lo que falta (${faltante.toLocaleString("es-CO")}).`,
+      `El monto supera lo que falta (${faltanteDestino.toLocaleString("es-CO")}).`,
     );
   }
 
@@ -1384,6 +1400,7 @@ export async function registrarCobroPrimerPago(
     compraRow,
     pagoRows,
     parsed.monto,
+    parsed.concepto ? { only: parsed.concepto } : undefined,
   );
   if (allocation.length === 0) {
     throw new Error("No hay conceptos pendientes para aplicar este cobro.");

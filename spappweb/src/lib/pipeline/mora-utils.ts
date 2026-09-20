@@ -97,11 +97,41 @@ function recogerActivo(recoger?: MoraRecogerInput | null): boolean {
   );
 }
 
+/** Moto ya marcada como recogida (fila o estado físico). */
+export function motoYaRecogida(input: {
+  recoger?: MoraRecogerInput | null;
+  estadoFisico?: string | null;
+}): boolean {
+  if (input.recoger?.estado === "recogida") return true;
+  if (input.estadoFisico === "recogida") return true;
+  return false;
+}
+
+/** Elegible para botón "Moto recogida": entregada, deuda 4+ días, aún no recogida. */
+export function puedeMarcarMotoRecogida(input: {
+  compraEstado?: string | null;
+  diasAtraso?: number | null;
+  montoAdeudado?: number | null;
+  recoger?: MoraRecogerInput | null;
+  estadoFisico?: string | null;
+}): boolean {
+  if (input.compraEstado !== "entregada") return false;
+  if (motoYaRecogida(input)) return false;
+  const dias = input.diasAtraso ?? 0;
+  const monto = input.montoAdeudado ?? 0;
+  if (monto <= 0 || dias < DIAS_RECOGER_BANDEJA) return false;
+  if (input.recoger && !recogerActivo(input.recoger)) return false;
+  return true;
+}
+
 export function getMoraDisplay(input: {
   atraso?: AtrasoSnapshot | null;
   moroso?: MoraMorosoInput | null;
   recoger?: MoraRecogerInput | null;
   rentingResumen?: RentingResumen | null;
+  compra?: Pick<UserMotoCompraRow, "estado"> & {
+    estado_fisico?: string | null;
+  } | null;
 }) {
   const dias =
     input.atraso?.dias_atraso ??
@@ -116,16 +146,22 @@ export function getMoraDisplay(input: {
     input.rentingResumen?.totalAdeudado ??
     0;
   const tieneDeuda = monto > 0;
+  const yaRecogida = motoYaRecogida({
+    recoger: input.recoger,
+    estadoFisico: input.compra?.estado_fisico,
+  });
   const paraRecoger =
+    !yaRecogida &&
     tieneDeuda &&
     dias >= DIAS_RECOGER_BANDEJA &&
     (!input.recoger || recogerActivo(input.recoger));
   const enMoraBandeja =
+    !yaRecogida &&
     tieneDeuda &&
     dias >= DIAS_MORA_BANDEJA &&
     dias < DIAS_RECOGER_BANDEJA;
 
-  return { dias, monto, enMoraBandeja, paraRecoger, tieneDeuda };
+  return { dias, monto, enMoraBandeja, paraRecoger, tieneDeuda, yaRecogida };
 }
 
 /** Guard puro: no pisar créditos liquidado/cancelado al marcar entrega. */
@@ -143,7 +179,11 @@ export function pipelineTieneCuentaMora(pipeline: ClientPipeline): boolean {
   return getMoraDisplay(pipeline).tieneDeuda;
 }
 
-export function moraEstadoLabel(atraso: AtrasoSnapshot | null | undefined): string {
+export function moraEstadoLabel(
+  atraso: AtrasoSnapshot | null | undefined,
+  options?: { yaRecogida?: boolean },
+): string {
+  if (options?.yaRecogida) return "Moto recogida";
   if (!atraso || atraso.monto_adeudado <= 0) return "Al día";
   if (atraso.dias_atraso >= DIAS_RECOGER_BANDEJA) return "Para recoger (4+ días)";
   if (atraso.dias_atraso >= DIAS_MORA_BANDEJA) return "En mora (3 días)";

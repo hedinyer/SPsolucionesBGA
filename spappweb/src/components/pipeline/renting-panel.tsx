@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { Copy, FileText, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { markMotoRecogida, resolveMoroso } from "@/lib/actions/admin-actions";
+import { markMotoRecogida, markMotoRecogidaByUserId, resolveMoroso } from "@/lib/actions/admin-actions";
 import {
   CONTEXTO_PAGO_LABELS,
   FRECUENCIA_LABELS,
@@ -12,7 +12,7 @@ import {
   type ClientPipeline,
   type TarifaPagadaRow,
 } from "@/lib/pipeline/types";
-import { getMoraDisplay } from "@/lib/pipeline/mora-utils";
+import { getMoraDisplay, getPlazoRecuperacion } from "@/lib/pipeline/mora-utils";
 import { cuotaFraction } from "@/lib/payments/payment-metrics";
 import { formatCop, formatCuotas, formatDate, formatDateOnly } from "@/lib/utils/format";
 import {
@@ -95,8 +95,8 @@ export function RentingPanel({ pipeline, userId }: RentingPanelProps) {
   const { compra, rentingResumen, tarifas, moroso, recoger, pagosHistorial, atraso, comprobanteByTarifaId } =
     pipeline;
 
-  const mora = getMoraDisplay({ atraso, moroso, recoger, rentingResumen });
-  const moraResumen = mora.tieneDeuda && !mora.paraRecoger;
+  const mora = getMoraDisplay({ atraso, moroso, recoger, rentingResumen, compra });
+  const moraResumen = mora.tieneDeuda && !mora.paraRecoger && !mora.yaRecogida;
 
   const referenciasUsadas = useMemo(
     () =>
@@ -168,10 +168,13 @@ export function RentingPanel({ pipeline, userId }: RentingPanelProps) {
   }
 
   function marcarMotoRecogida() {
-    if (!recoger) return;
     startTransition(async () => {
       try {
-        await markMotoRecogida({ recogerId: recoger.id, userId });
+        if (recoger && recoger.estado !== "recogida") {
+          await markMotoRecogida({ recogerId: recoger.id, userId });
+        } else {
+          await markMotoRecogidaByUserId({ userId });
+        }
         toast.success(
           "Moto registrada en Garaje. Completa la foto de placa y ubicación.",
           {
@@ -340,27 +343,56 @@ export function RentingPanel({ pipeline, userId }: RentingPanelProps) {
             </div>
           )}
 
+          {mora.yaRecogida && !creditoSaldado && (
+            <div className="rounded-lg border border-border bg-muted/50 p-4 text-sm">
+              <p className="font-bold uppercase tracking-wide text-foreground">
+                Moto recogida
+              </p>
+              {(() => {
+                const plazo = getPlazoRecuperacion(recoger?.fecha_recogida);
+                if (plazo.plazoVencido) {
+                  return (
+                    <p className="mt-1 text-muted-foreground">
+                      Plazo de recuperación vencido. Usa &quot;Inactivar moto&quot;
+                      en el encabezado si el cliente no la recupera.
+                    </p>
+                  );
+                }
+                return (
+                  <p className="mt-1 text-muted-foreground">
+                    Quedan {plazo.diasRestantes} día
+                    {plazo.diasRestantes === 1 ? "" : "s"} para que el cliente
+                    recupere la moto.
+                  </p>
+                );
+              })()}
+              <div className="mt-3">
+                <Button size="sm" variant="outline" asChild>
+                  <Link href="/garaje?fotoPendiente=1">Ver Garaje</Link>
+                </Button>
+              </div>
+            </div>
+          )}
+
           {mora.paraRecoger && !creditoSaldado && (
             <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm">
               <p className="font-medium text-red-900">Moto para recoger</p>
               <p className="mt-1 text-red-800">
                 {mora.dias} días de mora · Adeudado {formatCop(mora.monto)}
               </p>
-              {recoger && recoger.estado !== "recogida" && (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    disabled={pending}
-                    onClick={marcarMotoRecogida}
-                  >
-                    Marcar como recogida
-                  </Button>
-                  <Button size="sm" variant="outline" asChild>
-                    <Link href="/garaje?fotoPendiente=1">Ver Garaje</Link>
-                  </Button>
-                </div>
-              )}
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  disabled={pending}
+                  onClick={marcarMotoRecogida}
+                >
+                  Moto recogida
+                </Button>
+                <Button size="sm" variant="outline" asChild>
+                  <Link href="/garaje?fotoPendiente=1">Ver Garaje</Link>
+                </Button>
+              </div>
             </div>
           )}
 

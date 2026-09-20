@@ -82,18 +82,35 @@ export type CobroAllocation = {
   monto: number;
 };
 
-/** Reparte un cobro en orden: inicial → adelantada → visita. */
+export type AllocateCobroOptions = {
+  /** Solo aplica a este concepto (hasta su faltante). */
+  only?: PrimerPagoConcepto | null;
+  /** Empieza por este concepto y luego sigue con el resto. */
+  prefer?: PrimerPagoConcepto | null;
+};
+
+function ordenConceptosCobro(
+  options?: AllocateCobroOptions,
+): PrimerPagoConcepto[] {
+  if (options?.only) return [options.only];
+  const prefer = options?.prefer ?? null;
+  if (!prefer) return [...CONCEPTOS_ORDEN];
+  return [prefer, ...CONCEPTOS_ORDEN.filter((c) => c !== prefer)];
+}
+
+/** Reparte un cobro. Por defecto: inicial → adelantada → visita. */
 export function allocateCobroPrimerPago(
   compra: UserMotoCompraRow,
   pagos: PagoRow[],
   monto: number,
+  options?: AllocateCobroOptions,
 ): CobroAllocation[] {
   if (!Number.isFinite(monto) || monto <= 0) return [];
 
   let restante = Math.floor(monto);
   const out: CobroAllocation[] = [];
 
-  for (const contexto of CONCEPTOS_ORDEN) {
+  for (const contexto of ordenConceptosCobro(options)) {
     if (restante <= 0) break;
     const faltante = faltanteConcepto(compra, pagos, contexto);
     if (faltante <= 0) continue;

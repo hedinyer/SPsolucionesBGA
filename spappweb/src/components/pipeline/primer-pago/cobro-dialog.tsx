@@ -119,6 +119,9 @@ export function CobroPrimerPagoDialog({
   const [monto, setMonto] = useState<number | null>(
     faltante > 0 ? faltante : null,
   );
+  /** null = auto (inicial→adelantada→visita); concepto = solo ese rubro. */
+  const [conceptoDestino, setConceptoDestino] =
+    useState<PrimerPagoConcepto | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [bancoOrigen, setBancoOrigen] = useState<BancoOrigen>("nequi");
   const [referencia, setReferencia] = useState("");
@@ -135,12 +138,18 @@ export function CobroPrimerPagoDialog({
   const presencial = isPresencialMedio(medioPagoAdmin);
   const esEfectivo = medioPagoAdmin === "efectivo";
 
+  const maxMonto = conceptoDestino
+    ? faltanteConcepto(compra, pagos, conceptoDestino)
+    : faltante;
+
   const allocation = useMemo(
     () =>
       monto != null && monto > 0
-        ? allocateCobroPrimerPago(compra, pagos, monto)
+        ? allocateCobroPrimerPago(compra, pagos, monto, {
+            only: conceptoDestino,
+          })
         : [],
-    [compra, pagos, monto],
+    [compra, pagos, monto, conceptoDestino],
   );
 
   const restanteTrasCobro =
@@ -240,8 +249,8 @@ export function CobroPrimerPagoDialog({
     const next: FieldErrors = {};
     if (!medioPagoAdmin) next.medio = "Elige cómo pagó el cliente.";
     if (monto == null || monto <= 0) next.monto = "Ingresa cuánto recibió.";
-    else if (monto > faltante) {
-      next.monto = `No puede superar lo que falta (${formatCop(faltante)}).`;
+    else if (monto > maxMonto) {
+      next.monto = `No puede superar lo que falta (${formatCop(maxMonto)}).`;
     }
     if (!presencial && !file) next.file = "Sube el comprobante de pago.";
     if (!presencial && !referencia.trim()) {
@@ -287,6 +296,7 @@ export function CobroPrimerPagoDialog({
         formData.set("compraId", compra.id);
         if (referencia.trim()) formData.set("referencia", referencia.trim());
         formData.set("monto", String(monto));
+        if (conceptoDestino) formData.set("concepto", conceptoDestino);
         if (fecha) formData.set("fechaComprobante", datetimeLocalToIso(fecha));
         formData.set("medioPagoAdmin", medioPagoAdmin);
         formData.set("bancoOrigen", bancoOrigen);
@@ -352,8 +362,9 @@ export function CobroPrimerPagoDialog({
         <DialogHeader>
           <DialogTitle>Cobrar primer pago</DialogTitle>
           <DialogDescription>
-            Faltan {formatCop(faltante)}. El sistema reparte el dinero en orden:
-            inicial, adelantada y visita.
+            Faltan {formatCop(faltante)}. Elige un concepto para cobrarlo en
+            cualquier orden, o &quot;Todo&quot; para repartir automático
+            (inicial → adelantada → visita).
           </DialogDescription>
         </DialogHeader>
 
@@ -411,7 +422,7 @@ export function CobroPrimerPagoDialog({
                 setErrors((e) => ({ ...e, monto: undefined }));
               }}
               min={1}
-              max={faltante}
+              max={maxMonto}
               disabled={pending || ocrPending}
               aria-invalid={Boolean(errors.monto)}
               aria-describedby={
@@ -432,9 +443,12 @@ export function CobroPrimerPagoDialog({
               <Button
                 type="button"
                 size="sm"
-                variant="secondary"
+                variant={conceptoDestino == null ? "secondary" : "outline"}
                 disabled={pending || faltante <= 0}
-                onClick={() => setMonto(faltante)}
+                onClick={() => {
+                  setConceptoDestino(null);
+                  setMonto(faltante);
+                }}
               >
                 Todo ({formatCop(faltante)})
               </Button>
@@ -443,9 +457,14 @@ export function CobroPrimerPagoDialog({
                   key={c.contexto}
                   type="button"
                   size="sm"
-                  variant="outline"
+                  variant={
+                    conceptoDestino === c.contexto ? "secondary" : "outline"
+                  }
                   disabled={pending}
-                  onClick={() => setMonto(c.value)}
+                  onClick={() => {
+                    setConceptoDestino(c.contexto);
+                    setMonto(c.value);
+                  }}
                 >
                   {c.label} ({formatCop(c.value)})
                 </Button>
@@ -454,12 +473,16 @@ export function CobroPrimerPagoDialog({
             <p id="cobro-reparto" className="text-sm text-muted-foreground" role="status">
               {allocation.length === 0
                 ? "Indica un monto para ver cómo se aplica."
-                : `Se aplica a: ${allocation
-                    .map(
-                      (a) =>
-                        `${CONTEXTO_PAGO_LABELS[a.contexto]} ${formatCop(a.monto)}`,
-                    )
-                    .join(" · ")}`}
+                : conceptoDestino
+                  ? `Solo ${CONTEXTO_PAGO_LABELS[conceptoDestino]}: ${allocation
+                      .map((a) => formatCop(a.monto))
+                      .join(" · ")}`
+                  : `Se aplica a: ${allocation
+                      .map(
+                        (a) =>
+                          `${CONTEXTO_PAGO_LABELS[a.contexto]} ${formatCop(a.monto)}`,
+                      )
+                      .join(" · ")}`}
               {monto != null &&
                 monto > 0 &&
                 restanteTrasCobro > 0 &&

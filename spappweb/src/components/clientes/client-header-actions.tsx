@@ -9,7 +9,12 @@ import {
   congelarCuotas,
   saldarCredito,
 } from "@/lib/actions/credito-operaciones-actions";
-import { transferirTitularidad } from "@/lib/actions/admin-actions";
+import { transferirTitularidad, markMotoRecogidaByUserId, inactivarMotoCliente } from "@/lib/actions/admin-actions";
+import {
+  getMoraDisplay,
+  getPlazoRecuperacion,
+  puedeMarcarMotoRecogida,
+} from "@/lib/pipeline/mora-utils";
 import { searchClientesAction } from "@/lib/actions/clientes-search-actions";
 import { checkReferenciaPagoUsada } from "@/lib/actions/payment-comprobante-actions";
 import { isReferenciaDuplicada } from "@/lib/payments/referencia";
@@ -59,18 +64,70 @@ function clienteCedula(pipeline: ClientPipeline): string {
 }
 
 export function ClientHeaderActions({ pipeline }: { pipeline: ClientPipeline }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
   const [freezeOpen, setFreezeOpen] = useState(false);
   const [settleOpen, setSettleOpen] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
 
   const compra = pipeline.compra;
   const renting = pipeline.rentingResumen;
+  const mora = getMoraDisplay(pipeline);
   const cuotasActivas =
     (renting?.cuotasPendientes ?? 0) + (renting?.cuotasVencidas ?? 0);
   const showCreditoOps =
     compra?.estado === "entregada" && cuotasActivas > 0;
   const showTransfer =
     Boolean(compra) && compra?.estado !== "cancelada";
+
+  const showMarcarRecogida = puedeMarcarMotoRecogida({
+    compraEstado: compra?.estado,
+    diasAtraso: mora.dias,
+    montoAdeudado: mora.monto,
+    recoger: pipeline.recoger,
+    estadoFisico: compra?.estado_fisico,
+  });
+  const yaRecogida = mora.yaRecogida;
+  const plazo = getPlazoRecuperacion(pipeline.recoger?.fecha_recogida);
+  const showInactivar = yaRecogida && plazo.plazoVencido;
+
+  function marcarRecogida() {
+    startTransition(async () => {
+      try {
+        await markMotoRecogidaByUserId({ userId: pipeline.user.id });
+        toast.success(
+          "Moto registrada en Garaje. Completa la foto de placa y ubicación.",
+          {
+            action: {
+              label: "Ir a Garaje",
+              onClick: () => {
+                window.location.href = "/garaje?fotoPendiente=1";
+              },
+            },
+          },
+        );
+        router.refresh();
+      } catch (e) {
+        toast.error(
+          e instanceof Error ? e.message : "No se pudo marcar como recogida.",
+        );
+      }
+    });
+  }
+
+  function inactivarMoto() {
+    startTransition(async () => {
+      try {
+        await inactivarMotoCliente({ userId: pipeline.user.id });
+        toast.success("Moto inactivada. Liberada para mantenimiento.");
+        router.refresh();
+      } catch (e) {
+        toast.error(
+          e instanceof Error ? e.message : "No se pudo inactivar la moto.",
+        );
+      }
+    });
+  }
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -79,6 +136,33 @@ export function ClientHeaderActions({ pipeline }: { pipeline: ClientPipeline }) 
           Formulario web
         </Link>
       </Button>
+      {showMarcarRecogida ? (
+        <Button
+          variant="destructive"
+          className="min-h-11"
+          disabled={pending}
+          onClick={marcarRecogida}
+        >
+          Moto recogida
+        </Button>
+      ) : null}
+      {showInactivar ? (
+        <Button
+          variant="outline"
+          className="min-h-11 border-foreground text-foreground"
+          disabled={pending}
+          onClick={inactivarMoto}
+        >
+          Inactivar moto
+        </Button>
+      ) : null}
+      {yaRecogida && !plazo.plazoVencido ? (
+        <Badge variant="outline" className="w-fit text-xs">
+          Recuperación: {plazo.diasRestantes} día
+          {plazo.diasRestantes === 1 ? "" : "s"} restante
+          {plazo.diasRestantes === 1 ? "" : "s"}
+        </Badge>
+      ) : null}
       {showTransfer && compra && (
         <Button
           variant="outline"

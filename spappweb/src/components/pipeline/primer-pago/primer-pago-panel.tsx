@@ -65,7 +65,8 @@ export function PrimerPagoPanel({
   const faltante = faltanteTotal(compra, pagos);
   const cubierto = primerPagoCubierto(compra, pagos);
   const canEdit = puedeEditarAcuerdoPrimerPago(compra);
-  const completoEstado = compra.estado === "lista_retiro";
+  // lista_retiro solo cuenta como "completo" si ya no falta dinero (evita bloqueo tras cambiar acuerdo).
+  const completoEstado = compra.estado === "lista_retiro" && faltante === 0;
   const totalRecibido =
     sumAbonos(pagos, "inicial") +
     sumAbonos(pagos, "cuota_adelantada") +
@@ -111,7 +112,7 @@ export function PrimerPagoPanel({
             )}
             role="status"
           >
-            {completoEstado || (cubierto && compra.estado === "lista_retiro")
+            {completoEstado
               ? "Pago completo"
               : faltante > 0
                 ? `Faltan ${formatCop(faltante)}`

@@ -55,6 +55,8 @@ import {
   DIAS_MORA_BANDEJA,
   DIAS_RECOGER_BANDEJA,
   mergeRentingResumenWithAtraso,
+  motoYaRecogida,
+  puedeMarcarMotoRecogida,
 } from "@/lib/pipeline/mora-utils";
 import { formatCop } from "@/lib/utils/format";
 import {
@@ -282,7 +284,7 @@ export async function getClientPipeline(
   const { data: compra } = await supabase
     .from("user_moto_compra")
     .select(
-      "id, user_id, bike_id, modelo, color, frecuencia_pago, cuota_inicial_monto, monto_cuota_periodo, monto_cuota_adelantada, monto_visita_monto, monto_total_primer_pago, estado, pago_inicial_confirmado, pago_cuota_confirmado, pago_visita_confirmado, placa, chasis, referencia, fecha_entrega, doc_tarjeta_propiedad_path, doc_soat_path, doc_tecno_path, seleccionado_at, admin_data",
+      "id, user_id, bike_id, modelo, color, frecuencia_pago, cuota_inicial_monto, monto_cuota_periodo, monto_cuota_adelantada, monto_visita_monto, monto_total_primer_pago, estado, pago_inicial_confirmado, pago_cuota_confirmado, pago_visita_confirmado, placa, chasis, referencia, fecha_entrega, estado_fisico, doc_tarjeta_propiedad_path, doc_soat_path, doc_tecno_path, seleccionado_at, admin_data",
     )
     .eq("user_id", userId)
     .maybeSingle();
@@ -315,14 +317,29 @@ export async function getClientPipeline(
     .eq("estado", "activo")
     .maybeSingle();
 
+  // Incluye recogida para que la ficha no muestre banner vacío sin botón.
   const { data: recoger } = await supabase
     .from("motos_para_recoger")
     .select(
       "id, user_moto_compra_id, moroso_id, user_id, dias_atraso, monto_adeudado, estado, fecha_ingreso, fecha_recogida, notas",
     )
     .eq("user_id", userId)
-    .in("estado", ["pendiente", "asignada"])
+    .order("fecha_ingreso", { ascending: false })
+    .limit(1)
     .maybeSingle();
+
+  // Alinea estado_fisico si la fila ya está recogida pero la compra quedó en activa.
+  if (
+    compra &&
+    recoger?.estado === "recogida" &&
+    (compra as { estado_fisico?: string | null }).estado_fisico !== "recogida"
+  ) {
+    await supabase
+      .from("user_moto_compra")
+      .update({ estado_fisico: "recogida" })
+      .eq("id", compra.id);
+    (compra as { estado_fisico?: string | null }).estado_fisico = "recogida";
+  }
 
   const { data: atrasoRow } = compra
     ? await supabase
@@ -2196,12 +2213,12 @@ export async function searchClients(
   const userIds = [...matchLabels.keys()];
   if (userIds.length === 0) return [];
 
-  const [{ data: users }, { data: paidTarifas }, { data: atrasos }] =
+  const [{ data: users }, { data: paidTarifas }, { data: atrasos }, { data: recogers }] =
     await Promise.all([
       supabase
         .from("users")
         .select(
-          "id, user, users_documents(selfie_url, referral_source), user_moto_compra(id, modelo, color, placa, estado, fecha_entrega, seleccionado_at, bike_table(imagen_url)), visitas(cliente_nombre), digital_contracts(hoja_vida_data, contrato_data, created_at)",
+          "id, user, users_documents(selfie_url, referral_source), user_moto_compra(id, modelo, color, placa, estado, estado_fisico, fecha_entrega, seleccionado_at, bike_table(imagen_url)), visitas(cliente_nombre), digital_contracts(hoja_vida_data, contrato_data, created_at)",
         )
         .in("id", userIds),
       supabase
@@ -2211,8 +2228,13 @@ export async function searchClients(
         .eq("estado", "pagada"),
       supabase
         .from("atrasos")
-        .select("user_id, dias_atraso")
+        .select("user_id, dias_atraso, monto_adeudado")
         .in("user_id", userIds),
+      supabase
+        .from("motos_para_recoger")
+        .select("user_id, estado, fecha_ingreso")
+        .in("user_id", userIds)
+        .order("fecha_ingreso", { ascending: false }),
     ]);
 
   const paidCount = new Map<number, number>();
@@ -2222,8 +2244,18 @@ export async function searchClients(
   }
 
   const diasByUser = new Map<number, number>();
+  const montoByUser = new Map<number, number>();
   for (const row of atrasos ?? []) {
     diasByUser.set(row.user_id as number, Number(row.dias_atraso) || 0);
+    montoByUser.set(row.user_id as number, Number(row.monto_adeudado) || 0);
+  }
+
+  const recogerByUser = new Map<number, string>();
+  for (const row of recogers ?? []) {
+    const id = row.user_id as number;
+    if (!recogerByUser.has(id)) {
+      recogerByUser.set(id, String(row.estado));
+    }
   }
 
   const results: ClientSearchResult[] = (users ?? []).flatMap((raw) => {
@@ -2241,6 +2273,7 @@ export async function searchClients(
             color: string;
             placa: string | null;
             estado: ClientSearchResult["compraEstado"];
+            estado_fisico: string | null;
             fecha_entrega: string | null;
             seleccionado_at: string | null;
             bike_table: { imagen_url: string | null } | { imagen_url: string | null }[] | null;
@@ -2251,6 +2284,7 @@ export async function searchClients(
             color: string;
             placa: string | null;
             estado: ClientSearchResult["compraEstado"];
+            estado_fisico: string | null;
             fecha_entrega: string | null;
             seleccionado_at: string | null;
             bike_table: { imagen_url: string | null } | { imagen_url: string | null }[] | null;
@@ -2312,6 +2346,21 @@ export async function searchClients(
       visita?.cliente_nombre?.trim() ||
       user.user;
 
+    const diasAtraso = diasByUser.get(user.id) ?? 0;
+    const montoAdeudado = montoByUser.get(user.id) ?? 0;
+    const recogerEstado = recogerByUser.get(user.id) ?? null;
+    const motoRecogida = motoYaRecogida({
+      recoger: recogerEstado ? { estado: recogerEstado as MotoRecogerEstado } : null,
+      estadoFisico: compra?.estado_fisico,
+    });
+    const puedeMarcarRecogida = puedeMarcarMotoRecogida({
+      compraEstado: compra?.estado,
+      diasAtraso,
+      montoAdeudado,
+      recoger: recogerEstado ? { estado: recogerEstado as MotoRecogerEstado } : null,
+      estadoFisico: compra?.estado_fisico,
+    });
+
     return [
       {
         userId: user.id,
@@ -2322,7 +2371,9 @@ export async function searchClients(
         motoLabel: compra ? `${compra.modelo} · ${compra.color}` : null,
         compraEstado: compra?.estado ?? null,
         cuotasPagadas: paidCount.get(user.id) ?? 0,
-        diasAtraso: diasByUser.get(user.id) ?? 0,
+        diasAtraso,
+        motoRecogida,
+        puedeMarcarRecogida,
         matchLabel: matchLabels.get(user.id) ?? "—",
         seleccionadoAt: compra?.seleccionado_at ?? null,
         // ponytail: fecha_entrega often null on entregadas → fall back to asignación
@@ -2357,7 +2408,7 @@ export async function listClientesMotoCredito(
   const { data: compras, error } = await supabase
     .from("user_moto_compra")
     .select(
-      "id, modelo, color, placa, estado, seleccionado_at, fecha_entrega, user_id, bike_table(imagen_url), users(id, user, users_documents(selfie_url, referral_source), visitas(cliente_nombre), digital_contracts(hoja_vida_data, contrato_data, created_at))",
+      "id, modelo, color, placa, estado, estado_fisico, seleccionado_at, fecha_entrega, user_id, bike_table(imagen_url), users(id, user, users_documents(selfie_url, referral_source), visitas(cliente_nombre), digital_contracts(hoja_vida_data, contrato_data, created_at))",
     )
     .neq("estado", "cancelada")
     .order("seleccionado_at", { ascending: false })
@@ -2369,17 +2420,23 @@ export async function listClientesMotoCredito(
   const userIds = compras.map((row) => row.user_id as number);
   const compraIds = compras.map((row) => row.id as string);
 
-  const [{ data: paidTarifas }, { data: atrasos }] = await Promise.all([
-    supabase
-      .from("tarifas_pagadas")
-      .select("user_id")
-      .in("user_id", userIds)
-      .eq("estado", "pagada"),
-    supabase
-      .from("atrasos")
-      .select("user_moto_compra_id, dias_atraso")
-      .in("user_moto_compra_id", compraIds),
-  ]);
+  const [{ data: paidTarifas }, { data: atrasos }, { data: recogers }] =
+    await Promise.all([
+      supabase
+        .from("tarifas_pagadas")
+        .select("user_id")
+        .in("user_id", userIds)
+        .eq("estado", "pagada"),
+      supabase
+        .from("atrasos")
+        .select("user_moto_compra_id, dias_atraso, monto_adeudado")
+        .in("user_moto_compra_id", compraIds),
+      supabase
+        .from("motos_para_recoger")
+        .select("user_moto_compra_id, estado, fecha_ingreso")
+        .in("user_moto_compra_id", compraIds)
+        .order("fecha_ingreso", { ascending: false }),
+    ]);
 
   const paidCount = new Map<number, number>();
   for (const row of paidTarifas ?? []) {
@@ -2388,11 +2445,24 @@ export async function listClientesMotoCredito(
   }
 
   const diasByCompra = new Map<string, number>();
+  const montoByCompra = new Map<string, number>();
   for (const row of atrasos ?? []) {
     diasByCompra.set(
       row.user_moto_compra_id as string,
       Number(row.dias_atraso) || 0,
     );
+    montoByCompra.set(
+      row.user_moto_compra_id as string,
+      Number(row.monto_adeudado) || 0,
+    );
+  }
+
+  const recogerByCompra = new Map<string, string>();
+  for (const row of recogers ?? []) {
+    const id = row.user_moto_compra_id as string;
+    if (!recogerByCompra.has(id)) {
+      recogerByCompra.set(id, String(row.estado));
+    }
   }
 
   const results = compras.flatMap((raw) => {
@@ -2402,6 +2472,7 @@ export async function listClientesMotoCredito(
       color: string;
       placa: string | null;
       estado: ClientSearchResult["compraEstado"];
+      estado_fisico: string | null;
       seleccionado_at: string;
       fecha_entrega: string | null;
       user_id: number;
@@ -2463,6 +2534,26 @@ export async function listClientesMotoCredito(
 
     const usersRaw = compra.users;
     const user = Array.isArray(usersRaw) ? usersRaw[0] : usersRaw;
+
+    const diasAtraso = diasByCompra.get(compra.id) ?? 0;
+    const montoAdeudado = montoByCompra.get(compra.id) ?? 0;
+    const recogerEstado = recogerByCompra.get(compra.id) ?? null;
+    const motoRecogidaFlag = motoYaRecogida({
+      recoger: recogerEstado
+        ? { estado: recogerEstado as MotoRecogerEstado }
+        : null,
+      estadoFisico: compra.estado_fisico,
+    });
+    const puedeMarcarRecogidaFlag = puedeMarcarMotoRecogida({
+      compraEstado: compra.estado,
+      diasAtraso,
+      montoAdeudado,
+      recoger: recogerEstado
+        ? { estado: recogerEstado as MotoRecogerEstado }
+        : null,
+      estadoFisico: compra.estado_fisico,
+    });
+
     if (!user) {
       return [
         {
@@ -2474,7 +2565,9 @@ export async function listClientesMotoCredito(
           motoLabel: `${compra.modelo} · ${compra.color}`,
           compraEstado: compra.estado,
           cuotasPagadas: paidCount.get(compra.user_id) ?? 0,
-          diasAtraso: diasByCompra.get(compra.id) ?? 0,
+          diasAtraso,
+          motoRecogida: motoRecogidaFlag,
+          puedeMarcarRecogida: puedeMarcarRecogidaFlag,
           matchLabel: "",
           seleccionadoAt: compra.seleccionado_at,
           fechaVenta: compra.fecha_entrega ?? compra.seleccionado_at ?? null,
@@ -2536,7 +2629,9 @@ export async function listClientesMotoCredito(
         motoLabel: `${compra.modelo} · ${compra.color}`,
         compraEstado: compra.estado,
         cuotasPagadas: paidCount.get(user.id) ?? 0,
-        diasAtraso: diasByCompra.get(compra.id) ?? 0,
+        diasAtraso,
+        motoRecogida: motoRecogidaFlag,
+        puedeMarcarRecogida: puedeMarcarRecogidaFlag,
         matchLabel: "",
         seleccionadoAt: compra.seleccionado_at,
         // ponytail: fecha_entrega often null on entregadas → fall back to asignación

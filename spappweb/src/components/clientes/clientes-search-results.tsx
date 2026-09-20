@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { ArrowRight, Bike, FileText, User, X } from "lucide-react";
 import { toast } from "sonner";
-import { deleteClienteSinVisita } from "@/lib/actions/admin-actions";
+import { deleteClienteSinVisita, markMotoRecogidaByUserId } from "@/lib/actions/admin-actions";
 import {
   COMPRA_ESTADO_LABELS,
   type ClientSearchResult,
@@ -97,6 +97,37 @@ export function ClientesSearchResults({
     });
   }
 
+  function marcarRecogida(client: ClientSearchResult) {
+    startTransition(async () => {
+      try {
+        await markMotoRecogidaByUserId({ userId: client.userId });
+        setList((prev) =>
+          prev.map((c) =>
+            c.userId === client.userId
+              ? { ...c, motoRecogida: true, puedeMarcarRecogida: false }
+              : c,
+          ),
+        );
+        toast.success(
+          "Moto registrada en Garaje. Completa la foto de placa y ubicación.",
+          {
+            action: {
+              label: "Ir a Garaje",
+              onClick: () => {
+                window.location.href = "/garaje?fotoPendiente=1";
+              },
+            },
+          },
+        );
+        router.refresh();
+      } catch (e) {
+        toast.error(
+          e instanceof Error ? e.message : "No se pudo marcar como recogida.",
+        );
+      }
+    });
+  }
+
   if (results.length === 0) {
     return (
       <Empty className="border border-dashed border-border">
@@ -161,6 +192,11 @@ export function ClientesSearchResults({
                     <div className="flex flex-col gap-1.5">
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="font-semibold">{client.displayName}</p>
+                        {client.motoRecogida ? (
+                          <span className="text-sm font-bold uppercase tracking-wide text-foreground">
+                            MOTO RECOGIDA
+                          </span>
+                        ) : null}
                         {client.matchLabel ? (
                           <Badge variant="secondary" className="text-xs">
                             {client.matchLabel}
@@ -172,6 +208,7 @@ export function ClientesSearchResults({
                           </Badge>
                         )}
                         {client.compraEstado &&
+                          !client.motoRecogida &&
                           (client.diasAtraso > 0 ? (
                             <Badge
                               variant="outline"
@@ -222,6 +259,17 @@ export function ClientesSearchResults({
                   </Link>
 
                   <div className="flex flex-wrap items-center gap-2 border-t border-border px-4 py-3">
+                    {client.puedeMarcarRecogida ? (
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="sm"
+                        disabled={pending}
+                        onClick={() => marcarRecogida(client)}
+                      >
+                        Moto recogida
+                      </Button>
+                    ) : null}
                     <Button
                       type="button"
                       variant="outline"

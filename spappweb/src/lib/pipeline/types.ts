@@ -175,6 +175,8 @@ export interface UserMotoCompraRow {
   chasis: string | null;
   referencia: string | null;
   fecha_entrega: string | null;
+  /** Estado físico en calle (activa, recogida, …). */
+  estado_fisico?: VendidaEstadoFisico | null;
   doc_tarjeta_propiedad_path: string | null;
   doc_soat_path: string | null;
   doc_tecno_path: string | null;
@@ -483,6 +485,10 @@ export interface ClientSearchResult {
   compraEstado: MotoCompraEstado | null;
   cuotasPagadas: number;
   diasAtraso: number;
+  /** Moto ya marcada como recogida. */
+  motoRecogida: boolean;
+  /** Elegible para botón "Moto recogida". */
+  puedeMarcarRecogida: boolean;
   matchLabel: string;
   seleccionadoAt: string | null;
   /** Fecha de entrega / venta de la moto (ISO date). */

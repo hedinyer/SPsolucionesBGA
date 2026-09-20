@@ -80,11 +80,13 @@ export function VisitActionPanel({
   const fotos = visita.evidencia_fotos ?? [];
   const videos = visita.evidencia_videos ?? [];
   const ubicacion = visita.ubicacion_verificada;
+  const visitador =
+    visitadores.find((v) => v.id === visita.visitador_id) ??
+    visita.visitadores ??
+    null;
+  const visitadorNombre = visitador?.nombre?.trim() || null;
   const assignedVisitador =
-    visita.estado === "asignada"
-      ? visitadores.find((v) => v.id === visita.visitador_id) ??
-        visita.visitadores
-      : null;
+    visita.estado === "asignada" ? visitador : null;
   const assignedUsername = visitadorUsername(assignedVisitador);
 
   return (
@@ -121,6 +123,18 @@ export function VisitActionPanel({
                 .join(", ") || "—"}
             </dd>
           </div>
+          {visita.estado === "completada" && (
+            <div className="sm:col-span-2">
+              <dt className="text-muted-foreground">Realizada por</dt>
+              <dd className="font-medium">{visitadorNombre ?? "—"}</dd>
+            </div>
+          )}
+          {visita.estado === "asignada" && (
+            <div className="sm:col-span-2">
+              <dt className="text-muted-foreground">Asignada a</dt>
+              <dd className="font-medium">{visitadorNombre ?? "—"}</dd>
+            </div>
+          )}
         </dl>
 
         {visita.estado === "pendiente_asignacion" && (
@@ -148,10 +162,6 @@ export function VisitActionPanel({
         {visita.estado === "asignada" && (
           <div className="flex flex-col gap-4">
             <div className="flex flex-col gap-4 rounded-lg border border-border p-4">
-              <p className="text-sm">
-                <span className="text-muted-foreground">Visitador: </span>
-                {visita.visitadores?.nombre ?? "—"}
-              </p>
               <p className="text-sm">
                 <span className="text-muted-foreground">Fecha: </span>
                 {formatDate(visita.fecha_programada)}
@@ -228,6 +238,7 @@ export function VisitActionPanel({
               {visita.fecha_completada
                 ? ` el ${formatDate(visita.fecha_completada)}`
                 : ""}
+              {visitadorNombre ? ` por ${visitadorNombre}` : ""}
               . El proceso de visita domiciliaria quedó registrado.
             </p>
 

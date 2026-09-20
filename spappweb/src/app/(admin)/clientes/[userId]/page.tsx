@@ -7,6 +7,7 @@ import {
   getAllProductosCredito,
   getClientPipeline,
 } from "@/lib/pipeline/queries";
+import { getMoraDisplay } from "@/lib/pipeline/mora-utils";
 import { ClientPipelineView } from "@/components/pipeline/client-pipeline-view";
 import { ClientInfoSummary } from "@/components/clientes/client-info-summary";
 import { ClientHeaderActions } from "@/components/clientes/client-header-actions";
@@ -36,6 +37,8 @@ export default async function ClientPage({
     (pipeline.contract?.contrato_data as { es_renovacion?: unknown } | undefined)
       ?.es_renovacion === true;
 
+  const motoRecogida = getMoraDisplay(pipeline).yaRecogida;
+
   return (
     <div className="flex flex-col gap-6">
       <Button variant="ghost" asChild className="w-fit gap-2 px-0">
@@ -52,6 +55,11 @@ export default async function ClientPage({
             {esRenovacion ? (
               <span className="text-base font-bold uppercase tracking-wide text-red-600 sm:text-lg">
                 RENOVACION
+              </span>
+            ) : null}
+            {motoRecogida ? (
+              <span className="text-base font-bold uppercase tracking-wide text-foreground sm:text-lg">
+                MOTO RECOGIDA
               </span>
             ) : null}
           </span>

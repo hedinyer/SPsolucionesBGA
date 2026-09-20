@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import {
   assertPuedeMarcarEntregada,
   DIAS_RECUPERACION_CLIENTE,
+  getMoraDisplay,
   getPlazoRecuperacion,
+  motoYaRecogida,
+  puedeMarcarMotoRecogida,
 } from "./mora-utils.ts";
 
 function daysAgo(n: number): string {
@@ -48,5 +51,48 @@ assert.throws(
   () => assertPuedeMarcarEntregada("cancelada"),
   /cancelada/,
 );
+
+{
+  assert.equal(motoYaRecogida({ recoger: { estado: "recogida" } }), true);
+  assert.equal(motoYaRecogida({ estadoFisico: "recogida" }), true);
+  assert.equal(motoYaRecogida({ recoger: { estado: "pendiente" } }), false);
+}
+
+{
+  const display = getMoraDisplay({
+    atraso: { dias_atraso: 15, monto_adeudado: 100_000, estado: "moroso" },
+    recoger: { estado: "recogida", dias_atraso: 15, monto_adeudado: 100_000 },
+  });
+  assert.equal(display.yaRecogida, true);
+  assert.equal(display.paraRecoger, false);
+}
+
+{
+  const display = getMoraDisplay({
+    atraso: { dias_atraso: 15, monto_adeudado: 100_000, estado: "moroso" },
+  });
+  assert.equal(display.paraRecoger, true);
+  assert.equal(display.yaRecogida, false);
+}
+
+{
+  assert.equal(
+    puedeMarcarMotoRecogida({
+      compraEstado: "entregada",
+      diasAtraso: 5,
+      montoAdeudado: 50_000,
+    }),
+    true,
+  );
+  assert.equal(
+    puedeMarcarMotoRecogida({
+      compraEstado: "entregada",
+      diasAtraso: 5,
+      montoAdeudado: 50_000,
+      estadoFisico: "recogida",
+    }),
+    false,
+  );
+}
 
 console.log("mora-utils.check OK");

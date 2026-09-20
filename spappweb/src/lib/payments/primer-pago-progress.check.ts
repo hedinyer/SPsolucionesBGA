@@ -107,6 +107,19 @@ assert.deepEqual(alloc, [
   { contexto: "cuota_adelantada", monto: 20_000 },
 ]);
 
+const onlyVisita = allocateCobroPrimerPago(c, pagos, 100_000, {
+  only: "visita",
+});
+assert.deepEqual(onlyVisita, [{ contexto: "visita", monto: 100_000 }]);
+
+const preferVisita = allocateCobroPrimerPago(c, pagos, 150_000, {
+  prefer: "visita",
+});
+assert.deepEqual(preferVisita, [
+  { contexto: "visita", monto: 100_000 },
+  { contexto: "inicial", monto: 50_000 },
+]);
+
 const over = allocateCobroPrimerPago(c, pagos, 9_999_999);
 assert.equal(
   over.reduce((s, a) => s + a.monto, 0),
