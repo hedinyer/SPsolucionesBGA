@@ -89,7 +89,7 @@ async function main() {
           }
         : null;
 
-    const contratoData = {
+    const contratoData: Record<string, unknown> = {
       ...((row.contrato_data as Record<string, unknown>) ?? {}),
       celular_contratante: hojaVida.celular,
     };
