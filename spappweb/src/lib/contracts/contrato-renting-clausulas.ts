@@ -27,6 +27,14 @@ export const EMPRESA_PROPIETARIA = {
   firmaFile: "marisolpinilla.png",
 } as const;
 
+/** Marca comercial según el modelo de catálogo (NKD125 → NKD, BERA150 → BERA). */
+export function marcaMotoFromModelo(modelo: string): string {
+  const m = modelo.trim().toUpperCase();
+  if (m.includes("NKD")) return "NKD";
+  if (m.includes("BERA")) return "BERA";
+  return EMPRESA_PROPIETARIA.marcaMoto;
+}
+
 export interface ContratoData {
   nombreContratante: string;
   cedulaContratante: string;
@@ -222,7 +230,7 @@ export function buildContratoComercial(compra: CompraContratoInput): Omit<
     ),
   );
   return {
-    marca: EMPRESA_PROPIETARIA.marcaMoto,
+    marca: marcaMotoFromModelo(compra.modelo),
     modelo: compra.modelo,
     linea: compra.modelo,
     estado: estadoContratoFromCondicion(compra.condicion),
@@ -671,6 +679,24 @@ export function contratoClausulasSelfCheck(): void {
   }
   if (renovacion.duracionTexto !== "324 días") {
     throw new Error("buildContratoComercial duracion");
+  }
+  if (marcaMotoFromModelo("NKD125") !== "NKD") {
+    throw new Error("marcaMotoFromModelo NKD");
+  }
+  if (marcaMotoFromModelo("BERA150") !== "BERA") {
+    throw new Error("marcaMotoFromModelo BERA");
+  }
+  if (buildContratoComercial({
+    modelo: "NKD125",
+    color: "Negro",
+    placa: "ABC123",
+    chasis: "1",
+    referencia: null,
+    frecuencia_pago: "diario",
+    cuota_inicial_monto: 0,
+    monto_cuota_periodo: 38000,
+  }).marca !== "NKD") {
+    throw new Error("buildContratoComercial marca NKD");
   }
   if (
     !tipoContratoLabel(true).includes("RENOVACIÓN") ||
