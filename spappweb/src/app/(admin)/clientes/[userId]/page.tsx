@@ -4,6 +4,7 @@ import { ChevronLeft } from "lucide-react";
 import {
   getActiveVisitadores,
   getAllBikes,
+  getAllProductos,
   getAllProductosCredito,
   getClientPipeline,
 } from "@/lib/pipeline/queries";
@@ -24,12 +25,14 @@ export default async function ClientPage({
   const userId = Number(userIdStr);
   if (!Number.isFinite(userId)) notFound();
 
-  const [pipeline, visitadores, bikes, productosCredito] = await Promise.all([
-    getClientPipeline(userId),
-    getActiveVisitadores(),
-    getAllBikes(),
-    getAllProductosCredito(),
-  ]);
+  const [pipeline, visitadores, bikes, productosCredito, inventarioProductos] =
+    await Promise.all([
+      getClientPipeline(userId),
+      getActiveVisitadores(),
+      getAllBikes(),
+      getAllProductosCredito(),
+      getAllProductos(),
+    ]);
 
   if (!pipeline) notFound();
 
@@ -86,6 +89,7 @@ export default async function ClientPage({
         visitadores={visitadores}
         bikes={bikes}
         productosCredito={productosCredito}
+        inventarioProductos={inventarioProductos}
       />
     </div>
   );

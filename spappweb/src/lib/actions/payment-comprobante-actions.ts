@@ -32,6 +32,7 @@ import type {
   UserMotoCompraRow,
 } from "@/lib/pipeline/types";
 import { BANCO_ORIGEN_LABELS } from "@/lib/pipeline/types";
+import { recalcularTarifasProductoCredito } from "@/lib/payments/tarifas-producto-credito";
 
 const MAX_BYTES = 5 * 1024 * 1024;
 const ALLOWED_MIME = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -462,6 +463,16 @@ export async function confirmPagoConComprobante(
     throw new Error(insertError.message);
   }
 
+  if (
+    parsed.contexto === "producto_cuota" &&
+    parsed.compraProductoCreditoId
+  ) {
+    await recalcularTarifasProductoCredito(
+      supabase,
+      parsed.compraProductoCreditoId,
+    );
+  }
+
   await emitPagoCompletoOnTransition(
     parsed.userId,
     parsed.compraId,
@@ -485,7 +496,7 @@ export async function removePagoAbono(
 
   const { data: pago, error: pagoError } = await supabase
     .from("pagos")
-    .select("id, contexto_pago, user_moto_compra_id")
+    .select("id, contexto_pago, user_moto_compra_id, compra_producto_credito_id")
     .eq("id", pagoId)
     .maybeSingle();
 
@@ -532,6 +543,16 @@ export async function removePagoAbono(
     .eq("id", pagoId);
 
   if (deleteError) throw new Error(deleteError.message);
+
+  if (
+    pago.contexto_pago === "producto_cuota" &&
+    pago.compra_producto_credito_id
+  ) {
+    await recalcularTarifasProductoCredito(
+      supabase,
+      String(pago.compra_producto_credito_id),
+    );
+  }
 
   revalidateClient(userId);
   return { ok: true };

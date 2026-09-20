@@ -1,4 +1,10 @@
-import type { BikeRow, ClientPipeline, ProductoCreditoRow, VisitadorRow } from "@/lib/pipeline/types";
+import type {
+  BikeRow,
+  ClientPipeline,
+  InventarioProductoRow,
+  ProductoCreditoRow,
+  VisitadorRow,
+} from "@/lib/pipeline/types";
 import { motoListo } from "@/lib/pipeline/step-logic";
 import { ClientStepper } from "@/components/pipeline/client-stepper";
 import { CreditReviewPanel } from "@/components/pipeline/credit-review-panel";
@@ -19,6 +25,7 @@ interface ClientPipelineViewProps {
   visitadores: VisitadorRow[];
   bikes: BikeRow[];
   productosCredito: ProductoCreditoRow[];
+  inventarioProductos: InventarioProductoRow[];
 }
 
 export function ClientPipelineView({
@@ -26,6 +33,7 @@ export function ClientPipelineView({
   visitadores,
   bikes,
   productosCredito,
+  inventarioProductos,
 }: ClientPipelineViewProps) {
   const { userId } = { userId: pipeline.user.id };
   const adminStep = pipeline.currentAdminStep;
@@ -109,6 +117,8 @@ export function ClientPipelineView({
                   compra={pipeline.compra}
                   items={pipeline.compraProductosCredito}
                   catalogo={productosCredito}
+                  inventario={inventarioProductos}
+                  tarifasProducto={pipeline.tarifasProductoCredito}
                   pagos={pipeline.pagos}
                   userId={userId}
                   referenciasUsadas={referenciasUsadas}
@@ -129,12 +139,13 @@ export function ClientPipelineView({
           {showDeliveryMain && (
             <>
               {(pipeline.compra?.estado === "entregada" ||
-                pipeline.compra?.estado === "saldada") &&
-                pipeline.compraProductosCredito.length > 0 && (
+                pipeline.compra?.estado === "saldada") && (
                   <CreditProductsPanel
                     compra={pipeline.compra}
                     items={pipeline.compraProductosCredito}
                     catalogo={productosCredito}
+                    inventario={inventarioProductos}
+                    tarifasProducto={pipeline.tarifasProductoCredito}
                     pagos={pipeline.pagos}
                     userId={userId}
                     referenciasUsadas={referenciasUsadas}
@@ -207,6 +218,8 @@ export function ClientPipelineView({
                     compra={pipeline.compra}
                     items={pipeline.compraProductosCredito}
                     catalogo={productosCredito}
+                    inventario={inventarioProductos}
+                    tarifasProducto={pipeline.tarifasProductoCredito}
                     pagos={pipeline.pagos}
                     userId={userId}
                     referenciasUsadas={referenciasUsadas}

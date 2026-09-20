@@ -267,6 +267,21 @@ export interface TarifaPagadaRow {
   notas: string | null;
 }
 
+/** Talonario diario de un producto a crédito (aparte de tarifas de moto). */
+export interface TarifaProductoCreditoRow {
+  id: string;
+  compra_producto_credito_id: string;
+  user_id: number;
+  numero_periodo: number;
+  fecha_vencimiento: string;
+  monto_esperado: number;
+  monto_pagado: number | null;
+  estado: TarifaEstado;
+  pagada_at: string | null;
+  confirmada_por: string | null;
+  notas: string | null;
+}
+
 export interface MorosoRow {
   id: string;
   user_moto_compra_id: string;
@@ -437,6 +452,8 @@ export interface ClientPipeline {
   /** tarifa_id → URL del comprobante de pago (si se subió foto). */
   comprobanteByTarifaId: Record<string, string>;
   compraProductosCredito: CompraProductoCreditoRow[];
+  /** Talonario de productos a crédito (no incluye tarifas de moto). */
+  tarifasProductoCredito: TarifaProductoCreditoRow[];
   steps: PipelineStep[];
   currentAdminStep: PipelineStepId | null;
   displayName: string;
@@ -833,6 +850,8 @@ export interface CompraProductoCreditoRow {
   user_moto_compra_id: string;
   user_id: number;
   producto_credito_id: number | null;
+  inventario_producto_id?: number | null;
+  ubicacion?: string | null;
   nombre: string;
   cuota_inicial_monto: number;
   cuota_diaria_monto: number;

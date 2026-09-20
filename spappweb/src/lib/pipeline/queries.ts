@@ -392,7 +392,7 @@ export async function getClientPipeline(
     ? await supabase
         .from("compra_productos_credito")
         .select(
-          "id, user_moto_compra_id, user_id, producto_credito_id, nombre, cuota_inicial_monto, cuota_diaria_monto, plazo_dias, cantidad, notas, created_at",
+          "id, user_moto_compra_id, user_id, producto_credito_id, inventario_producto_id, ubicacion, nombre, cuota_inicial_monto, cuota_diaria_monto, plazo_dias, cantidad, notas, created_at",
         )
         .eq("user_moto_compra_id", compra.id)
         .order("created_at")
@@ -400,6 +400,18 @@ export async function getClientPipeline(
 
   const productosCreditoRows =
     (compraProductosCredito as CompraProductoCreditoRow[]) ?? [];
+
+  const productoIds = productosCreditoRows.map((p) => p.id);
+  const { data: tarifasProductoCredito } =
+    productoIds.length > 0
+      ? await supabase
+          .from("tarifas_producto_credito")
+          .select(
+            "id, compra_producto_credito_id, user_id, numero_periodo, fecha_vencimiento, monto_esperado, monto_pagado, estado, pagada_at, confirmada_por, notas",
+          )
+          .in("compra_producto_credito_id", productoIds)
+          .order("numero_periodo", { ascending: true })
+      : { data: [] };
 
   const pagosHistorial = buildPagosHistorial(
     compra as UserMotoCompraRow | null,
@@ -439,6 +451,9 @@ export async function getClientPipeline(
     pagos: pagoRows,
     comprobanteByTarifaId,
     compraProductosCredito: productosCreditoRows,
+    tarifasProductoCredito:
+      (tarifasProductoCredito as import("@/lib/pipeline/types").TarifaProductoCreditoRow[]) ??
+      [],
   });
 }
 

@@ -34,6 +34,10 @@ import { DIAS_RECOGER_BANDEJA } from "@/lib/pipeline/mora-utils";
 import { resolveInventarioEditorCodigo } from "@/lib/inventario/editor-codigos";
 import { STORAGE_BUCKETS } from "@/lib/supabase/storage-buckets";
 import { storagePathFromPublicUrl } from "@/lib/utils/storage-urls";
+import {
+  generateTarifasProductoCredito,
+  recalcularTarifasProductoCredito,
+} from "@/lib/payments/tarifas-producto-credito";
 
 function revalidateClient(userId: number) {
   revalidatePath("/inbox");
@@ -2290,6 +2294,8 @@ const addCompraProductoCreditoSchema = z.object({
   compraId: z.string().uuid(),
   userId: z.number().int().positive(),
   productoCreditoId: z.number().int().positive().optional(),
+  inventarioProductoId: z.number().int().positive().optional(),
+  ubicacion: z.enum(["Soluciones", "Bera", "Bodega"]).optional(),
   nombre: z.string().trim().min(1).optional(),
   cuotaInicial: z.number().int().min(0).optional(),
   cuotaDiaria: z.number().int().positive().optional(),
@@ -2311,8 +2317,15 @@ export async function addCompraProductoCredito(
     .single();
 
   if (compraError || !compra) throw new Error("Compra no encontrada.");
-  if (compra.estado !== "pendiente_pago") {
-    throw new Error("Solo se pueden agregar productos mientras el pago está pendiente.");
+  if (
+    compra.estado !== "pendiente_pago" &&
+    compra.estado !== "entregada" &&
+    compra.estado !== "saldada"
+  ) {
+    throw new Error("No se pueden agregar productos en este estado de compra.");
+  }
+  if (compra.estado === "cancelada") {
+    throw new Error("La compra está cancelada.");
   }
 
   let nombre = parsed.nombre?.trim() ?? "";
@@ -2320,8 +2333,69 @@ export async function addCompraProductoCredito(
   let cuotaDiaria = parsed.cuotaDiaria ?? 0;
   let plazoDias = parsed.plazoDias ?? 0;
   let productoCreditoId: number | null = parsed.productoCreditoId ?? null;
+  let inventarioProductoId: number | null =
+    parsed.inventarioProductoId ?? null;
+  let ubicacion: string | null = parsed.ubicacion ?? null;
+  let stockDescontado = false;
 
-  if (parsed.productoCreditoId) {
+  if (parsed.inventarioProductoId) {
+    if (!parsed.ubicacion) {
+      throw new Error("Elige la ubicación de donde sale el stock.");
+    }
+    const { data: inv, error: invError } = await supabase
+      .from("inventario_productos")
+      .select("id, nombre, precio, activo, eliminado_at")
+      .eq("id", parsed.inventarioProductoId)
+      .maybeSingle();
+    if (invError) throw new Error(invError.message);
+    if (!inv || inv.eliminado_at || inv.activo === false) {
+      throw new Error("El producto de inventario no está disponible.");
+    }
+
+    const { data: stockRow } = await supabase
+      .from("inventario_stock_ubicaciones")
+      .select("cantidad")
+      .eq("producto_id", parsed.inventarioProductoId)
+      .eq("ubicacion", parsed.ubicacion)
+      .maybeSingle();
+
+    let stockQty = stockRow ? Number(stockRow.cantidad) : 0;
+    if (!stockRow) {
+      const { data: legacy } = await supabase
+        .from("inventario_productos")
+        .select("stock, ubicacion")
+        .eq("id", parsed.inventarioProductoId)
+        .maybeSingle();
+      if (legacy && String(legacy.ubicacion) === parsed.ubicacion) {
+        stockQty = Number(legacy.stock) || 0;
+      }
+    }
+
+    if (stockQty < parsed.cantidad) {
+      throw new Error(
+        `Stock insuficiente en ${parsed.ubicacion} (hay ${stockQty}).`,
+      );
+    }
+
+    nombre = nombre || String(inv.nombre);
+    inventarioProductoId = inv.id as number;
+    ubicacion = parsed.ubicacion;
+
+    const { error: stockError } = await supabase.rpc(
+      "descontar_stock_ubicacion",
+      {
+        p_producto_id: inventarioProductoId,
+        p_ubicacion: ubicacion,
+        p_cantidad: parsed.cantidad,
+      },
+    );
+    if (stockError) {
+      throw new Error(
+        `No se pudo descontar stock. ${stockError.message}`,
+      );
+    }
+    stockDescontado = true;
+  } else if (parsed.productoCreditoId) {
     const { data: catalogo, error: catError } = await supabase
       .from("productos_credito")
       .select("id, nombre, cuota_inicial, cuota_diaria, plazo_dias, activo")
@@ -2348,22 +2422,46 @@ export async function addCompraProductoCredito(
     throw new Error("Indica por cuántos días se paga la cuota diaria.");
   }
 
-  const { error: insertError } = await supabase
-    .from("compra_productos_credito")
-    .insert({
-      user_moto_compra_id: parsed.compraId,
-      user_id: parsed.userId,
-      producto_credito_id: productoCreditoId,
-      nombre,
-      cuota_inicial_monto: cuotaInicial,
-      cuota_diaria_monto: cuotaDiaria,
-      plazo_dias: plazoDias,
-      cantidad: parsed.cantidad,
-      notas: parsed.notas?.trim() || null,
-    });
+  try {
+    const { data: inserted, error: insertError } = await supabase
+      .from("compra_productos_credito")
+      .insert({
+        user_moto_compra_id: parsed.compraId,
+        user_id: parsed.userId,
+        producto_credito_id: productoCreditoId,
+        inventario_producto_id: inventarioProductoId,
+        ubicacion,
+        nombre,
+        cuota_inicial_monto: cuotaInicial,
+        cuota_diaria_monto: cuotaDiaria,
+        plazo_dias: plazoDias,
+        cantidad: parsed.cantidad,
+        notas: parsed.notas?.trim() || null,
+      })
+      .select("id")
+      .single();
 
-  if (insertError) throw new Error(insertError.message);
+    if (insertError || !inserted) throw new Error(insertError?.message ?? "No se pudo crear el producto.");
+
+    await generateTarifasProductoCredito(supabase, {
+      compraProductoCreditoId: inserted.id as string,
+      userId: parsed.userId,
+      plazoDias,
+      montoPorDia: cuotaDiaria * parsed.cantidad,
+    });
+  } catch (err) {
+    if (stockDescontado && inventarioProductoId && ubicacion) {
+      await supabase.rpc("devolver_stock_ubicacion", {
+        p_producto_id: inventarioProductoId,
+        p_ubicacion: ubicacion,
+        p_cantidad: parsed.cantidad,
+      });
+    }
+    throw err instanceof Error ? err : new Error("No se pudo agregar el producto.");
+  }
+
   revalidateClient(parsed.userId);
+  revalidatePath("/inventario");
   return { ok: true };
 }
 
@@ -2375,7 +2473,9 @@ export async function removeCompraProductoCredito(
 
   const { data: item, error: fetchError } = await supabase
     .from("compra_productos_credito")
-    .select("id, user_moto_compra_id")
+    .select(
+      "id, user_moto_compra_id, inventario_producto_id, ubicacion, cantidad",
+    )
     .eq("id", itemId)
     .single();
 
@@ -2387,9 +2487,38 @@ export async function removeCompraProductoCredito(
     .eq("id", item.user_moto_compra_id)
     .single();
 
-  if (compra?.estado !== "pendiente_pago") {
-    throw new Error("Solo se pueden quitar productos mientras el pago está pendiente.");
+  if (
+    compra?.estado !== "pendiente_pago" &&
+    compra?.estado !== "entregada" &&
+    compra?.estado !== "saldada"
+  ) {
+    throw new Error("No se puede quitar el producto en este estado.");
   }
+
+  const { count: pagosCount } = await supabase
+    .from("pagos")
+    .select("id", { count: "exact", head: true })
+    .eq("compra_producto_credito_id", itemId)
+    .eq("estado", "confirmado");
+
+  if ((pagosCount ?? 0) > 0) {
+    throw new Error("No se puede quitar: ya hay pagos registrados.");
+  }
+
+  const { count: pagadasCount } = await supabase
+    .from("tarifas_producto_credito")
+    .select("id", { count: "exact", head: true })
+    .eq("compra_producto_credito_id", itemId)
+    .eq("estado", "pagada");
+
+  if ((pagadasCount ?? 0) > 0) {
+    throw new Error("No se puede quitar: el talonario ya tiene cuotas pagadas.");
+  }
+
+  await supabase
+    .from("tarifas_producto_credito")
+    .delete()
+    .eq("compra_producto_credito_id", itemId);
 
   const { error } = await supabase
     .from("compra_productos_credito")
@@ -2397,7 +2526,25 @@ export async function removeCompraProductoCredito(
     .eq("id", itemId);
 
   if (error) throw new Error(error.message);
+
+  if (item.inventario_producto_id && item.ubicacion) {
+    const { error: stockError } = await supabase.rpc(
+      "devolver_stock_ubicacion",
+      {
+        p_producto_id: item.inventario_producto_id,
+        p_ubicacion: item.ubicacion,
+        p_cantidad: item.cantidad,
+      },
+    );
+    if (stockError) {
+      throw new Error(
+        `Producto quitado pero no se pudo devolver stock: ${stockError.message}`,
+      );
+    }
+  }
+
   revalidateClient(userId);
+  revalidatePath("/inventario");
   return { ok: true };
 }
 
@@ -2412,11 +2559,46 @@ export async function setCompraProductoCreditoPlazo(
 ) {
   const parsed = setCompraProductoCreditoPlazoSchema.parse(input);
   const supabase = await assertAdmin();
+
+  const { data: item, error: fetchError } = await supabase
+    .from("compra_productos_credito")
+    .select("id, user_id, cuota_diaria_monto, cantidad, plazo_dias")
+    .eq("id", parsed.itemId)
+    .maybeSingle();
+  if (fetchError) throw new Error(fetchError.message);
+  if (!item) throw new Error("Producto no encontrado.");
+
+  const { count: pagadasCount } = await supabase
+    .from("tarifas_producto_credito")
+    .select("id", { count: "exact", head: true })
+    .eq("compra_producto_credito_id", parsed.itemId)
+    .neq("estado", "pendiente");
+
+  if ((pagadasCount ?? 0) > 0) {
+    throw new Error(
+      "No se puede cambiar el plazo: ya hay cuotas del talonario aplicadas.",
+    );
+  }
+
+  await supabase
+    .from("tarifas_producto_credito")
+    .delete()
+    .eq("compra_producto_credito_id", parsed.itemId);
+
   const { error } = await supabase
     .from("compra_productos_credito")
     .update({ plazo_dias: parsed.plazoDias })
     .eq("id", parsed.itemId);
   if (error) throw new Error(error.message);
+
+  await generateTarifasProductoCredito(supabase, {
+    compraProductoCreditoId: parsed.itemId,
+    userId: parsed.userId,
+    plazoDias: parsed.plazoDias,
+    montoPorDia:
+      Number(item.cuota_diaria_monto) * Number(item.cantidad),
+  });
+
   revalidateClient(parsed.userId);
   return { ok: true as const };
 }

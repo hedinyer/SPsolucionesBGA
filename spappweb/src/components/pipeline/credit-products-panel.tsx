@@ -21,9 +21,11 @@ import {
 } from "@/lib/payments/producto-credito-progress";
 import type {
   CompraProductoCreditoRow,
+  InventarioProductoRow,
   MedioPagoAdmin,
   PagoRow,
   ProductoCreditoRow,
+  TarifaProductoCreditoRow,
   UserMotoCompraRow,
 } from "@/lib/pipeline/types";
 import { formatCop, formatDate } from "@/lib/utils/format";
@@ -40,12 +42,17 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { PaymentComprobanteDialog } from "@/components/pipeline/payment-comprobante-dialog";
+import { ProductoCreditoTalonario } from "@/components/pipeline/producto-credito-talonario";
 import { Badge } from "@/components/ui/badge";
+
+const UBICACIONES = ["Soluciones", "Bera", "Bodega"] as const;
 
 interface CreditProductsPanelProps {
   compra: UserMotoCompraRow | null;
   items: CompraProductoCreditoRow[];
   catalogo: ProductoCreditoRow[];
+  inventario: InventarioProductoRow[];
+  tarifasProducto: TarifaProductoCreditoRow[];
   pagos: PagoRow[];
   userId: number;
   referenciasUsadas?: string[];
@@ -82,6 +89,8 @@ export function CreditProductsPanel({
   compra,
   items,
   catalogo,
+  inventario,
+  tarifasProducto,
   pagos,
   userId,
   referenciasUsadas = [],
@@ -107,7 +116,10 @@ export function CreditProductsPanel({
     );
   }
 
-  const canEdit = compra.estado === "pendiente_pago";
+  const canEdit =
+    compra.estado === "pendiente_pago" ||
+    compra.estado === "entregada" ||
+    compra.estado === "saldada";
   const canRegisterPagos = compra.estado !== "cancelada";
   const activos = catalogo.filter((p) => p.activo);
 
@@ -116,6 +128,7 @@ export function CreditProductsPanel({
       try {
         await removeCompraProductoCredito(itemId, userId);
         toast.success("Producto quitado.");
+        router.refresh();
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "Error al quitar.");
       }
@@ -127,6 +140,7 @@ export function CreditProductsPanel({
       try {
         await setCompraProductoCreditoPlazo({ itemId, userId, plazoDias });
         toast.success("Plazo guardado.");
+        router.refresh();
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "Error al guardar plazo.");
       }
@@ -151,9 +165,8 @@ export function CreditProductsPanel({
         <CardHeader>
           <CardTitle>Productos a crédito</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Accesorios u otros ítems que el cliente lleva a cuotas, ligados a
-            esta moto. Registra aquí la inicial y las cuotas diarias con
-            comprobante; salen en el extracto de pagos.
+            Elige del inventario (descuenta stock) o del catálogo. Cada producto
+            tiene su propio talonario diario, aparte del de la moto.
           </p>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
@@ -215,6 +228,9 @@ export function CreditProductsPanel({
                           Inicial{" "}
                           {formatCop(item.cuota_inicial_monto * item.cantidad)} ·{" "}
                           {itemCuotaLine(item)}
+                          {item.inventario_producto_id
+                            ? ` · Inventario${item.ubicacion ? ` (${item.ubicacion})` : ""}`
+                            : ""}
                         </p>
                         {item.plazo_dias != null && item.plazo_dias > 0 ? (
                           <p className="mt-1 text-xs text-muted-foreground">
@@ -319,6 +335,12 @@ export function CreditProductsPanel({
                         />
                       </div>
                     )}
+
+                    <ProductoCreditoTalonario
+                      tarifas={tarifasProducto.filter(
+                        (t) => t.compra_producto_credito_id === item.id,
+                      )}
+                    />
                   </li>
                 );
               })}
@@ -358,6 +380,7 @@ export function CreditProductsPanel({
         open={open}
         onOpenChange={setOpen}
         catalogo={activos}
+        inventario={inventario}
         compraId={compra.id}
         userId={userId}
         pending={pending}
@@ -367,6 +390,7 @@ export function CreditProductsPanel({
               await addCompraProductoCredito(input);
               toast.success("Producto agregado.");
               setOpen(false);
+              router.refresh();
             } catch (e) {
               toast.error(e instanceof Error ? e.message : "Error al agregar.");
             }
@@ -556,10 +580,21 @@ function SetPlazoInline({
   );
 }
 
+function stockEnUbicacion(
+  producto: InventarioProductoRow,
+  ubicacion: string,
+): number {
+  const fromStocks = producto.stocks?.find((s) => s.ubicacion === ubicacion);
+  if (fromStocks) return Number(fromStocks.cantidad) || 0;
+  if (producto.ubicacion === ubicacion) return Number(producto.stock) || 0;
+  return 0;
+}
+
 function AddCreditProductDialog({
   open,
   onOpenChange,
   catalogo,
+  inventario,
   compraId,
   userId,
   pending,
@@ -568,6 +603,7 @@ function AddCreditProductDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   catalogo: ProductoCreditoRow[];
+  inventario: InventarioProductoRow[];
   compraId: string;
   userId: number;
   pending: boolean;
@@ -575,6 +611,8 @@ function AddCreditProductDialog({
     compraId: string;
     userId: number;
     productoCreditoId?: number;
+    inventarioProductoId?: number;
+    ubicacion?: "Soluciones" | "Bera" | "Bodega";
     nombre?: string;
     cuotaInicial?: number;
     cuotaDiaria?: number;
@@ -583,8 +621,20 @@ function AddCreditProductDialog({
     notas?: string;
   }) => void;
 }) {
-  const [modo, setModo] = useState<"catalogo" | "custom">("catalogo");
+  const inventariosActivos = inventario.filter(
+    (p) => p.activo !== false && !p.eliminado_at,
+  );
+  const [modo, setModo] = useState<"inventario" | "catalogo" | "custom">(
+    inventariosActivos.length > 0
+      ? "inventario"
+      : catalogo.length > 0
+        ? "catalogo"
+        : "custom",
+  );
   const [productoId, setProductoId] = useState("");
+  const [inventarioId, setInventarioId] = useState("");
+  const [ubicacion, setUbicacion] =
+    useState<(typeof UBICACIONES)[number]>("Soluciones");
   const [nombre, setNombre] = useState("");
   const [cuotaInicial, setCuotaInicial] = useState("");
   const [cuotaDiaria, setCuotaDiaria] = useState("");
@@ -592,45 +642,102 @@ function AddCreditProductDialog({
   const [cantidad, setCantidad] = useState("1");
   const [notas, setNotas] = useState("");
 
-  const selected = catalogo.find((p) => String(p.id) === productoId);
+  const selectedCat = catalogo.find((p) => String(p.id) === productoId);
+  const selectedInv = inventariosActivos.find(
+    (p) => String(p.id) === inventarioId,
+  );
+  const stockDisp = selectedInv
+    ? stockEnUbicacion(selectedInv, ubicacion)
+    : 0;
 
   useEffect(() => {
     if (!open) return;
-    setModo(catalogo.length > 0 ? "catalogo" : "custom");
+    setModo(
+      inventariosActivos.length > 0
+        ? "inventario"
+        : catalogo.length > 0
+          ? "catalogo"
+          : "custom",
+    );
     setProductoId(catalogo[0] ? String(catalogo[0].id) : "");
+    setInventarioId("");
+    setUbicacion("Soluciones");
     setNombre("");
-    setCuotaInicial("");
+    setCuotaInicial("0");
     setCuotaDiaria("");
-    setPlazoDias("");
+    setPlazoDias("30");
     setCantidad("1");
     setNotas("");
-  }, [open, catalogo]);
+  }, [open, catalogo, inventariosActivos.length]);
 
   useEffect(() => {
-    if (modo === "catalogo" && selected) {
-      setCuotaInicial(String(selected.cuota_inicial));
-      setCuotaDiaria(String(selected.cuota_diaria));
+    if (modo === "catalogo" && selectedCat) {
+      setCuotaInicial(String(selectedCat.cuota_inicial));
+      setCuotaDiaria(String(selectedCat.cuota_diaria));
       setPlazoDias(
-        selected.plazo_dias != null ? String(selected.plazo_dias) : "",
+        selectedCat.plazo_dias != null ? String(selectedCat.plazo_dias) : "30",
       );
-      setNombre(selected.nombre);
+      setNombre(selectedCat.nombre);
     }
-  }, [modo, selected]);
+  }, [modo, selectedCat]);
+
+  useEffect(() => {
+    if (modo !== "inventario" || !selectedInv) return;
+    setNombre(selectedInv.nombre);
+    const precio = Number(selectedInv.precio) || 0;
+    const plazo = Number(plazoDias) > 0 ? Number(plazoDias) : 30;
+    if (!cuotaDiaria) {
+      const sugerida = Math.max(1000, Math.round(precio / Math.max(plazo, 1)));
+      setCuotaDiaria(String(sugerida));
+    }
+    const withStock = UBICACIONES.find((u) => stockEnUbicacion(selectedInv, u) > 0);
+    if (withStock) setUbicacion(withStock);
+  }, [modo, selectedInv]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const parsedCantidad = Number(cantidad);
   const parsedInicial = Number(cuotaInicial);
   const parsedDiaria = Number(cuotaDiaria);
   const parsedPlazo = Number(plazoDias);
 
+  const canSubmit =
+    Number.isFinite(parsedCantidad) &&
+    parsedCantidad > 0 &&
+    Number.isFinite(parsedDiaria) &&
+    parsedDiaria > 0 &&
+    Number.isFinite(parsedPlazo) &&
+    parsedPlazo > 0 &&
+    Number.isFinite(parsedInicial) &&
+    parsedInicial >= 0 &&
+    (modo === "inventario"
+      ? Boolean(inventarioId) && stockDisp >= parsedCantidad
+      : modo === "catalogo"
+        ? Boolean(productoId)
+        : Boolean(nombre.trim()));
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-background sm:max-w-md">
+      <DialogContent className="max-h-[90vh] overflow-y-auto bg-background sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Agregar producto a crédito</DialogTitle>
         </DialogHeader>
         <div className="flex flex-col gap-4">
-          {catalogo.length > 0 && (
-            <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            {inventariosActivos.length > 0 && (
+              <Button
+                type="button"
+                variant={modo === "inventario" ? "default" : "outline"}
+                size="sm"
+                className={
+                  modo === "inventario"
+                    ? "bg-primary text-primary-foreground"
+                    : ""
+                }
+                onClick={() => setModo("inventario")}
+              >
+                Inventario
+              </Button>
+            )}
+            {catalogo.length > 0 && (
               <Button
                 type="button"
                 variant={modo === "catalogo" ? "default" : "outline"}
@@ -640,23 +747,58 @@ function AddCreditProductDialog({
                 }
                 onClick={() => setModo("catalogo")}
               >
-                Del catálogo
+                Catálogo
               </Button>
-              <Button
-                type="button"
-                variant={modo === "custom" ? "default" : "outline"}
-                size="sm"
-                className={
-                  modo === "custom" ? "bg-primary text-primary-foreground" : ""
-                }
-                onClick={() => setModo("custom")}
-              >
-                Personalizado
-              </Button>
-            </div>
-          )}
+            )}
+            <Button
+              type="button"
+              variant={modo === "custom" ? "default" : "outline"}
+              size="sm"
+              className={
+                modo === "custom" ? "bg-primary text-primary-foreground" : ""
+              }
+              onClick={() => setModo("custom")}
+            >
+              Personalizado
+            </Button>
+          </div>
 
-          {modo === "catalogo" && catalogo.length > 0 ? (
+          {modo === "inventario" ? (
+            <>
+              <div className="flex flex-col gap-2">
+                <Label>Producto del inventario</Label>
+                <TouchSelect
+                  aria-label="Producto inventario"
+                  value={inventarioId}
+                  onChange={setInventarioId}
+                  placeholder="Seleccionar"
+                  options={inventariosActivos.map((p) => ({
+                    value: String(p.id),
+                    label: `${p.nombre}${p.sku ? ` · ${p.sku}` : ""} · ${formatCop(p.precio)}`,
+                  }))}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label>Ubicación (stock)</Label>
+                <TouchSelect
+                  aria-label="Ubicación"
+                  value={ubicacion}
+                  onChange={(v) =>
+                    setUbicacion(v as (typeof UBICACIONES)[number])
+                  }
+                  options={UBICACIONES.map((u) => ({
+                    value: u,
+                    label: `${u} · stock ${selectedInv ? stockEnUbicacion(selectedInv, u) : 0}`,
+                  }))}
+                />
+                {selectedInv ? (
+                  <p className="text-xs text-muted-foreground">
+                    Disponible en {ubicacion}: {stockDisp}
+                  </p>
+                ) : null}
+              </div>
+            </>
+          ) : modo === "catalogo" ? (
             <div className="flex flex-col gap-2">
               <Label>Producto</Label>
               <TouchSelect
@@ -709,14 +851,14 @@ function AddCreditProductDialog({
 
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col gap-2">
-              <Label htmlFor="cp-plazo">Días de cuota</Label>
+              <Label htmlFor="cp-plazo">Días de cuota (plazo)</Label>
               <Input
                 id="cp-plazo"
                 type="number"
                 min={1}
                 value={plazoDias}
                 onChange={(e) => setPlazoDias(e.target.value)}
-                placeholder="Ej. 20"
+                placeholder="Ej. 30"
               />
             </div>
             <div className="flex flex-col gap-2">
@@ -736,11 +878,31 @@ function AddCreditProductDialog({
           Number.isFinite(parsedPlazo) &&
           parsedPlazo > 0 ? (
             <p className="text-xs text-muted-foreground">
-              Paga {formatCop(parsedDiaria)}/día durante {parsedPlazo} día
-              {parsedPlazo === 1 ? "" : "s"} (
-              {formatCop(parsedDiaria * parsedPlazo)} en cuotas diarias)
+              Talonario: {parsedPlazo} día{parsedPlazo === 1 ? "" : "s"} ×{" "}
+              {formatCop(parsedDiaria)}
+              {Number.isFinite(parsedCantidad) && parsedCantidad > 1
+                ? ` × ${parsedCantidad}`
+                : ""}{" "}
+              ={" "}
+              {formatCop(
+                parsedDiaria *
+                  parsedPlazo *
+                  (Number.isFinite(parsedCantidad) && parsedCantidad > 0
+                    ? parsedCantidad
+                    : 1),
+              )}
               {Number.isFinite(parsedInicial) && parsedInicial >= 0
-                ? ` · total con inicial ${formatCop(parsedInicial + parsedDiaria * parsedPlazo)}`
+                ? ` · con inicial ${formatCop(
+                    parsedInicial *
+                      (Number.isFinite(parsedCantidad) && parsedCantidad > 0
+                        ? parsedCantidad
+                        : 1) +
+                      parsedDiaria *
+                        parsedPlazo *
+                        (Number.isFinite(parsedCantidad) && parsedCantidad > 0
+                          ? parsedCantidad
+                          : 1),
+                  )}`
                 : ""}
               .
             </p>
@@ -759,23 +921,20 @@ function AddCreditProductDialog({
           <Button
             type="button"
             className="bg-primary text-primary-foreground hover:bg-primary/80"
-            disabled={
-              pending ||
-              !Number.isFinite(parsedCantidad) ||
-              parsedCantidad <= 0 ||
-              !Number.isFinite(parsedDiaria) ||
-              parsedDiaria <= 0 ||
-              !Number.isFinite(parsedPlazo) ||
-              parsedPlazo <= 0 ||
-              (modo === "custom" && !nombre.trim())
-            }
+            disabled={pending || !canSubmit}
             onClick={() =>
               onAdd({
                 compraId,
                 userId,
-                ...(modo === "catalogo" && productoId
-                  ? { productoCreditoId: Number(productoId) }
-                  : { nombre: nombre.trim() }),
+                ...(modo === "inventario" && inventarioId
+                  ? {
+                      inventarioProductoId: Number(inventarioId),
+                      ubicacion,
+                      nombre: nombre.trim() || undefined,
+                    }
+                  : modo === "catalogo" && productoId
+                    ? { productoCreditoId: Number(productoId) }
+                    : { nombre: nombre.trim() }),
                 cuotaInicial: parsedInicial,
                 cuotaDiaria: parsedDiaria,
                 plazoDias: parsedPlazo,
@@ -791,3 +950,4 @@ function AddCreditProductDialog({
     </Dialog>
   );
 }
+
