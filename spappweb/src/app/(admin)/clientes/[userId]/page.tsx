@@ -11,6 +11,7 @@ import { getMoraDisplay } from "@/lib/pipeline/mora-utils";
 import { ClientPipelineView } from "@/components/pipeline/client-pipeline-view";
 import { ClientInfoSummary } from "@/components/clientes/client-info-summary";
 import { ClientHeaderActions } from "@/components/clientes/client-header-actions";
+import { ConductorPanel } from "@/components/clientes/conductor-panel";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 
@@ -75,6 +76,10 @@ export default async function ClientPage({
       />
 
       <ClientInfoSummary pipeline={pipeline} bikes={bikes} />
+
+      {pipeline.compra ? (
+        <ConductorPanel compra={pipeline.compra} userId={pipeline.user.id} />
+      ) : null}
 
       <ClientPipelineView
         pipeline={pipeline}

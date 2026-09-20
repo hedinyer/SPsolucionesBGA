@@ -579,6 +579,7 @@ export async function cancelCompra(compraId: string, userId: number) {
   await emitPipelineEvent({ userId, kind: "compra_cancelada" });
 
   revalidateClient(userId);
+  revalidatePath("/clientes");
   return { ok: true };
 }
 
@@ -2658,3 +2659,142 @@ export async function transferirTitularidad(
 
   return { ok: true, toUserId: parsed.toUserId };
 }
+
+const saveConductorInfoSchema = z.object({
+  compraId: z.string().uuid(),
+  userId: z.number().int().positive(),
+  nombre: z.string().trim().min(2, "Nombre del conductor obligatorio."),
+  cedula: z.string().trim().min(5, "Cédula del conductor obligatoria."),
+  celular: z.string().trim().optional(),
+  notas: z.string().trim().optional(),
+});
+
+/** Guarda datos de texto del conductor en admin_data (no borra docs ya subidos). */
+export async function saveConductorInfo(
+  input: z.infer<typeof saveConductorInfoSchema>,
+) {
+  const parsed = saveConductorInfoSchema.parse(input);
+  const supabase = await assertAdmin();
+
+  const { data: compra, error } = await supabase
+    .from("user_moto_compra")
+    .select("id, user_id, admin_data")
+    .eq("id", parsed.compraId)
+    .eq("user_id", parsed.userId)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (!compra) throw new Error("Compra no encontrada.");
+
+  const prev = (compra.admin_data as Record<string, unknown> | null) ?? {};
+  const prevConductor =
+    prev.conductor && typeof prev.conductor === "object" && !Array.isArray(prev.conductor)
+      ? (prev.conductor as Record<string, unknown>)
+      : {};
+
+  const admin_data = {
+    ...prev,
+    conductor: {
+      ...prevConductor,
+      nombre: parsed.nombre,
+      cedula: parsed.cedula,
+      celular: parsed.celular?.trim() || null,
+      notas: parsed.notas?.trim() || null,
+      cedula_url:
+        typeof prevConductor.cedula_url === "string"
+          ? prevConductor.cedula_url
+          : null,
+      foto_url:
+        typeof prevConductor.foto_url === "string"
+          ? prevConductor.foto_url
+          : null,
+      updated_at: new Date().toISOString(),
+    },
+  };
+
+  const { error: updateError } = await supabase
+    .from("user_moto_compra")
+    .update({ admin_data })
+    .eq("id", parsed.compraId)
+    .eq("user_id", parsed.userId);
+
+  if (updateError) throw new Error(updateError.message);
+
+  revalidateClient(parsed.userId);
+  revalidatePath("/clientes");
+  return { ok: true as const };
+}
+
+const saveConductorDocumentoSchema = z.object({
+  compraId: z.string().uuid(),
+  userId: z.number().int().positive(),
+  tipo: z.enum(["cedula", "foto"]),
+  url: z.string().url(),
+});
+
+/** Adjunta URL pública de cédula o foto del conductor en admin_data. */
+export async function saveConductorDocumento(
+  input: z.infer<typeof saveConductorDocumentoSchema>,
+) {
+  const parsed = saveConductorDocumentoSchema.parse(input);
+  const supabase = await assertAdmin();
+
+  const { data: compra, error } = await supabase
+    .from("user_moto_compra")
+    .select("id, user_id, admin_data")
+    .eq("id", parsed.compraId)
+    .eq("user_id", parsed.userId)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (!compra) throw new Error("Compra no encontrada.");
+
+  const prev = (compra.admin_data as Record<string, unknown> | null) ?? {};
+  const prevConductor =
+    prev.conductor && typeof prev.conductor === "object" && !Array.isArray(prev.conductor)
+      ? (prev.conductor as Record<string, unknown>)
+      : {};
+
+  const admin_data = {
+    ...prev,
+    conductor: {
+      ...prevConductor,
+      nombre:
+        typeof prevConductor.nombre === "string" ? prevConductor.nombre : "",
+      cedula:
+        typeof prevConductor.cedula === "string" ? prevConductor.cedula : "",
+      celular:
+        typeof prevConductor.celular === "string"
+          ? prevConductor.celular
+          : null,
+      notas:
+        typeof prevConductor.notas === "string" ? prevConductor.notas : null,
+      cedula_url:
+        parsed.tipo === "cedula"
+          ? parsed.url
+          : typeof prevConductor.cedula_url === "string"
+            ? prevConductor.cedula_url
+            : null,
+      foto_url:
+        parsed.tipo === "foto"
+          ? parsed.url
+          : typeof prevConductor.foto_url === "string"
+            ? prevConductor.foto_url
+            : null,
+      updated_at: new Date().toISOString(),
+    },
+  };
+
+  const { error: updateError } = await supabase
+    .from("user_moto_compra")
+    .update({ admin_data })
+    .eq("id", parsed.compraId)
+    .eq("user_id", parsed.userId);
+
+  if (updateError) throw new Error(updateError.message);
+
+  revalidateClient(parsed.userId);
+  revalidatePath("/clientes");
+  return { ok: true as const };
+}
+

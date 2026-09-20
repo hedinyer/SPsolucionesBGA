@@ -2371,6 +2371,7 @@ export async function searchClients(
         cedula,
         placa: compra?.placa ?? null,
         motoLabel: compra ? `${compra.modelo} · ${compra.color}` : null,
+        compraId: compra?.id ?? null,
         compraEstado: compra?.estado ?? null,
         cuotasPagadas: paidCount.get(user.id) ?? 0,
         diasAtraso,
@@ -2418,7 +2419,6 @@ export async function listClientesMotoCredito(
     .select(
       "id, modelo, color, placa, estado, estado_fisico, seleccionado_at, fecha_entrega, user_id, bike_table(imagen_url), users(id, user, vigilado, nota_vigilancia, users_documents(selfie_url, referral_source), visitas(cliente_nombre), digital_contracts(hoja_vida_data, contrato_data, created_at))",
     )
-    .neq("estado", "cancelada")
     .order("seleccionado_at", { ascending: false })
     .limit(limit);
 
@@ -2580,6 +2580,7 @@ export async function listClientesMotoCredito(
           cedula: null,
           placa: compra.placa,
           motoLabel: `${compra.modelo} · ${compra.color}`,
+          compraId: compra.id,
           compraEstado: compra.estado,
           cuotasPagadas: paidCount.get(compra.user_id) ?? 0,
           diasAtraso,
@@ -2646,6 +2647,7 @@ export async function listClientesMotoCredito(
         cedula,
         placa: compra.placa,
         motoLabel: `${compra.modelo} · ${compra.color}`,
+        compraId: compra.id,
         compraEstado: compra.estado,
         cuotasPagadas: paidCount.get(user.id) ?? 0,
         diasAtraso,
@@ -2666,6 +2668,9 @@ export async function listClientesMotoCredito(
   });
 
   return results.sort((a, b) => {
+    const aCancel = a.compraEstado === "cancelada" ? 1 : 0;
+    const bCancel = b.compraEstado === "cancelada" ? 1 : 0;
+    if (aCancel !== bCancel) return aCancel - bCancel;
     if (a.vigilado !== b.vigilado) return a.vigilado ? -1 : 1;
     if (b.diasAtraso !== a.diasAtraso) return b.diasAtraso - a.diasAtraso;
     const aAt = a.seleccionadoAt ? new Date(a.seleccionadoAt).getTime() : 0;

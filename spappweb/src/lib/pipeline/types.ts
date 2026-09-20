@@ -195,6 +195,16 @@ export interface UserMotoCompraRow {
     es_renovacion?: boolean;
     /** Plazo del contrato en días (override del año por defecto). */
     dias_contrato?: number;
+    /** Conductor autorizado (puede ser distinto al titular). */
+    conductor?: {
+      nombre?: string;
+      cedula?: string;
+      celular?: string | null;
+      notas?: string | null;
+      cedula_url?: string | null;
+      foto_url?: string | null;
+      updated_at?: string;
+    };
   };
 }
 
@@ -490,6 +500,8 @@ export interface ClientSearchResult {
   cedula: string | null;
   placa: string | null;
   motoLabel: string | null;
+  /** Compra activa asociada (para cancelar / acciones). */
+  compraId: string | null;
   compraEstado: MotoCompraEstado | null;
   cuotasPagadas: number;
   diasAtraso: number;
