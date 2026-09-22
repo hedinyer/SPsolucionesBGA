@@ -284,7 +284,7 @@ export async function getClientPipeline(
   const { data: compra } = await supabase
     .from("user_moto_compra")
     .select(
-      "id, user_id, bike_id, modelo, color, frecuencia_pago, cuota_inicial_monto, monto_cuota_periodo, monto_cuota_adelantada, monto_visita_monto, monto_total_primer_pago, estado, pago_inicial_confirmado, pago_cuota_confirmado, pago_visita_confirmado, placa, chasis, referencia, fecha_entrega, estado_fisico, doc_tarjeta_propiedad_path, doc_soat_path, doc_tecno_path, seleccionado_at, admin_data",
+      "id, user_id, bike_id, modelo, color, frecuencia_pago, cuota_inicial_monto, monto_cuota_periodo, monto_cuota_adelantada, monto_visita_monto, monto_total_primer_pago, estado, pago_inicial_confirmado, pago_cuota_confirmado, pago_visita_confirmado, placa, chasis, serial_motor, referencia, fecha_entrega, estado_fisico, doc_tarjeta_propiedad_path, doc_soat_path, doc_tecno_path, seleccionado_at, admin_data",
     )
     .eq("user_id", userId)
     .maybeSingle();
@@ -521,6 +521,15 @@ function buildRentingResumen(
 
   for (const tarifa of tarifas) {
     const pagadoParcial = tarifa.monto_pagado ?? 0;
+
+    // Cuotas del contrato anterior archivadas: no cuentan como deuda activa.
+    if (tarifa.estado === "refinanciada") {
+      if (pagadoParcial > 0) {
+        cuotasPagadas += cuotaFraction(pagadoParcial, tarifa.monto_esperado);
+        totalPagado += pagadoParcial;
+      }
+      continue;
+    }
 
     if (tarifa.estado === "pagada") {
       const pagado = pagadoParcial || tarifa.monto_esperado;
@@ -1829,7 +1838,7 @@ export async function getAllVendidasMotos(): Promise<VendidaMotoRow[]> {
       supabase
         .from("user_moto_compra")
         .select(
-          "id, user_id, bike_id, modelo, color, frecuencia_pago, cuota_inicial_monto, monto_cuota_periodo, monto_total_primer_pago, estado, pago_inicial_confirmado, pago_cuota_confirmado, placa, chasis, referencia, fecha_entrega, estado_fisico, seleccionado_at, users(id, user, users_documents(selfie_url, referral_source)), bike_table(imagen_url), morosos(estado, dias_atraso, monto_adeudado), motos_para_recoger(estado, dias_atraso), garaje_motos!garaje_motos_user_moto_compra_id_fkey(id)",
+          "id, user_id, bike_id, modelo, color, frecuencia_pago, cuota_inicial_monto, monto_cuota_periodo, monto_total_primer_pago, estado, pago_inicial_confirmado, pago_cuota_confirmado, placa, chasis, serial_motor, referencia, fecha_entrega, estado_fisico, seleccionado_at, users(id, user, users_documents(selfie_url, referral_source)), bike_table(imagen_url), morosos(estado, dias_atraso, monto_adeudado), motos_para_recoger(estado, dias_atraso), garaje_motos!garaje_motos_user_moto_compra_id_fkey(id)",
         )
         .in("estado", ["entregada", "saldada"])
         .order("fecha_entrega", { ascending: false, nullsFirst: false })

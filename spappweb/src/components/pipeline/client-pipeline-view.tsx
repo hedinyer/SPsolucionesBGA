@@ -17,7 +17,6 @@ import { PrimerPagoPanel } from "@/components/pipeline/primer-pago/primer-pago-p
 import { CreditProductsPanel } from "@/components/pipeline/credit-products-panel";
 import { DeliveryPanel } from "@/components/pipeline/delivery-panel";
 import { RentingPanel } from "@/components/pipeline/renting-panel";
-import { MoraSummaryBanner } from "@/components/pipeline/mora-summary-banner";
 import { TrackingPanel } from "@/components/pipeline/tracking-panel";
 
 interface ClientPipelineViewProps {
@@ -66,51 +65,64 @@ export function ClientPipelineView({
         pipeline.visita &&
         pipeline.visita.estado !== "completada",
     );
+  const showPagoMain =
+    adminStep === "pago" || pipeline.compra?.estado === "lista_retiro";
+  const showCreditProductsMain =
+    (adminStep === "pago" && showPagoMain) ||
+    ((pipeline.compra?.estado === "entregada" ||
+      pipeline.compra?.estado === "saldada") &&
+      showDeliveryMain);
 
   return (
     <div className="flex flex-col gap-8">
       <ClientStepper steps={pipeline.steps} />
-      <MoraSummaryBanner pipeline={pipeline} />
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="flex flex-col gap-6 lg:col-span-2">
           {adminStep === "credito" && pipeline.document && (
-            <CreditReviewPanel
-              document={pipeline.document}
-              userId={userId}
-              contractId={contractId}
-              clienteCelular={clienteCelular}
-              contractSigned={contractSigned}
-            />
+            <div id="pipeline-credito" className="scroll-mt-20">
+              <CreditReviewPanel
+                document={pipeline.document}
+                userId={userId}
+                contractId={contractId}
+                clienteCelular={clienteCelular}
+                contractSigned={contractSigned}
+              />
+            </div>
           )}
           {adminStep === "moto" && documentId && (
-            <AdminMotoAssignPanel
-              compra={pipeline.compra}
-              bikes={bikes}
-              userId={userId}
-              documentId={documentId}
-            />
+            <div id="pipeline-moto" className="scroll-mt-20">
+              <AdminMotoAssignPanel
+                compra={pipeline.compra}
+                bikes={bikes}
+                userId={userId}
+                documentId={documentId}
+              />
+            </div>
           )}
           {showContractShare && (
-            <ContractSharePanel
-              contract={pipeline.contract!}
-              compra={pipeline.compra!}
-              userId={userId}
-              pagos={pipeline.pagos}
-              clienteCelular={clienteCelular}
-            />
+            <div id="pipeline-contrato" className="scroll-mt-20">
+              <ContractSharePanel
+                contract={pipeline.contract!}
+                compra={pipeline.compra!}
+                userId={userId}
+                pagos={pipeline.pagos}
+                clienteCelular={clienteCelular}
+              />
+            </div>
           )}
           {legacyClientMoto && (
-            <MotoSelectionPanel
-              contract={pipeline.contract}
-              compra={pipeline.compra}
-              contractId={contractId}
-              clienteCelular={clienteCelular}
-              userId={userId}
-            />
+            <div id="pipeline-moto" className="scroll-mt-20">
+              <MotoSelectionPanel
+                contract={pipeline.contract}
+                compra={pipeline.compra}
+                contractId={contractId}
+                clienteCelular={clienteCelular}
+                userId={userId}
+              />
+            </div>
           )}
-          {(adminStep === "pago" ||
-            pipeline.compra?.estado === "lista_retiro") && (
+          {showPagoMain && (
             <>
               {adminStep === "pago" && (
                 <CreditProductsPanel
@@ -126,34 +138,36 @@ export function ClientPipelineView({
                   clienteCedula={pipeline.user.user}
                 />
               )}
-              <PrimerPagoPanel
-                compra={pipeline.compra}
-                pagos={pipeline.pagos}
-                userId={userId}
-                referenciasUsadas={referenciasUsadas}
-                clienteNombre={pipeline.displayName}
-                clienteCedula={pipeline.user.user}
-              />
+              <div id="pipeline-pago" className="scroll-mt-20">
+                <PrimerPagoPanel
+                  compra={pipeline.compra}
+                  pagos={pipeline.pagos}
+                  userId={userId}
+                  referenciasUsadas={referenciasUsadas}
+                  clienteNombre={pipeline.displayName}
+                  clienteCedula={pipeline.user.user}
+                />
+              </div>
             </>
           )}
           {showDeliveryMain && (
             <>
               {(pipeline.compra?.estado === "entregada" ||
                 pipeline.compra?.estado === "saldada") && (
-                  <CreditProductsPanel
-                    compra={pipeline.compra}
-                    items={pipeline.compraProductosCredito}
-                    catalogo={productosCredito}
-                    inventario={inventarioProductos}
-                    tarifasProducto={pipeline.tarifasProductoCredito}
-                    pagos={pipeline.pagos}
-                    userId={userId}
-                    referenciasUsadas={referenciasUsadas}
-                    clienteNombre={pipeline.displayName}
-                    clienteCedula={pipeline.user.user}
-                  />
-                )}
-              <div id="pipeline-entrega">
+                <CreditProductsPanel
+                  compra={pipeline.compra}
+                  items={pipeline.compraProductosCredito}
+                  catalogo={productosCredito}
+                  inventario={inventarioProductos}
+                  tarifasProducto={pipeline.tarifasProductoCredito}
+                  pagos={pipeline.pagos}
+                  userId={userId}
+                  referenciasUsadas={referenciasUsadas}
+                  clienteNombre={pipeline.displayName}
+                  clienteCedula={pipeline.user.user}
+                />
+              )}
+              <div id="pipeline-entrega" className="scroll-mt-20">
                 <DeliveryPanel
                   compra={pipeline.compra}
                   userId={userId}
@@ -164,12 +178,14 @@ export function ClientPipelineView({
             </>
           )}
           {showVisitaMain && (
-            <VisitActionPanel
-              visita={pipeline.visita}
-              visitadores={visitadores}
-              userId={userId}
-              referralSource={pipeline.document?.referral_source}
-            />
+            <div id="pipeline-visita" className="scroll-mt-20">
+              <VisitActionPanel
+                visita={pipeline.visita}
+                visitadores={visitadores}
+                userId={userId}
+                referralSource={pipeline.document?.referral_source}
+              />
+            </div>
           )}
           {(pipeline.compra?.estado === "lista_retiro" ||
             pipeline.compra?.estado === "entregada") && (
@@ -183,11 +199,11 @@ export function ClientPipelineView({
             pipeline.compra?.estado !== "saldada" &&
             !showContractShare &&
             !legacyClientMoto && (
-            <div className="rounded-lg border border-border bg-muted/50 px-6 py-10 text-center text-sm text-muted-foreground">
-              No hay acciones pendientes de tu parte. El cliente continúa en
-              la app.
-            </div>
-          )}
+              <div className="rounded-lg border border-border bg-muted/50 px-6 py-10 text-center text-sm text-muted-foreground">
+                No hay acciones pendientes de tu parte. El cliente continúa en
+                la app.
+              </div>
+            )}
 
           <details className="rounded-lg border border-border">
             <summary className="cursor-pointer px-4 py-3 text-sm font-medium">
@@ -204,37 +220,38 @@ export function ClientPipelineView({
                 />
               )}
               <ContractReadonlyPanel contract={pipeline.contract} />
-              <MotoSelectionPanel
-                contract={pipeline.contract}
-                compra={pipeline.compra}
-                contractId={contractId}
-                clienteCelular={clienteCelular}
-                userId={userId}
-              />
-              {adminStep !== "pago" &&
-                pipeline.compra?.estado !== "lista_retiro" && (
-                <>
-                  <CreditProductsPanel
-                    compra={pipeline.compra}
-                    items={pipeline.compraProductosCredito}
-                    catalogo={productosCredito}
-                    inventario={inventarioProductos}
-                    tarifasProducto={pipeline.tarifasProductoCredito}
-                    pagos={pipeline.pagos}
-                    userId={userId}
-                    referenciasUsadas={referenciasUsadas}
-                    clienteNombre={pipeline.displayName}
-                    clienteCedula={pipeline.user.user}
-                  />
-                  <PrimerPagoPanel
-                    compra={pipeline.compra}
-                    pagos={pipeline.pagos}
-                    userId={userId}
-                    referenciasUsadas={referenciasUsadas}
-                    clienteNombre={pipeline.displayName}
-                    clienteCedula={pipeline.user.user}
-                  />
-                </>
+              {!legacyClientMoto && adminStep !== "moto" && (
+                <MotoSelectionPanel
+                  contract={pipeline.contract}
+                  compra={pipeline.compra}
+                  contractId={contractId}
+                  clienteCelular={clienteCelular}
+                  userId={userId}
+                />
+              )}
+              {!showCreditProductsMain && (
+                <CreditProductsPanel
+                  compra={pipeline.compra}
+                  items={pipeline.compraProductosCredito}
+                  catalogo={productosCredito}
+                  inventario={inventarioProductos}
+                  tarifasProducto={pipeline.tarifasProductoCredito}
+                  pagos={pipeline.pagos}
+                  userId={userId}
+                  referenciasUsadas={referenciasUsadas}
+                  clienteNombre={pipeline.displayName}
+                  clienteCedula={pipeline.user.user}
+                />
+              )}
+              {!showPagoMain && (
+                <PrimerPagoPanel
+                  compra={pipeline.compra}
+                  pagos={pipeline.pagos}
+                  userId={userId}
+                  referenciasUsadas={referenciasUsadas}
+                  clienteNombre={pipeline.displayName}
+                  clienteCedula={pipeline.user.user}
+                />
               )}
               {!showDeliveryMain && (
                 <div id="pipeline-entrega-historial">

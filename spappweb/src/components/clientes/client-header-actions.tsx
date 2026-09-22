@@ -3,10 +3,11 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { ChevronDown, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   congelarCuotas,
+  refinanciarCredito,
   saldarCredito,
 } from "@/lib/actions/credito-operaciones-actions";
 import { transferirTitularidad, markMotoRecogidaByUserId, inactivarMotoCliente, setClienteVigilado } from "@/lib/actions/admin-actions";
@@ -22,12 +23,19 @@ import {
   printCreditoPagoReceipt,
   type CreditoPagoReceiptData,
 } from "@/lib/printing/credito-pago-receipt";
-import type { ClientPipeline, ClientSearchResult } from "@/lib/pipeline/types";
+import type {
+  ClientPipeline,
+  ClientSearchResult,
+  FrecuenciaPago,
+  PipelineStepId,
+} from "@/lib/pipeline/types";
 import {
+  FRECUENCIA_LABELS,
   MEDIO_PAGO_ADMIN_LABELS,
   MEDIO_PAGO_ADMIN_OPTIONS,
   type MedioPagoAdmin,
 } from "@/lib/pipeline/types";
+import { motoListo } from "@/lib/pipeline/step-logic";
 import { formatCop } from "@/lib/utils/format";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -39,6 +47,24 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -63,13 +89,46 @@ function clienteCedula(pipeline: ClientPipeline): string {
   );
 }
 
+const PRIMARY_CTA: Record<
+  PipelineStepId,
+  { label: string; href: string }
+> = {
+  credito: { label: "Revisar crédito", href: "#pipeline-credito" },
+  contrato: { label: "Ver contrato", href: "#pipeline-contrato" },
+  visita: { label: "Gestionar visita", href: "#pipeline-visita" },
+  moto: { label: "Registrar moto", href: "#pipeline-moto" },
+  pago: { label: "Cobrar primer pago", href: "#pipeline-pago" },
+  entrega: { label: "Entregar moto", href: "#pipeline-entrega" },
+};
+
+function resolvePrimaryCta(pipeline: ClientPipeline): {
+  label: string;
+  href: string;
+} | null {
+  const step = pipeline.currentAdminStep;
+  if (step) return PRIMARY_CTA[step];
+
+  const contractSigned = pipeline.contract?.status === "firmado";
+  if (
+    pipeline.compra &&
+    motoListo(pipeline.compra) &&
+    pipeline.contract &&
+    !contractSigned
+  ) {
+    return { label: "Enviar contrato", href: "#pipeline-contrato" };
+  }
+  return null;
+}
+
 export function ClientHeaderActions({ pipeline }: { pipeline: ClientPipeline }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [freezeOpen, setFreezeOpen] = useState(false);
+  const [refiOpen, setRefiOpen] = useState(false);
   const [settleOpen, setSettleOpen] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
   const [vigiladoOpen, setVigiladoOpen] = useState(false);
+  const [inactivarOpen, setInactivarOpen] = useState(false);
 
   const compra = pipeline.compra;
   const renting = pipeline.rentingResumen;
@@ -91,6 +150,7 @@ export function ClientHeaderActions({ pipeline }: { pipeline: ClientPipeline }) 
   const yaRecogida = mora.yaRecogida;
   const plazo = getPlazoRecuperacion(pipeline.recoger?.fecha_recogida);
   const showInactivar = yaRecogida && plazo.plazoVencido;
+  const primary = resolvePrimaryCta(pipeline);
 
   function marcarRecogida() {
     startTransition(async () => {
@@ -149,60 +209,44 @@ export function ClientHeaderActions({ pipeline }: { pipeline: ClientPipeline }) 
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <Button variant="outline" asChild className="min-h-11">
-        <Link href="/hojadevida" target="_blank">
-          Formulario web
-        </Link>
-      </Button>
-      {pipeline.vigilado ? (
-        <>
-          <Button
-            variant="outline"
-            className="min-h-11"
-            disabled={pending}
-            onClick={() => setVigiladoOpen(true)}
-          >
-            Editar vigilancia
-          </Button>
-          <Button
-            variant="outline"
-            className="min-h-11"
-            disabled={pending}
-            onClick={quitarVigilancia}
-          >
-            Quitar vigilancia
-          </Button>
-        </>
-      ) : (
-        <Button
-          variant="outline"
-          className="min-h-11 border-foreground font-semibold text-foreground"
-          disabled={pending}
-          onClick={() => setVigiladoOpen(true)}
-        >
-          ! Vigilar cliente
+      {primary ? (
+        <Button asChild className="min-h-11">
+          <a href={primary.href}>{primary.label}</a>
         </Button>
-      )}
+      ) : null}
+
       {showMarcarRecogida ? (
-        <Button
-          variant="destructive"
-          className="min-h-11"
-          disabled={pending}
-          onClick={marcarRecogida}
-        >
-          Moto recogida
-        </Button>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button
+              variant="destructive"
+              className="min-h-11"
+              disabled={pending}
+            >
+              Moto recogida
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent className="bg-background">
+            <AlertDialogHeader>
+              <AlertDialogTitle>¿Marcar moto como recogida?</AlertDialogTitle>
+              <AlertDialogDescription>
+                La moto pasará al garaje. Luego completa la foto de placa y la
+                ubicación.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                disabled={pending}
+                onClick={marcarRecogida}
+              >
+                Marcar moto recogida
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       ) : null}
-      {showInactivar ? (
-        <Button
-          variant="outline"
-          className="min-h-11 border-foreground text-foreground"
-          disabled={pending}
-          onClick={inactivarMoto}
-        >
-          Inactivar moto
-        </Button>
-      ) : null}
+
       {yaRecogida && !plazo.plazoVencido ? (
         <Badge variant="outline" className="w-fit text-xs">
           Recuperación: {plazo.diasRestantes} día
@@ -210,40 +254,97 @@ export function ClientHeaderActions({ pipeline }: { pipeline: ClientPipeline }) 
           {plazo.diasRestantes === 1 ? "" : "s"}
         </Badge>
       ) : null}
-      {showTransfer && compra && (
-        <Button
-          variant="outline"
-          className="min-h-11"
-          onClick={() => setTransferOpen(true)}
-        >
-          Transferir titularidad
-        </Button>
-      )}
-      {showCreditoOps && compra && (
-        <>
-          <Button
-            variant="outline"
-            className="min-h-11"
-            onClick={() => setFreezeOpen(true)}
-          >
-            Congelar cuotas
+
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" className="min-h-11 gap-1.5">
+            Más
+            <ChevronDown className="size-4 opacity-70" aria-hidden />
           </Button>
-          <Button className="min-h-11" onClick={() => setSettleOpen(true)}>
-            Pagar crédito
-          </Button>
-        </>
-      )}
-      {pipeline.congelamiento && (
-        <Badge className="w-fit bg-sky-100 text-sky-700 hover:bg-sky-100">
-          Crédito congelado · {pipeline.congelamiento.diasRestantes} día
-          {pipeline.congelamiento.diasRestantes === 1 ? "" : "s"}
-        </Badge>
-      )}
-      {pipeline.currentAdminStep && (
-        <Badge className="w-fit">
-          Acción requerida
-        </Badge>
-      )}
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="min-w-52">
+          <DropdownMenuItem asChild>
+            <Link href="/hojadevida" target="_blank">
+              Formulario web
+            </Link>
+          </DropdownMenuItem>
+          {pipeline.vigilado ? (
+            <>
+              <DropdownMenuItem onSelect={() => setVigiladoOpen(true)}>
+                Editar vigilancia
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={pending}
+                onSelect={quitarVigilancia}
+              >
+                Quitar vigilancia
+              </DropdownMenuItem>
+            </>
+          ) : (
+            <DropdownMenuItem onSelect={() => setVigiladoOpen(true)}>
+              Vigilar cliente
+            </DropdownMenuItem>
+          )}
+          {showTransfer && compra ? (
+            <DropdownMenuItem onSelect={() => setTransferOpen(true)}>
+              Transferir titularidad
+            </DropdownMenuItem>
+          ) : null}
+          {showCreditoOps && compra ? (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => setFreezeOpen(true)}>
+                Congelar cuotas
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setRefiOpen(true)}>
+                Refinanciación
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                variant="destructive"
+                onSelect={() => setSettleOpen(true)}
+              >
+                Liquidar crédito completo
+              </DropdownMenuItem>
+            </>
+          ) : null}
+          {showInactivar ? (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                variant="destructive"
+                onSelect={() => setInactivarOpen(true)}
+              >
+                Inactivar moto
+              </DropdownMenuItem>
+            </>
+          ) : null}
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <AlertDialog open={inactivarOpen} onOpenChange={setInactivarOpen}>
+        <AlertDialogContent className="bg-background">
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Inactivar moto?</AlertDialogTitle>
+            <AlertDialogDescription>
+              La moto queda liberada para mantenimiento. Esta acción no se puede
+              deshacer desde aquí.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={pending}
+              onClick={() => {
+                setInactivarOpen(false);
+                inactivarMoto();
+              }}
+            >
+              Inactivar moto
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <VigiladoDialog
         open={vigiladoOpen}
         onOpenChange={setVigiladoOpen}
@@ -258,6 +359,15 @@ export function ClientHeaderActions({ pipeline }: { pipeline: ClientPipeline }) 
             onOpenChange={setFreezeOpen}
             userId={pipeline.user.id}
             compraId={compra.id}
+            cuotasActivas={cuotasActivas}
+          />
+          <RefinanciacionDialog
+            open={refiOpen}
+            onOpenChange={setRefiOpen}
+            userId={pipeline.user.id}
+            compraId={compra.id}
+            frecuenciaPago={compra.frecuencia_pago}
+            montoCuotaPeriodo={compra.monto_cuota_periodo}
             cuotasActivas={cuotasActivas}
           />
           <SaldarCreditoDialog
@@ -656,6 +766,170 @@ function CongelarCuotasDialog({
   );
 }
 
+function todayIsoDate(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function cuotaDiariaDesdePeriodo(
+  montoPeriodo: number,
+  frecuencia: FrecuenciaPago,
+): number {
+  if (!Number.isFinite(montoPeriodo) || montoPeriodo <= 0) return 0;
+  switch (frecuencia) {
+    case "semanal":
+      return Math.round(montoPeriodo / 7);
+    case "quincenal":
+      return Math.round(montoPeriodo / 15);
+    case "mensual":
+      return Math.round(montoPeriodo / 30);
+    default:
+      return Math.round(montoPeriodo);
+  }
+}
+
+function RefinanciacionDialog({
+  open,
+  onOpenChange,
+  userId,
+  compraId,
+  frecuenciaPago,
+  montoCuotaPeriodo,
+  cuotasActivas,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  userId: number;
+  compraId: string;
+  frecuenciaPago: FrecuenciaPago;
+  montoCuotaPeriodo: number;
+  cuotasActivas: number;
+}) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const defaultCuota = cuotaDiariaDesdePeriodo(
+    montoCuotaPeriodo,
+    frecuenciaPago,
+  );
+  const [fecha, setFecha] = useState(todayIsoDate);
+  const [dias, setDias] = useState("");
+  const [cuotaDiaria, setCuotaDiaria] = useState(
+    defaultCuota > 0 ? String(defaultCuota) : "",
+  );
+
+  useEffect(() => {
+    if (!open) return;
+    setFecha(todayIsoDate());
+    setDias("");
+    const cuota = cuotaDiariaDesdePeriodo(montoCuotaPeriodo, frecuenciaPago);
+    setCuotaDiaria(cuota > 0 ? String(cuota) : "");
+  }, [open, montoCuotaPeriodo, frecuenciaPago]);
+
+  const diasNum = Number(dias);
+  const cuotaNum = Number(cuotaDiaria);
+
+  function handleSubmit() {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+      toast.error("Indica la fecha de refinanciación.");
+      return;
+    }
+    if (!Number.isFinite(diasNum) || diasNum < 1 || diasNum > 1095) {
+      toast.error("Los días de refinanciación deben estar entre 1 y 1095.");
+      return;
+    }
+    if (!Number.isFinite(cuotaNum) || cuotaNum < 1) {
+      toast.error("La cuota diaria debe ser mayor a 0.");
+      return;
+    }
+
+    startTransition(async () => {
+      try {
+        const result = await refinanciarCredito({
+          userId,
+          compraId,
+          fechaRefinanciacion: fecha,
+          dias: diasNum,
+          cuotaDiaria: Math.round(cuotaNum),
+        });
+        toast.success(
+          `Refinanciación lista: ${result.tarifasCreadas} cuota${result.tarifasCreadas === 1 ? "" : "s"} nuevas (${formatCop(result.montoPeriodo)} / periodo). Historial de pagos conservado.`,
+        );
+        onOpenChange(false);
+        router.refresh();
+      } catch (e) {
+        toast.error(
+          e instanceof Error ? e.message : "Error al refinanciar el crédito.",
+        );
+      }
+    });
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Refinanciación</DialogTitle>
+          <DialogDescription>
+            Se archivan las {cuotasActivas} cuota
+            {cuotasActivas === 1 ? "" : "s"} pendiente
+            {cuotasActivas === 1 ? "" : "s"} o vencida
+            {cuotasActivas === 1 ? "" : "s"} y se genera un nuevo cronograma
+            desde la fecha indicada. Frecuencia actual:{" "}
+            {FRECUENCIA_LABELS[frecuenciaPago]}. Las cuotas ya pagadas y el
+            historial de pagos se conservan para auditoría.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="refi-fecha">Fecha refinanciación</Label>
+            <Input
+              id="refi-fecha"
+              type="date"
+              value={fecha}
+              onChange={(e) => setFecha(e.target.value)}
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="refi-dias">Días refinanciación</Label>
+            <Input
+              id="refi-dias"
+              type="number"
+              min={1}
+              max={1095}
+              placeholder="Duración del nuevo contrato"
+              value={dias}
+              onChange={(e) => setDias(e.target.value)}
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="refi-cuota">Cuota diaria</Label>
+            <Input
+              id="refi-cuota"
+              type="number"
+              min={1}
+              step={1}
+              value={cuotaDiaria}
+              onChange={(e) => setCuotaDiaria(e.target.value)}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancelar
+          </Button>
+          <Button disabled={pending} onClick={handleSubmit}>
+            {pending && <Loader2 className="h-4 w-4 animate-spin" />}
+            Refinanciar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function SaldarCreditoDialog({
   open,
   onOpenChange,
@@ -771,13 +1045,14 @@ function SaldarCreditoDialog({
     >
       <DialogContent className="max-h-[90dvh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Pagar crédito</DialogTitle>
+          <DialogTitle>Liquidar crédito completo</DialogTitle>
           <DialogDescription>
-            Liquidación negociada. Se marcarán todas las cuotas como pagadas y el
-            crédito quedará saldado
+            Esto no es un pago de una cuota. Marca todas las cuotas como pagadas
+            y cierra el crédito
             {adeudado > 0
               ? ` (adeudado teórico: ${formatCop(adeudado)}).`
-              : "."}
+              : "."}{" "}
+            Usa esto solo en una liquidación negociada.
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-4">

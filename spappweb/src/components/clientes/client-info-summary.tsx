@@ -5,17 +5,17 @@ import {
   COMPRA_ESTADO_LABELS,
   FRECUENCIA_LABELS,
 } from "@/lib/pipeline/types";
-import { getMoraDisplay, moraEstadoLabel } from "@/lib/pipeline/mora-utils";
 import { referralLabel } from "@/lib/referrals";
 import { formatCop, formatCuotas } from "@/lib/utils/format";
 import { GpsMotoPanel } from "@/components/pipeline/gps-moto-panel";
+import { LazyDetails } from "@/components/clientes/lazy-details";
 import { Card, CardContent } from "@/components/ui/card";
 
 function InfoItem({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="mt-0.5 text-sm font-medium">{value}</p>
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className="mt-0.5 text-sm font-medium">{value}</dd>
     </div>
   );
 }
@@ -37,7 +37,10 @@ function PhotoThumb({
         // eslint-disable-next-line @next/next/no-img-element
         <img src={src} alt={alt} className="h-full w-full object-cover" />
       ) : (
-        <div className="flex h-full w-full items-center justify-center text-muted-foreground">
+        <div
+          className="flex h-full w-full items-center justify-center text-muted-foreground"
+          aria-hidden
+        >
           {fallback === "user" ? (
             <User className="h-8 w-8" />
           ) : (
@@ -75,22 +78,26 @@ export function ClientInfoSummary({
     null;
   const compra = pipeline.compra;
   const resumen = pipeline.rentingResumen;
-  const mora = getMoraDisplay(pipeline);
   const selfieUrl = pipeline.document?.selfie_url ?? null;
   const motoImagenUrl =
     bikes.find((b) => b.id === compra?.bike_id)?.imagen_url ?? null;
+
+  const hasPagos = Boolean(
+    resumen &&
+      (resumen.cuotasPagadas > 0 ||
+        resumen.totalPagado > 0 ||
+        resumen.totalAdeudado > 0),
+  );
 
   const hasContent =
     cedula ||
     celular ||
     compra ||
-    resumen ||
-    mora.tieneDeuda ||
+    hasPagos ||
     pipeline.visita?.direccion_visita ||
     selfieUrl ||
     motoImagenUrl ||
-    pipeline.document?.referral_source ||
-    pipeline.vigilado;
+    pipeline.document?.referral_source;
 
   const placaGps = compra?.placa?.trim() || null;
   const titularidadHistorial = parseTitularidadHistorial(
@@ -101,122 +108,107 @@ export function ClientInfoSummary({
   return (
     <Card className="overflow-hidden border-border shadow-none">
       <CardContent className="flex flex-col gap-0 p-0">
-        <div className="flex flex-col gap-0 lg:flex-row">
-          <div className="flex min-w-0 flex-1 flex-col sm:flex-row">
-            <div className="grid w-full shrink-0 grid-cols-2 gap-0 border-b border-border sm:w-56 sm:grid-cols-1 sm:border-b-0 sm:border-r">
-              <PhotoThumb
-                src={selfieUrl}
-                alt={`Foto de ${pipeline.displayName}`}
-                fallback="user"
-                caption="Cliente"
-              />
-              <PhotoThumb
-                src={motoImagenUrl}
-                alt={compra ? `Moto ${compra.modelo}` : "Moto"}
-                fallback="bike"
-                caption={compra?.placa ?? "Moto"}
-              />
-            </div>
-
-            <div className="grid flex-1 gap-4 p-6 sm:grid-cols-2">
-              {pipeline.vigilado && (
-                <div className="sm:col-span-2 rounded-lg border border-red-200 bg-red-50 p-3">
-                  <p className="vigilado-pulse text-xs font-bold uppercase tracking-wide">
-                    ! Cliente vigilado
-                  </p>
-                  <p className="mt-1 text-sm font-medium text-foreground">
-                    {pipeline.notaVigilancia?.trim() ||
-                      "Sin nota de vigilancia."}
-                  </p>
-                </div>
-              )}
-              {cedula && <InfoItem label="Cédula" value={cedula} />}
-              {celular && <InfoItem label="Celular" value={celular} />}
-              {pipeline.document?.referral_source && (
-                <InfoItem
-                  label="Referido por"
-                  value={
-                    referralLabel(pipeline.document.referral_source) ??
-                    pipeline.document.referral_source
-                  }
-                />
-              )}
-              {compra && (
-                <>
-                  <InfoItem
-                    label="Moto"
-                    value={`${compra.modelo} · ${compra.color}`}
-                  />
-                  {compra.placa && (
-                    <InfoItem label="Placa" value={compra.placa} />
-                  )}
-                  <InfoItem
-                    label="Estado compra"
-                    value={COMPRA_ESTADO_LABELS[compra.estado]}
-                  />
-                  {compra.estado !== "cancelada" && (
-                    <InfoItem
-                      label="Frecuencia de pago"
-                      value={FRECUENCIA_LABELS[compra.frecuencia_pago]}
-                    />
-                  )}
-                </>
-              )}
-              {pipeline.visita?.direccion_visita && (
-                <InfoItem
-                  label="Dirección"
-                  value={pipeline.visita.direccion_visita}
-                />
-              )}
-              {mora.tieneDeuda && compra?.estado === "entregada" && (
-                <>
-                  <InfoItem
-                    label="Estado de pagos"
-                    value={moraEstadoLabel(pipeline.atraso, {
-                      yaRecogida: mora.yaRecogida,
-                    })}
-                  />
-                  <InfoItem
-                    label="Días de atraso"
-                    value={mora.dias > 0 ? String(mora.dias) : "—"}
-                  />
-                  <InfoItem label="Adeudado" value={formatCop(mora.monto)} />
-                </>
-              )}
-              {resumen && (
-                <>
-                  <InfoItem
-                    label="Cuotas pagadas"
-                    value={formatCuotas(resumen.cuotasPagadas)}
-                  />
-                  <InfoItem
-                    label="Total pagado"
-                    value={formatCop(resumen.totalPagado)}
-                  />
-                  {resumen.totalAdeudado > 0 && (
-                    <InfoItem
-                      label="Adeudado"
-                      value={formatCop(resumen.totalAdeudado)}
-                    />
-                  )}
-                </>
-              )}
-            </div>
+        <div className="flex flex-col gap-0 sm:flex-row">
+          <div className="grid w-full shrink-0 grid-cols-2 gap-0 border-b border-border sm:w-56 sm:grid-cols-1 sm:border-b-0 sm:border-r">
+            <PhotoThumb
+              src={selfieUrl}
+              alt={`Foto de ${pipeline.displayName}`}
+              fallback="user"
+              caption="Cliente"
+            />
+            <PhotoThumb
+              src={motoImagenUrl}
+              alt={compra ? `Moto ${compra.modelo}` : "Moto"}
+              fallback="bike"
+              caption={compra?.placa ?? "Moto"}
+            />
           </div>
 
-          {placaGps ? (
-            <div className="min-w-0 border-t border-border lg:w-[22rem] lg:shrink-0 lg:border-t-0 lg:border-l">
+          <dl className="grid flex-1 gap-4 p-4 sm:grid-cols-2 sm:p-6">
+            {cedula ? <InfoItem label="Cédula" value={cedula} /> : null}
+            {celular ? <InfoItem label="Celular" value={celular} /> : null}
+            {pipeline.document?.referral_source ? (
+              <InfoItem
+                label="Referido por"
+                value={
+                  referralLabel(pipeline.document.referral_source) ??
+                  pipeline.document.referral_source
+                }
+              />
+            ) : null}
+            {compra ? (
+              <>
+                <InfoItem
+                  label="Moto"
+                  value={`${compra.modelo} · ${compra.color}`}
+                />
+                {compra.placa ? (
+                  <InfoItem label="Placa" value={compra.placa} />
+                ) : null}
+                <InfoItem
+                  label="Estado compra"
+                  value={COMPRA_ESTADO_LABELS[compra.estado]}
+                />
+                {compra.estado !== "cancelada" ? (
+                  <InfoItem
+                    label="Frecuencia de pago"
+                    value={FRECUENCIA_LABELS[compra.frecuencia_pago]}
+                  />
+                ) : null}
+              </>
+            ) : null}
+            {pipeline.visita?.direccion_visita ? (
+              <InfoItem
+                label="Dirección"
+                value={pipeline.visita.direccion_visita}
+              />
+            ) : null}
+          </dl>
+        </div>
+
+        {hasPagos && resumen ? (
+          <LazyDetails
+            className="border-t border-border"
+            summaryClassName="cursor-pointer px-4 py-3 text-sm font-medium sm:px-6"
+            summary="Ver pagos"
+          >
+            <dl className="grid gap-4 border-t border-border px-4 py-4 sm:grid-cols-2 sm:px-6">
+              <InfoItem
+                label="Cuotas pagadas"
+                value={formatCuotas(resumen.cuotasPagadas)}
+              />
+              <InfoItem
+                label="Total pagado"
+                value={formatCop(resumen.totalPagado)}
+              />
+              {resumen.totalAdeudado > 0 ? (
+                <InfoItem
+                  label="Adeudado"
+                  value={formatCop(resumen.totalAdeudado)}
+                />
+              ) : null}
+            </dl>
+          </LazyDetails>
+        ) : null}
+
+        {placaGps ? (
+          <LazyDetails
+            className="border-t border-border"
+            summaryClassName="cursor-pointer px-4 py-3 text-sm font-medium sm:px-6"
+            summary={`GPS · ${placaGps}`}
+          >
+            <div className="border-t border-border">
               <GpsMotoPanel
                 placa={placaGps}
                 userId={pipeline.user.id}
                 embedded
               />
             </div>
-          ) : null}
-        </div>
+          </LazyDetails>
+        ) : null}
 
-        {titularidadHistorial.length > 0 && (
-          <div className="border-t border-border px-6 py-4">
+        {titularidadHistorial.length > 0 ? (
+          <div className="border-t border-border px-4 py-4 sm:px-6">
             <p className="text-xs text-muted-foreground">
               Historial de titularidad
             </p>
@@ -239,7 +231,7 @@ export function ClientInfoSummary({
               ))}
             </ul>
           </div>
-        )}
+        ) : null}
       </CardContent>
     </Card>
   );

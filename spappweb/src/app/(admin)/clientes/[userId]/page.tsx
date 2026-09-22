@@ -8,13 +8,15 @@ import {
   getAllProductosCredito,
   getClientPipeline,
 } from "@/lib/pipeline/queries";
-import { getMoraDisplay } from "@/lib/pipeline/mora-utils";
 import { ClientPipelineView } from "@/components/pipeline/client-pipeline-view";
 import { ClientInfoSummary } from "@/components/clientes/client-info-summary";
 import { ClientHeaderActions } from "@/components/clientes/client-header-actions";
+import { ClientStatusStrip } from "@/components/clientes/client-status-strip";
 import { ConductorPanel } from "@/components/clientes/conductor-panel";
+import { LazyDetails } from "@/components/clientes/lazy-details";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
+import { parseConductorInfo } from "@/lib/admin/conductor";
 
 export default async function ClientPage({
   params,
@@ -41,7 +43,26 @@ export default async function ClientPage({
     (pipeline.contract?.contrato_data as { es_renovacion?: unknown } | undefined)
       ?.es_renovacion === true;
 
-  const motoRecogida = getMoraDisplay(pipeline).yaRecogida;
+  const conductor = pipeline.compra
+    ? parseConductorInfo(
+        (pipeline.compra.admin_data as Record<string, unknown> | undefined) ??
+          null,
+      )
+    : null;
+
+  const hoja = pipeline.contract?.hoja_vida_data as
+    | Record<string, unknown>
+    | undefined;
+  const contrato = pipeline.contract?.contrato_data as
+    | Record<string, unknown>
+    | undefined;
+  const cedulaSub =
+    (hoja?.numero_identificacion as string | undefined)?.trim() ||
+    (contrato?.cedula_contratante as string | undefined)?.trim() ||
+    null;
+  const subtitle =
+    [pipeline.compra?.placa?.trim(), cedulaSub].filter(Boolean).join(" · ") ||
+    `@${pipeline.user.user}`;
 
   return (
     <div className="flex flex-col gap-6">
@@ -53,35 +74,41 @@ export default async function ClientPage({
       </Button>
 
       <PageHeader
-        title={
-          <span className="inline-flex flex-wrap items-baseline gap-x-2 gap-y-1">
-            <span>{pipeline.displayName}</span>
-            {esRenovacion ? (
-              <span className="text-base font-bold uppercase tracking-wide text-red-600 sm:text-lg">
-                RENOVACION
-              </span>
-            ) : null}
-            {motoRecogida ? (
-              <span className="text-base font-bold uppercase tracking-wide text-foreground sm:text-lg">
-                MOTO RECOGIDA
-              </span>
-            ) : null}
-            {pipeline.vigilado ? (
-              <span className="vigilado-pulse text-base font-bold sm:text-lg">
-                <span aria-hidden>!</span>
-                Cliente vigilado
-              </span>
-            ) : null}
-          </span>
-        }
-        description={`Usuario @${pipeline.user.user} · ID ${pipeline.user.id}`}
+        title={pipeline.displayName}
+        description={subtitle}
         action={<ClientHeaderActions pipeline={pipeline} />}
       />
+
+      <ClientStatusStrip pipeline={pipeline} esRenovacion={esRenovacion} />
 
       <ClientInfoSummary pipeline={pipeline} bikes={bikes} />
 
       {pipeline.compra ? (
-        <ConductorPanel compra={pipeline.compra} userId={pipeline.user.id} />
+        <LazyDetails
+          className="rounded-xl border border-border bg-card"
+          summaryClassName="cursor-pointer list-none px-4 py-3 text-sm font-medium marker:content-none [&::-webkit-details-marker]:hidden"
+          summary={
+            <span className="flex items-center justify-between gap-2">
+              <span>
+                Conductor
+                {conductor?.nombre?.trim()
+                  ? ` · ${conductor.nombre.trim()}`
+                  : " · sin asignar"}
+              </span>
+              <span className="text-xs font-normal text-muted-foreground">
+                Mostrar u ocultar
+              </span>
+            </span>
+          }
+        >
+          <div className="border-t border-border p-0">
+            <ConductorPanel
+              compra={pipeline.compra}
+              userId={pipeline.user.id}
+              embedded
+            />
+          </div>
+        </LazyDetails>
       ) : null}
 
       <ClientPipelineView

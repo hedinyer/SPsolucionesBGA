@@ -1,6 +1,6 @@
 import { Check, Circle, Lock, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { PipelineStep } from "@/lib/pipeline/types";
+import type { PipelineStep, StepVisualState } from "@/lib/pipeline/types";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 
@@ -8,16 +8,27 @@ interface ClientStepperProps {
   steps: PipelineStep[];
 }
 
+const STATE_SR: Record<StepVisualState, string> = {
+  completado: "Completado",
+  actual: "Ahora",
+  pendiente: "Pendiente",
+  bloqueado: "Bloqueado",
+  error: "Con error",
+};
+
 export function ClientStepper({ steps }: ClientStepperProps) {
   return (
     <Card>
       <CardContent className="pt-(--card-spacing)">
-        {/* Mobile: horizontal scroll with snap */}
-        <ol className="flex gap-3 overflow-x-auto pb-1 lg:hidden snap-x snap-mandatory [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <ol
+          aria-label="Progreso del cliente"
+          className="flex gap-3 overflow-x-auto pb-1 lg:hidden snap-x snap-mandatory [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        >
           {steps.map((step) => (
             <li
               key={step.id}
               className="flex min-w-[5.5rem] shrink-0 snap-start flex-col items-center gap-1.5 text-center"
+              aria-current={step.state === "actual" ? "step" : undefined}
             >
               <StepIcon step={step} compact />
               <p
@@ -30,6 +41,7 @@ export function ClientStepper({ steps }: ClientStepperProps) {
                   step.state === "error" && "text-destructive",
                 )}
               >
+                <span className="sr-only">{STATE_SR[step.state]}. </span>
                 {step.label}
               </p>
               {step.adminActionRequired && (
@@ -41,12 +53,15 @@ export function ClientStepper({ steps }: ClientStepperProps) {
           ))}
         </ol>
 
-        {/* Desktop: horizontal stepper */}
-        <ol className="hidden lg:flex lg:items-start">
+        <ol
+          aria-label="Progreso del cliente"
+          className="hidden lg:flex lg:items-start"
+        >
           {steps.map((step, index) => (
             <li
               key={step.id}
               className="relative flex flex-1 flex-col items-center text-center"
+              aria-current={step.state === "actual" ? "step" : undefined}
             >
               {index < steps.length - 1 && (
                 <div
@@ -66,6 +81,7 @@ export function ClientStepper({ steps }: ClientStepperProps) {
                     step.state === "error" && "text-destructive",
                   )}
                 >
+                  <span className="sr-only">{STATE_SR[step.state]}. </span>
                   {step.label}
                 </p>
                 {step.adminActionRequired && (
@@ -97,34 +113,52 @@ function StepIcon({
 
   if (step.state === "completado") {
     return (
-      <div className={cn(base, "border-primary bg-primary text-primary-foreground")}>
+      <div
+        className={cn(base, "border-primary bg-primary text-primary-foreground")}
+        aria-hidden
+      >
         <Check className="size-3.5 sm:size-4" strokeWidth={2} />
       </div>
     );
   }
   if (step.state === "error") {
     return (
-      <div className={cn(base, "border-destructive bg-destructive/10 text-destructive")}>
+      <div
+        className={cn(
+          base,
+          "border-destructive bg-destructive/10 text-destructive",
+        )}
+        aria-hidden
+      >
         <X className="size-3.5 sm:size-4" strokeWidth={2} />
       </div>
     );
   }
   if (step.state === "actual") {
     return (
-      <div className={cn(base, "border-primary bg-background text-foreground")}>
+      <div
+        className={cn(base, "border-primary bg-background text-foreground")}
+        aria-hidden
+      >
         <Circle className="size-2.5 fill-primary text-primary sm:size-3" />
       </div>
     );
   }
   if (step.state === "bloqueado") {
     return (
-      <div className={cn(base, "border-border bg-muted text-muted-foreground")}>
+      <div
+        className={cn(base, "border-border bg-muted text-muted-foreground")}
+        aria-hidden
+      >
         <Lock className="size-3 sm:size-3.5" strokeWidth={1.75} />
       </div>
     );
   }
   return (
-    <div className={cn(base, "border-border bg-background text-muted-foreground")}>
+    <div
+      className={cn(base, "border-border bg-background text-muted-foreground")}
+      aria-hidden
+    >
       <Circle className="size-2.5 sm:size-3" strokeWidth={1.5} />
     </div>
   );

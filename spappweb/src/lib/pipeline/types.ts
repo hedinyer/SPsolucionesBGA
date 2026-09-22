@@ -18,7 +18,7 @@ export type VendidaEstadoFisico =
   | "en_transito"
   | "en_patio";
 export type FrecuenciaPago = "diario" | "semanal" | "quincenal" | "mensual";
-export type TarifaEstado = "pendiente" | "pagada" | "vencida";
+export type TarifaEstado = "pendiente" | "pagada" | "vencida" | "refinanciada";
 export type MorosoEstado = "activo" | "regularizado";
 export type MotoRecogerEstado =
   | "pendiente"
@@ -177,6 +177,8 @@ export interface UserMotoCompraRow {
   pago_visita_confirmado: boolean;
   placa: string | null;
   chasis: string | null;
+  /** Serial / número de motor (distinto del chasis). */
+  serial_motor?: string | null;
   referencia: string | null;
   fecha_entrega: string | null;
   /** Estado físico en calle (activa, recogida, …). */
@@ -189,6 +191,8 @@ export interface UserMotoCompraRow {
     entrega_antes_visita?: boolean;
     cobra_cuota_adelantada?: boolean;
     condicion?: "nueva" | "segunda_mano" | "recuperada";
+    /** @deprecated Preferir columna serial_motor. */
+    serial_motor?: string | null;
     hora_entrega?: string;
     nota_entrega?: string;
     /** Contrato de renovación (etiqueta en ficha y PDF). */
@@ -580,6 +584,7 @@ export const TARIFA_ESTADO_LABELS: Record<TarifaEstado, string> = {
   pendiente: "Pendiente",
   pagada: "Pagada",
   vencida: "Vencida",
+  refinanciada: "Refinanciada",
 };
 
 export type ContextoPago =

@@ -134,6 +134,7 @@ const assignMotoSchema = z.object({
   frecuencia: z.enum(["diario", "semanal", "quincenal", "mensual"]),
   placa: z.string().trim().min(1).optional(),
   chasis: z.string().trim().min(1).optional(),
+  serialMotor: z.string().trim().optional(),
   referencia: z.string().trim().optional(),
   cuotaInicial: z.number().int().min(0),
   cuotaDiaria: z.number().int().positive().optional(),
@@ -213,6 +214,7 @@ export async function assignMotoByAdminOp(
 
   const placa = parsed.placa?.trim().toUpperCase() || null;
   const chasis = parsed.chasis?.trim() || null;
+  const serialMotor = parsed.serialMotor?.trim() || null;
   const referencia = parsed.referencia?.trim() || null;
 
   const { data: existing } = await supabase
@@ -244,6 +246,9 @@ export async function assignMotoByAdminOp(
         ...payment,
         placa,
         chasis,
+        ...(parsed.serialMotor !== undefined
+          ? { serial_motor: serialMotor }
+          : {}),
         referencia,
         admin_data: adminData,
         pago_cuota_confirmado: !cobraAdelantada,
@@ -268,6 +273,9 @@ export async function assignMotoByAdminOp(
         ...payment,
         placa,
         chasis,
+        ...(parsed.serialMotor !== undefined
+          ? { serial_motor: serialMotor }
+          : {}),
         referencia,
         estado: "pendiente_pago",
         admin_data: adminData,

@@ -364,6 +364,11 @@ export async function confirmPagoConComprobante(
     if (tarifa.estado === "pagada") {
       throw new Error("Esta tarifa ya está pagada.");
     }
+    if (tarifa.estado === "refinanciada") {
+      throw new Error(
+        "Esta cuota pertenece a un contrato anterior (refinanciado).",
+      );
+    }
   }
 
   let referencia = parsed.referencia?.trim() ?? "";

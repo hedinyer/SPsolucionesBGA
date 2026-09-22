@@ -131,6 +131,69 @@ export async function congelarCuotas(
   return { cuotasAfectadas: Number(data) };
 }
 
+const refinanciarCreditoSchema = z.object({
+  userId: z.number().int().positive(),
+  compraId: z.string().uuid(),
+  fechaRefinanciacion: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha inválida."),
+  dias: z.number().int().min(1).max(1095),
+  cuotaDiaria: z.number().int().min(1),
+});
+
+export async function refinanciarCredito(
+  input: z.infer<typeof refinanciarCreditoSchema>,
+): Promise<{
+  tarifasArchivadas: number;
+  tarifasCreadas: number;
+  periodos: number;
+  montoPeriodo: number;
+}> {
+  const parsed = refinanciarCreditoSchema.parse(input);
+  const { supabase, admin } = await assertAdmin();
+
+  const { data: compra, error: compraError } = await supabase
+    .from("user_moto_compra")
+    .select("id, estado")
+    .eq("id", parsed.compraId)
+    .eq("user_id", parsed.userId)
+    .maybeSingle();
+
+  if (compraError) throw new Error(compraError.message);
+  if (!compra) throw new Error("Compra no encontrada.");
+  if (compra.estado !== "entregada") {
+    throw new Error("Solo se puede refinanciar un crédito entregado.");
+  }
+
+  const { data, error } = await supabase.rpc("refinanciar_compra", {
+    p_compra_id: parsed.compraId,
+    p_fecha_refinanciacion: parsed.fechaRefinanciacion,
+    p_dias: parsed.dias,
+    p_cuota_diaria: parsed.cuotaDiaria,
+    p_admin: admin,
+  });
+
+  if (error) throw new Error(error.message);
+
+  const result = (data ?? {}) as {
+    tarifasArchivadas?: number;
+    tarifasBorradas?: number;
+    tarifasCreadas?: number;
+    periodos?: number;
+    montoPeriodo?: number;
+  };
+
+  revalidateClient(parsed.userId);
+  return {
+    tarifasArchivadas: Number(
+      result.tarifasArchivadas ?? result.tarifasBorradas ?? 0,
+    ),
+    tarifasCreadas: Number(result.tarifasCreadas ?? 0),
+    periodos: Number(result.periodos ?? 0),
+    montoPeriodo: Number(result.montoPeriodo ?? 0),
+  };
+}
+
 export async function saldarCredito(
   formData: FormData,
 ): Promise<{ pagoId: string; confirmadoAt: string }> {

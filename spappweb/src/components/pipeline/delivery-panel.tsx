@@ -299,6 +299,7 @@ export function DeliveryPanel({
                   userId,
                   placa: String(fd.get("placa")),
                   chasis: String(fd.get("chasis")),
+                  serialMotor: String(fd.get("serial_motor") || "").trim(),
                   referencia: String(fd.get("referencia") || ""),
                   fechaEntrega: String(fd.get("fechaEntrega")),
                 }),
@@ -324,6 +325,16 @@ export function DeliveryPanel({
                 name="chasis"
                 defaultValue={compra.chasis ?? ""}
                 required
+              />
+            </div>
+            <div className="flex flex-col gap-2 sm:col-span-2">
+              <Label htmlFor="serial_motor">Serial del motor</Label>
+              <Input
+                id="serial_motor"
+                name="serial_motor"
+                defaultValue={
+                  compra.serial_motor ?? compra.admin_data?.serial_motor ?? ""
+                }
               />
             </div>
             <div className="flex flex-col gap-2">

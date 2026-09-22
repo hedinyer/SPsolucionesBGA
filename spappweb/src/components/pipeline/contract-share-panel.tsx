@@ -62,6 +62,14 @@ export function ContractSharePanel({
             <dt className="text-muted-foreground">Chasis</dt>
             <dd>{compra.chasis}</dd>
           </div>
+          {(compra.serial_motor ?? compra.admin_data?.serial_motor) ? (
+            <div>
+              <dt className="text-muted-foreground">Serial del motor</dt>
+              <dd>
+                {compra.serial_motor ?? compra.admin_data?.serial_motor}
+              </dd>
+            </div>
+          ) : null}
           <div>
             <dt className="text-muted-foreground">Frecuencia</dt>
             <dd>

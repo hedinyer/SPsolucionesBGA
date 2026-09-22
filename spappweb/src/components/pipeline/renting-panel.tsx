@@ -62,6 +62,8 @@ function tarifaBadgeVariant(estado: TarifaPagadaRow["estado"]) {
       return "default" as const;
     case "vencida":
       return "destructive" as const;
+    case "refinanciada":
+      return "outline" as const;
     default:
       return "secondary" as const;
   }
@@ -106,10 +108,12 @@ export function RentingPanel({ pipeline, userId }: RentingPanelProps) {
     [pagosHistorial],
   );
 
-  /** Ventana: 10 pagadas hacia atrás + 10 pendientes/vencidas hacia adelante. */
+  /** Ventana: 10 pagadas hacia atrás + 10 pendientes/vencidas hacia adelante.
+   *  Las archivadas por refinanciación no aparecen en el talonario activo. */
   const visibleTarifas = useMemo(() => {
-    const unpaid = tarifas.filter((t) => t.estado !== "pagada");
-    const recentPaid = tarifas
+    const activas = tarifas.filter((t) => t.estado !== "refinanciada");
+    const unpaid = activas.filter((t) => t.estado !== "pagada");
+    const recentPaid = activas
       .filter((t) => t.estado === "pagada")
       .slice(-10);
     return [...recentPaid, ...unpaid.slice(0, 10)].sort(
@@ -118,7 +122,9 @@ export function RentingPanel({ pipeline, userId }: RentingPanelProps) {
   }, [tarifas]);
 
   const currentTarifaId = useMemo(() => {
-    const current = tarifas.find((t) => t.estado !== "pagada");
+    const current = tarifas.find(
+      (t) => t.estado !== "pagada" && t.estado !== "refinanciada",
+    );
     return current?.id ?? null;
   }, [tarifas]);
 

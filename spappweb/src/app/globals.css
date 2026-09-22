@@ -175,7 +175,12 @@
   font-weight: 700;
   color: rgb(153 27 27);
   background-color: rgb(254 226 226);
-  animation: vigilado-pulse 0.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .vigilado-pulse {
+    animation: vigilado-pulse 0.8s ease-in-out infinite;
+  }
 }
 
 @keyframes vigilado-pulse {

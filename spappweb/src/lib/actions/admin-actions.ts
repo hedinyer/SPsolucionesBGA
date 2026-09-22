@@ -199,6 +199,7 @@ const assignMotoSchema = z.object({
   frecuencia: z.enum(["diario", "semanal", "quincenal", "mensual"]),
   placa: z.string().trim().optional(),
   chasis: z.string().trim().min(1),
+  serialMotor: z.string().trim().optional(),
   referencia: z.string().trim().optional(),
   cuotaInicial: z.number().int().min(0),
   cuotaDiaria: z.number().int().positive().optional(),
@@ -448,6 +449,7 @@ const deliverySchema = z.object({
   userId: z.number(),
   placa: z.string().min(1),
   chasis: z.string().min(1),
+  serialMotor: z.string().optional(),
   referencia: z.string().optional(),
   fechaEntrega: z.string().min(1).optional(),
 });
@@ -455,15 +457,20 @@ const deliverySchema = z.object({
 export async function updateDelivery(input: z.infer<typeof deliverySchema>) {
   const parsed = deliverySchema.parse(input);
   const supabase = await assertAdmin();
+
   const update: {
     placa: string;
     chasis: string;
+    serial_motor?: string | null;
     referencia?: string | null;
     fecha_entrega?: string;
   } = {
     placa: parsed.placa.trim().toUpperCase(),
     chasis: parsed.chasis.trim(),
   };
+  if (parsed.serialMotor !== undefined) {
+    update.serial_motor = parsed.serialMotor.trim() || null;
+  }
   if (parsed.referencia !== undefined) {
     update.referencia = parsed.referencia.trim() || null;
   }
@@ -623,6 +630,9 @@ export async function confirmTarifaPago(
   if (fetchError) throw new Error(fetchError.message);
   if (!tarifa) throw new Error("Tarifa no encontrada.");
   if (tarifa.estado === "pagada") throw new Error("Esta tarifa ya está pagada.");
+  if (tarifa.estado === "refinanciada") {
+    throw new Error("Esta cuota pertenece a un contrato anterior (refinanciado).");
+  }
 
   const { error } = await supabase
     .from("tarifas_pagadas")

@@ -117,6 +117,7 @@ export function MotoSelectionPanel({
     const fd = new FormData(e.currentTarget);
     const placa = String(fd.get("placa") ?? "").trim();
     const chasis = String(fd.get("chasis") ?? "").trim();
+    const serialMotor = String(fd.get("serial_motor") ?? "").trim();
     if (!placa || !chasis) {
       toast.error("Placa y chasis son obligatorios.");
       return;
@@ -136,6 +137,7 @@ export function MotoSelectionPanel({
           userId,
           placa,
           chasis,
+          serialMotor,
         });
         if (canEditMontos && inicial != null && adelantada != null) {
           if (adelantada === 0) {
@@ -226,6 +228,23 @@ export function MotoSelectionPanel({
                 id="moto-chasis"
                 name="chasis"
                 defaultValue={compra.chasis ?? ""}
+                className="font-medium"
+                disabled={!userId || pending}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5 sm:col-span-2">
+              <Label
+                htmlFor="moto-serial-motor"
+                className="text-muted-foreground"
+              >
+                Serial del motor
+              </Label>
+              <Input
+                id="moto-serial-motor"
+                name="serial_motor"
+                defaultValue={
+                  compra.serial_motor ?? compra.admin_data?.serial_motor ?? ""
+                }
                 className="font-medium"
                 disabled={!userId || pending}
               />

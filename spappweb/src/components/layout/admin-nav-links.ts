@@ -8,6 +8,7 @@ import {
   IdCard,
   LogOut,
   Package,
+  Receipt,
   ShoppingBag,
   ShoppingCart,
   Store,
@@ -45,6 +46,13 @@ export const adminNavGroups: AdminNavGroup[] = [
     label: "Clientes",
     href: "/clientes",
     icon: UserSearch,
+    children: [],
+  },
+  {
+    id: "historial-pagos",
+    label: "Historial pagos",
+    href: "/historial-pagos",
+    icon: Receipt,
     children: [],
   },
   {

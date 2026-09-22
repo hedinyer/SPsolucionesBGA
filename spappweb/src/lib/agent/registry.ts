@@ -457,12 +457,13 @@ export const AGENT_TOOLS = {
   update_delivery: tool({
     category: "entrega",
     description:
-      "Registra los datos de entrega de la moto (placa, chasis, referencia, fecha de entrega).",
+      "Registra los datos de entrega de la moto (placa, chasis, serial del motor, referencia, fecha de entrega).",
     input: z.object({
       compraId: z.string().uuid(),
       userId: z.number().int().positive(),
       placa: z.string().min(1),
       chasis: z.string().min(1),
+      serialMotor: z.string().optional(),
       referencia: z.string().optional(),
       fechaEntrega: z.string().min(1).describe("Fecha ISO/date de entrega"),
     }),

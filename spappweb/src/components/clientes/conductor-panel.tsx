@@ -55,9 +55,12 @@ function DocPreview({
 export function ConductorPanel({
   compra,
   userId,
+  embedded = false,
 }: {
   compra: UserMotoCompraRow;
   userId: number;
+  /** Sin card/header: el padre ya muestra el título (p. ej. details). */
+  embedded?: boolean;
 }) {
   const initial = parseConductorInfo(
     (compra.admin_data as Record<string, unknown> | undefined) ?? null,
@@ -132,11 +135,152 @@ export function ConductorPanel({
 
   const busy = pending || uploading !== null;
 
+  const body = (
+    <div className={embedded ? "flex flex-col gap-6 p-4" : "flex flex-col gap-6"}>
+      {!embedded ? null : (
+        <p className="text-sm text-muted-foreground">
+          Datos y documentos del conductor autorizado (puede ser distinto al
+          titular del contrato).
+        </p>
+      )}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="flex flex-col gap-1.5 sm:col-span-2">
+          <Label htmlFor="conductor-nombre">Nombre completo</Label>
+          <Input
+            id="conductor-nombre"
+            value={nombre}
+            onChange={(e) => setNombre(e.target.value)}
+            disabled={busy}
+            className="min-h-11"
+            placeholder="Nombre del conductor"
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="conductor-cedula">Cédula</Label>
+          <Input
+            id="conductor-cedula"
+            value={cedula}
+            onChange={(e) => setCedula(e.target.value)}
+            disabled={busy}
+            className="min-h-11"
+            inputMode="numeric"
+            placeholder="Número de cédula"
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="conductor-celular">Celular (opcional)</Label>
+          <Input
+            id="conductor-celular"
+            value={celular}
+            onChange={(e) => setCelular(e.target.value)}
+            disabled={busy}
+            className="min-h-11"
+            inputMode="tel"
+            placeholder="3xx xxx xxxx"
+          />
+        </div>
+        <div className="flex flex-col gap-1.5 sm:col-span-2">
+          <Label htmlFor="conductor-notas">Notas (opcional)</Label>
+          <Textarea
+            id="conductor-notas"
+            value={notas}
+            onChange={(e) => setNotas(e.target.value)}
+            disabled={busy}
+            rows={2}
+            placeholder="Parentesco, horario, observaciones…"
+          />
+        </div>
+      </div>
+
+      <Button
+        type="button"
+        className="min-h-11 w-full touch-manipulation sm:w-auto"
+        disabled={busy}
+        onClick={onSaveDatos}
+      >
+        {pending ? (
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        ) : null}
+        Guardar datos del conductor
+      </Button>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="flex flex-col gap-2">
+          <Label>Cédula del conductor</Label>
+          <DocPreview
+            url={cedulaUrl}
+            label="Cédula del conductor"
+            empty="Sin cédula adjunta"
+          />
+          <input
+            ref={cedulaInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            disabled={busy}
+            onChange={(e) =>
+              void onUploadDoc("cedula", e.target.files?.[0])
+            }
+          />
+          <Button
+            type="button"
+            variant="outline"
+            className="min-h-11 touch-manipulation"
+            disabled={busy}
+            onClick={() => cedulaInputRef.current?.click()}
+          >
+            {uploading === "cedula" ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Upload className="mr-2 h-4 w-4" />
+            )}
+            {cedulaUrl ? "Reemplazar cédula" : "Subir cédula"}
+          </Button>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <Label>Foto del conductor</Label>
+          <DocPreview
+            url={fotoUrl}
+            label="Foto del conductor"
+            empty="Sin foto adjunta"
+          />
+          <input
+            ref={fotoInputRef}
+            type="file"
+            accept="image/*"
+            capture="user"
+            className="hidden"
+            disabled={busy}
+            onChange={(e) => void onUploadDoc("foto", e.target.files?.[0])}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            className="min-h-11 touch-manipulation"
+            disabled={busy}
+            onClick={() => fotoInputRef.current?.click()}
+          >
+            {uploading === "foto" ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Upload className="mr-2 h-4 w-4" />
+            )}
+            {fotoUrl ? "Reemplazar foto" : "Subir foto"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+
+  if (embedded) return body;
+
   return (
     <Card className="border-border shadow-none">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <User className="h-4 w-4" />
+          <User className="h-4 w-4" aria-hidden />
           Conductor
         </CardTitle>
         <p className="text-sm text-muted-foreground">
@@ -144,136 +288,7 @@ export function ConductorPanel({
           titular del contrato).
         </p>
       </CardHeader>
-      <CardContent className="flex flex-col gap-6">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="flex flex-col gap-1.5 sm:col-span-2">
-            <Label htmlFor="conductor-nombre">Nombre completo</Label>
-            <Input
-              id="conductor-nombre"
-              value={nombre}
-              onChange={(e) => setNombre(e.target.value)}
-              disabled={busy}
-              className="min-h-11"
-              placeholder="Nombre del conductor"
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="conductor-cedula">Cédula</Label>
-            <Input
-              id="conductor-cedula"
-              value={cedula}
-              onChange={(e) => setCedula(e.target.value)}
-              disabled={busy}
-              className="min-h-11"
-              inputMode="numeric"
-              placeholder="Número de cédula"
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="conductor-celular">Celular (opcional)</Label>
-            <Input
-              id="conductor-celular"
-              value={celular}
-              onChange={(e) => setCelular(e.target.value)}
-              disabled={busy}
-              className="min-h-11"
-              inputMode="tel"
-              placeholder="3xx xxx xxxx"
-            />
-          </div>
-          <div className="flex flex-col gap-1.5 sm:col-span-2">
-            <Label htmlFor="conductor-notas">Notas (opcional)</Label>
-            <Textarea
-              id="conductor-notas"
-              value={notas}
-              onChange={(e) => setNotas(e.target.value)}
-              disabled={busy}
-              rows={2}
-              placeholder="Parentesco, horario, observaciones…"
-            />
-          </div>
-        </div>
-
-        <Button
-          type="button"
-          className="min-h-11 w-full touch-manipulation sm:w-auto"
-          disabled={busy}
-          onClick={onSaveDatos}
-        >
-          {pending ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : null}
-          Guardar datos del conductor
-        </Button>
-
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="flex flex-col gap-2">
-            <Label>Cédula del conductor</Label>
-            <DocPreview
-              url={cedulaUrl}
-              label="Cédula del conductor"
-              empty="Sin cédula adjunta"
-            />
-            <input
-              ref={cedulaInputRef}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              className="hidden"
-              disabled={busy}
-              onChange={(e) =>
-                void onUploadDoc("cedula", e.target.files?.[0])
-              }
-            />
-            <Button
-              type="button"
-              variant="outline"
-              className="min-h-11 touch-manipulation"
-              disabled={busy}
-              onClick={() => cedulaInputRef.current?.click()}
-            >
-              {uploading === "cedula" ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Upload className="mr-2 h-4 w-4" />
-              )}
-              {cedulaUrl ? "Reemplazar cédula" : "Subir cédula"}
-            </Button>
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <Label>Foto del conductor</Label>
-            <DocPreview
-              url={fotoUrl}
-              label="Foto del conductor"
-              empty="Sin foto adjunta"
-            />
-            <input
-              ref={fotoInputRef}
-              type="file"
-              accept="image/*"
-              capture="user"
-              className="hidden"
-              disabled={busy}
-              onChange={(e) => void onUploadDoc("foto", e.target.files?.[0])}
-            />
-            <Button
-              type="button"
-              variant="outline"
-              className="min-h-11 touch-manipulation"
-              disabled={busy}
-              onClick={() => fotoInputRef.current?.click()}
-            >
-              {uploading === "foto" ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Upload className="mr-2 h-4 w-4" />
-              )}
-              {fotoUrl ? "Reemplazar foto" : "Subir foto"}
-            </Button>
-          </div>
-        </div>
-      </CardContent>
+      <CardContent>{body}</CardContent>
     </Card>
   );
 }
