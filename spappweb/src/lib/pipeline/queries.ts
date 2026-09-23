@@ -2711,7 +2711,7 @@ export async function getClienteFacturacion(
   const { data: user, error: userError } = await supabase
     .from("users")
     .select(
-      "id, user, visitas(cliente_nombre), digital_contracts(hoja_vida_data, contrato_data, created_at), user_moto_compra(id, modelo, color, cuota_inicial_monto, monto_cuota_periodo, monto_cuota_adelantada, monto_visita_monto, monto_total_primer_pago, admin_data)",
+      "id, user, visitas(cliente_nombre), digital_contracts(hoja_vida_data, contrato_data, created_at), user_moto_compra(id, modelo, color, placa, cuota_inicial_monto, monto_cuota_periodo, monto_cuota_adelantada, monto_visita_monto, monto_total_primer_pago, admin_data)",
     )
     .eq("id", userId)
     .maybeSingle();
@@ -2750,6 +2750,7 @@ export async function getClienteFacturacion(
     compraId: (compra?.id as string | undefined) ?? null,
     motoModelo: (compra?.modelo as string | undefined) ?? null,
     motoColor: (compra?.color as string | undefined) ?? null,
+    placa: (compra?.placa as string | undefined) ?? null,
     cuotaInicial: (compra?.cuota_inicial_monto as number | undefined) ?? null,
     cuotaAdelantada:
       (compra?.monto_cuota_adelantada as number | undefined) ??

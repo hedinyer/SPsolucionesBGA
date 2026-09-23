@@ -18,6 +18,7 @@ export interface CreditoPagoReceiptData {
   clienteCedula: string;
   motoModelo: string;
   motoColor: string;
+  placa?: string | null;
   /** Legacy single-line; preferred when `items` is absent. */
   concepto: ContextoPago;
   monto: number;
@@ -38,6 +39,11 @@ function esc(s: string): string {
 
 function folio(id: string): string {
   return id.replace(/-/g, "").slice(0, 8).toUpperCase();
+}
+
+function placaTitulo(placa?: string | null): string {
+  const trimmed = placa?.trim();
+  return trimmed ? `Placa ${trimmed}` : "Sin placa";
 }
 
 function fechaLabel(iso: string): string {
@@ -102,7 +108,8 @@ export async function buildCreditoPagoReceiptHtml(
   </div>`
       : "";
 
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Recibo ${esc(f)}</title>
+  const placaLine = placaTitulo(recibo.placa);
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Recibo ${esc(placaLine)} ${esc(f)}</title>
 <style>
 @media print { body { margin: 0; } }
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -134,6 +141,7 @@ body {
 }
 .header { text-align: center; margin-bottom: 4px; }
 .header h1 { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; }
+.header .placa { font-size: 13px; font-weight: 700; margin-top: 4px; letter-spacing: 0.04em; }
 .header p { font-size: 10px; color: #555; }
 .section { margin-bottom: 8px; }
 .label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; color: #666; }
@@ -177,8 +185,9 @@ body {
 </div>
 <div class="header">
   <h1>RECIBO DE PAGO</h1>
-  <p>Crédito moto · ${esc(headerConcepto)}</p>
+  <p class="placa">${esc(placaLine)}</p>
   <p>${esc(fechaLabel(recibo.confirmadoAt))}</p>
+  <p>Crédito moto · ${esc(headerConcepto)}</p>
 </div>
 <hr class="divider" />
 <div class="section">

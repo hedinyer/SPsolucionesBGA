@@ -508,6 +508,7 @@ export interface ClienteFacturacion {
   compraId: string | null;
   motoModelo: string | null;
   motoColor: string | null;
+  placa: string | null;
   cuotaInicial: number | null;
   cuotaAdelantada: number | null;
   montoVisita: number | null;

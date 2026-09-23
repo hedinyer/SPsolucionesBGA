@@ -212,6 +212,7 @@ export function PaymentConfirmPanel({
         clienteCedula={clienteCedula}
         motoModelo={compra.modelo}
         motoColor={compra.color}
+        placa={compra.placa}
         initialMedioPago={dialogMedio}
       />
     </>
@@ -359,6 +360,7 @@ function ConceptoAbonoSection({
       clienteCedula,
       motoModelo: compra.modelo,
       motoColor: compra.color,
+      placa: compra.placa,
       concepto: abono.contexto_pago,
       monto: abono.monto,
       medioPago: abono.medio_pago_admin ?? "efectivo",

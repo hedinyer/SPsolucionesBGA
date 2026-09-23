@@ -54,6 +54,7 @@ interface PaymentComprobanteDialogProps {
   clienteCedula?: string;
   motoModelo?: string;
   motoColor?: string;
+  placa?: string | null;
   /** Medio preseleccionado al abrir (p. ej. efectivo sin foto). */
   initialMedioPago?: MedioPagoAdmin;
   onSuccess?: () => void;
@@ -104,6 +105,7 @@ export function PaymentComprobanteDialog({
   clienteCedula = "",
   motoModelo = "",
   motoColor = "",
+  placa = null,
   initialMedioPago = "nequi_nicolas",
   onSuccess,
 }: PaymentComprobanteDialogProps) {
@@ -315,6 +317,7 @@ export function PaymentComprobanteDialog({
             clienteCedula,
             motoModelo,
             motoColor,
+            placa,
             concepto: contexto,
             monto: montoNum,
             medioPago: medioPagoAdmin,

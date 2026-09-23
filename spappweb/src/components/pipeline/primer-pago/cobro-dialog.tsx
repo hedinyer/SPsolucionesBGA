@@ -317,6 +317,7 @@ export function CobroPrimerPagoDialog({
             clienteCedula,
             motoModelo: compra.modelo,
             motoColor: compra.color,
+            placa: compra.placa,
             concepto: result.items[0]!.contexto,
             monto: result.total,
             items: result.items.map((i) => ({

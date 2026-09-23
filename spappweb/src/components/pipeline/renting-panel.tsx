@@ -653,7 +653,7 @@ export function RentingPanel({ pipeline, userId }: RentingPanelProps) {
         </CardContent>
       </Card>
 
-      {selectedTarifa && (
+      {compra && selectedTarifa && (
         <PaymentComprobanteDialog
           open={dialogOpen}
           onOpenChange={setDialogOpen}
@@ -667,6 +667,11 @@ export function RentingPanel({ pipeline, userId }: RentingPanelProps) {
               (selectedTarifa.monto_pagado ?? 0),
           )}
           referenciasUsadas={referenciasUsadas}
+          clienteNombre={pipeline.displayName}
+          clienteCedula={pipeline.user.user}
+          motoModelo={compra.modelo}
+          motoColor={compra.color}
+          placa={compra.placa}
         />
       )}
 

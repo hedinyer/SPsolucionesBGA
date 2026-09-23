@@ -421,6 +421,9 @@ export function CreditProductsPanel({
           referenciasUsadas={referenciasUsadas}
           clienteNombre={clienteNombre}
           clienteCedula={clienteCedula}
+          motoModelo={compra.modelo}
+          motoColor={compra.color}
+          placa={compra.placa}
           initialMedioPago={pagoDialog.medio}
           onSuccess={() => {
             setPagoDialog(null);

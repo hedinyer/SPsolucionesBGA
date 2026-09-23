@@ -128,6 +128,7 @@ export function PagosRecibidosList({
       clienteCedula,
       motoModelo: compra.modelo,
       motoColor: compra.color,
+      placa: compra.placa,
       concepto: (first.contexto_pago as ContextoPago) ?? "inicial",
       monto: group.total,
       items: group.pagos.map((p) => ({

@@ -70,8 +70,15 @@ export async function buildVentaProductoReceiptHtml(
     ? `<div class="section"><div class="label">Notas</div><div class="value">${esc(venta.notas)}</div></div>`
     : "";
 
+  const placaLine = venta.motoPlaca?.trim()
+    ? `Placa ${venta.motoPlaca.trim()}`
+    : null;
+  const placaHtml = placaLine
+    ? `<div class="placa">${esc(placaLine)}</div>`
+    : "";
+
   // ponytail: sin @page size raro — Chrome lanza "Error interno" al imprimir
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Venta productos ${esc(f)}</title>
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Venta productos ${esc(placaLine ?? f)}</title>
 <style>
 @media print { body { margin: 0; } }
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -112,11 +119,11 @@ body {
   text-transform: uppercase;
   color: #222;
 }
-.header .folio {
-  font-family: ui-monospace, monospace;
+.header .placa {
   font-size: 13px;
   font-weight: 700;
   margin-top: 4px;
+  letter-spacing: 0.04em;
 }
 .header .fecha {
   font-size: 10px;
@@ -213,7 +220,7 @@ body {
 <hr class="divider" />
 <div class="header">
   <h1>Comprobante de venta</h1>
-  <div class="folio">${esc(f)}</div>
+  ${placaHtml}
   <div class="fecha">${esc(fechaLabel(venta.createdAt))}</div>
 </div>
 <hr class="divider" />

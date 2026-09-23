@@ -84,6 +84,7 @@ export function GenerarFacturasDialog({
           clienteCedula: data.clienteCedula,
           motoModelo: data.motoModelo,
           motoColor: data.motoColor,
+          placa: data.placa,
           concepto,
           monto,
           emitidaAt: new Date().toISOString(),

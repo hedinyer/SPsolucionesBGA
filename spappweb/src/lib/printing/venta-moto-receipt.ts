@@ -79,12 +79,12 @@ export async function buildVentaMotoReceiptHtml(
     ? `<div class="sub">Chasis ${esc(venta.chasis)}</div>`
     : "";
 
-  const placaHtml = venta.placa
-    ? `<div class="sub">Placa ${esc(venta.placa)}</div>`
-    : "";
+  const placaLine = venta.placa?.trim()
+    ? `Placa ${venta.placa.trim()}`
+    : "Sin placa";
 
   // ponytail: sin @page size raro — Chrome lanza "Error interno" al imprimir
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Venta moto ${esc(f)}</title>
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Venta moto ${esc(placaLine)} ${esc(f)}</title>
 <style>
 @media print { body { margin: 0; } }
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -125,11 +125,11 @@ body {
   text-transform: uppercase;
   color: #222;
 }
-.header .folio {
-  font-family: ui-monospace, monospace;
+.header .placa {
   font-size: 13px;
   font-weight: 700;
   margin-top: 4px;
+  letter-spacing: 0.04em;
 }
 .header .fecha {
   font-size: 10px;
@@ -211,7 +211,7 @@ body {
 <hr class="divider" />
 <div class="header">
   <h1>Comprobante de venta</h1>
-  <div class="folio">${esc(f)}</div>
+  <div class="placa">${esc(placaLine)}</div>
   <div class="fecha">${esc(fechaLabel(venta.createdAt))}</div>
 </div>
 <hr class="divider" />
@@ -244,7 +244,6 @@ body {
 <div class="section">
   <div class="label">Moto</div>
   <div class="value">${esc(venta.modelo)} · ${esc(venta.color)}</div>
-  ${placaHtml}
   ${chasisHtml}
 </div>
 ${totalesHtml}
@@ -272,7 +271,7 @@ if (typeof process !== "undefined" && process.argv[1]?.includes("venta-moto-rece
     bikeId: 1,
     modelo: "AKT",
     color: "Rojo",
-    placa: null,
+    placa: "ABC12D",
     chasis: "CH123",
     clienteNombre: "Juan Pérez",
     clienteCedula: "1234567890",
@@ -291,6 +290,9 @@ if (typeof process !== "undefined" && process.argv[1]?.includes("venta-moto-rece
   buildVentaMotoReceiptHtml(sample, "http://localhost:3000").then((html) => {
     if (!html.includes("Juan Pérez") || !html.includes("Saldo")) {
       throw new Error("buildVentaMotoReceiptHtml sample failed");
+    }
+    if (!html.includes("Placa ABC12D") || !html.includes("class=\"placa\"")) {
+      throw new Error("buildVentaMotoReceiptHtml missing placa in title");
     }
     if (!html.includes("<img") || !html.includes("beralogo.jpg")) {
       throw new Error("buildVentaMotoReceiptHtml missing logos");

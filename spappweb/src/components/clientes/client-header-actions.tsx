@@ -1015,6 +1015,7 @@ function SaldarCreditoDialog({
           clienteCedula: clienteCedula(pipeline),
           motoModelo: pipeline.compra?.modelo ?? "",
           motoColor: pipeline.compra?.color ?? "",
+          placa: pipeline.compra?.placa ?? null,
           concepto: "liquidacion",
           monto: montoNum,
           medioPago: medio,
