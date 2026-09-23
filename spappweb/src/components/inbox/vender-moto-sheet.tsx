@@ -10,8 +10,13 @@ import {
   contadoClienteFotoFolder,
   contadoDocumentoLabel,
   contadoNombreLabel,
+  type ContadoClienteMatch,
   type ContadoTipoDocumento,
 } from "@/lib/venta-contado/contado-cliente";
+import {
+  ContadoClienteSuggestInput,
+  useContadoClienteSearch,
+} from "@/components/venta-contado/contado-cliente-suggest-input";
 import { printVentaMotoReceipt } from "@/lib/printing/venta-moto-receipt";
 import type { BikeRow } from "@/lib/pipeline/types";
 import { STORAGE_BUCKETS } from "@/lib/supabase/storage-buckets";
@@ -32,6 +37,13 @@ import {
 } from "@/components/ui/sheet";
 import { TouchSelect } from "@/components/ui/touch-select";
 
+type ClienteField =
+  | "nombre"
+  | "cedula"
+  | "celular"
+  | "direccion"
+  | "correo";
+
 interface VenderMotoSheetProps {
   bikes: BikeRow[];
   open: boolean;
@@ -51,14 +63,53 @@ export function VenderMotoSheet({
   const [pending, startTransition] = useTransition();
   const [bikeId, setBikeId] = useState("");
   const [tipoDocumento, setTipoDocumento] = useState<ContadoTipoDocumento>("cc");
+  const [clienteNombre, setClienteNombre] = useState("");
+  const [clienteCedula, setClienteCedula] = useState("");
+  const [clienteCelular, setClienteCelular] = useState("");
+  const [clienteDireccion, setClienteDireccion] = useState("");
+  const [clienteCorreo, setClienteCorreo] = useState("");
   const [clienteFoto, setClienteFoto] = useState<File | null>(null);
+  const [clienteFotoUrl, setClienteFotoUrl] = useState<string | null>(null);
+  const [suggestQuery, setSuggestQuery] = useState("");
+  const [suggestField, setSuggestField] = useState<ClienteField | null>(null);
   const [valorVenta, setValorVenta] = useState("");
   const [montoPagado, setMontoPagado] = useState("");
+  const { matches } = useContadoClienteSearch(suggestQuery);
   const activeBikes = bikes.filter((b) => b.activo && b.stock > 0);
   const selected = activeBikes.find((b) => String(b.id) === bikeId);
   const esEmpresa = tipoDocumento === "nit";
   const nombreLabel = contadoNombreLabel(tipoDocumento);
   const documentoLabel = contadoDocumentoLabel(tipoDocumento);
+
+  function onClienteField(field: ClienteField, value: string) {
+    if (field === "nombre") setClienteNombre(value);
+    if (field === "cedula") setClienteCedula(value);
+    if (field === "celular") setClienteCelular(value);
+    if (field === "direccion") setClienteDireccion(value);
+    if (field === "correo") setClienteCorreo(value);
+    setSuggestQuery(value);
+    setSuggestField(field);
+  }
+
+  function hideSuggest(field: ClienteField) {
+    window.setTimeout(() => {
+      setSuggestField((current) => (current === field ? null : current));
+    }, 150);
+  }
+
+  function pickCliente(match: ContadoClienteMatch) {
+    setClienteNombre(match.clienteNombre);
+    setClienteCedula(match.clienteCedula);
+    setClienteCelular(match.clienteCelular);
+    setClienteDireccion(match.clienteDireccion);
+    setClienteCorreo(match.clienteCorreo);
+    setTipoDocumento(match.clienteTipoDocumento);
+    setClienteFoto(null);
+    setClienteFotoUrl(match.clienteFotoUrl);
+    setSuggestQuery("");
+    setSuggestField(null);
+    toast.success(`Datos de ${match.clienteNombre || match.clienteCedula} cargados.`);
+  }
 
   useEffect(() => {
     if (!open || !initialBikeId) return;
@@ -84,7 +135,15 @@ export function VenderMotoSheet({
   function resetForm() {
     setBikeId("");
     setTipoDocumento("cc");
+    setClienteNombre("");
+    setClienteCedula("");
+    setClienteCelular("");
+    setClienteDireccion("");
+    setClienteCorreo("");
     setClienteFoto(null);
+    setClienteFotoUrl(null);
+    setSuggestQuery("");
+    setSuggestField(null);
     setValorVenta("");
     setMontoPagado("");
   }
@@ -130,10 +189,10 @@ export function VenderMotoSheet({
 
             startTransition(async () => {
               try {
-                const cedula = String(fd.get("clienteCedula") || "").trim();
-                let clienteFotoUrl: string | undefined;
+                const cedula = clienteCedula.trim();
+                let fotoUrl = clienteFotoUrl ?? undefined;
                 if (clienteFoto) {
-                  clienteFotoUrl = await uploadImageFile(
+                  fotoUrl = await uploadImageFile(
                     STORAGE_BUCKETS.userDocuments,
                     contadoClienteFotoFolder(cedula || "sin-doc"),
                     clienteFoto,
@@ -143,14 +202,13 @@ export function VenderMotoSheet({
                   bikeId: Number(bikeId),
                   modelo: selected.modelo,
                   color: selected.color,
-                  clienteNombre: String(fd.get("clienteNombre")),
+                  clienteNombre: clienteNombre.trim(),
                   clienteCedula: cedula,
-                  clienteCelular: String(fd.get("clienteCelular")),
+                  clienteCelular: clienteCelular.trim(),
                   clienteTipoDocumento: tipoDocumento,
-                  clienteDireccion: String(fd.get("clienteDireccion") || ""),
-                  clienteCorreo:
-                    String(fd.get("clienteCorreo") || "") || undefined,
-                  clienteFotoUrl,
+                  clienteDireccion: clienteDireccion.trim(),
+                  clienteCorreo: clienteCorreo.trim() || undefined,
+                  clienteFotoUrl: fotoUrl,
                   chasis: String(fd.get("chasis") || "") || undefined,
                   cuotaInicial: selected?.cuota_inicial,
                   valorVenta: parseCopInput(valorVenta),
@@ -277,20 +335,32 @@ export function VenderMotoSheet({
                 >
                   Cliente
                 </h3>
+                <p className="text-sm text-muted-foreground">
+                  Escribe nombre, documento, celular o correo. Si ya compró, elige
+                  el cliente para llenar los datos.
+                </p>
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="clienteNombre">{nombreLabel}</Label>
-                  <Input
+                  <ContadoClienteSuggestInput
                     id="clienteNombre"
-                    name="clienteNombre"
+                    value={clienteNombre}
+                    onChange={(v) => onClienteField("nombre", v)}
+                    matches={matches}
+                    showSuggestions={suggestField === "nombre"}
+                    onPick={pickCliente}
+                    onBlur={() => hideSuggest("nombre")}
                     required
-                    className="min-h-11"
-                    autoComplete="organization"
+                    autoComplete="off"
                   />
                 </div>
                 <ImageFileField
                   label={esEmpresa ? "Foto (opcional)" : "Foto del cliente"}
                   file={clienteFoto}
-                  onFileChange={setClienteFoto}
+                  onFileChange={(file) => {
+                    setClienteFoto(file);
+                    if (file) setClienteFotoUrl(null);
+                  }}
+                  existingUrl={clienteFotoUrl}
                   enableCamera
                   disabled={pending}
                   fileInputId="contado-cliente-foto"
@@ -318,24 +388,30 @@ export function VenderMotoSheet({
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="flex flex-col gap-2">
                     <Label htmlFor="clienteCedula">{documentoLabel}</Label>
-                    <Input
+                    <ContadoClienteSuggestInput
                       id="clienteCedula"
-                      name="clienteCedula"
+                      value={clienteCedula}
+                      onChange={(v) => onClienteField("cedula", v)}
+                      matches={matches}
+                      showSuggestions={suggestField === "cedula"}
+                      onPick={pickCliente}
+                      onBlur={() => hideSuggest("cedula")}
                       inputMode={esEmpresa ? "text" : "numeric"}
-                      autoComplete="off"
                       required
-                      className="min-h-11"
                     />
                   </div>
                   <div className="flex flex-col gap-2">
                     <Label htmlFor="clienteCelular">Celular</Label>
-                    <Input
+                    <ContadoClienteSuggestInput
                       id="clienteCelular"
-                      name="clienteCelular"
+                      value={clienteCelular}
+                      onChange={(v) => onClienteField("celular", v)}
+                      matches={matches}
+                      showSuggestions={suggestField === "celular"}
+                      onPick={pickCliente}
+                      onBlur={() => hideSuggest("celular")}
                       inputMode="tel"
-                      autoComplete="tel"
                       required
-                      className="min-h-11"
                     />
                   </div>
                 </div>
@@ -343,24 +419,30 @@ export function VenderMotoSheet({
                   <Label htmlFor="clienteDireccion">
                     {esEmpresa ? "Dirección" : "Dirección de residencia"}
                   </Label>
-                  <Input
+                  <ContadoClienteSuggestInput
                     id="clienteDireccion"
-                    name="clienteDireccion"
+                    value={clienteDireccion}
+                    onChange={(v) => onClienteField("direccion", v)}
+                    matches={matches}
+                    showSuggestions={suggestField === "direccion"}
+                    onPick={pickCliente}
+                    onBlur={() => hideSuggest("direccion")}
                     required
-                    className="min-h-11"
-                    autoComplete="street-address"
                   />
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="clienteCorreo">Correo electrónico</Label>
-                  <Input
+                  <ContadoClienteSuggestInput
                     id="clienteCorreo"
-                    name="clienteCorreo"
+                    value={clienteCorreo}
+                    onChange={(v) => onClienteField("correo", v)}
+                    matches={matches}
+                    showSuggestions={suggestField === "correo"}
+                    onPick={pickCliente}
+                    onBlur={() => hideSuggest("correo")}
                     type="email"
                     inputMode="email"
-                    autoComplete="email"
                     placeholder="Opcional"
-                    className="min-h-11"
                   />
                 </div>
               </section>

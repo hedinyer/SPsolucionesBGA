@@ -6,7 +6,10 @@ import { requireAdminSession } from "@/lib/auth/session";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   CONTADO_TIPO_DOC,
+  type ContadoClienteMatch,
   type ContadoTipoDocumento,
+  contadoClienteKey,
+  toContadoTipoDocumento,
 } from "@/lib/venta-contado/contado-cliente";
 
 const clienteExtraSchema = {
@@ -458,4 +461,212 @@ export async function marcarEntregadaVentaMoto(
   revalidatePath("/venta-contado");
   revalidatePath("/historial-ventas");
   return toRow(data as Record<string, unknown>);
+}
+
+const CONTADO_CLIENTE_SELECT =
+  "id, cliente_nombre, cliente_cedula, cliente_celular, cliente_tipo_documento, cliente_direccion, cliente_correo, cliente_foto_url, created_at";
+
+function fillMatch(
+  current: ContadoClienteMatch | undefined,
+  next: ContadoClienteMatch,
+): ContadoClienteMatch {
+  if (!current) return next;
+  const preferNext = next.origen === "contado" && current.origen !== "contado";
+  const a = preferNext ? next : current;
+  const b = preferNext ? current : next;
+  return {
+    ...a,
+    clienteNombre: a.clienteNombre || b.clienteNombre,
+    clienteCedula: a.clienteCedula || b.clienteCedula,
+    clienteCelular: a.clienteCelular || b.clienteCelular,
+    clienteDireccion: a.clienteDireccion || b.clienteDireccion,
+    clienteCorreo: a.clienteCorreo || b.clienteCorreo,
+    clienteFotoUrl: a.clienteFotoUrl || b.clienteFotoUrl,
+  };
+}
+
+function matchFromContado(raw: Record<string, unknown>): ContadoClienteMatch | null {
+  const clienteNombre = String(raw.cliente_nombre ?? "").trim();
+  const clienteCedula = String(raw.cliente_cedula ?? "").trim();
+  if (!clienteNombre && !clienteCedula) return null;
+  return {
+    id: `contado:${String(raw.id)}`,
+    clienteNombre,
+    clienteCedula,
+    clienteCelular: String(raw.cliente_celular ?? "").trim(),
+    clienteTipoDocumento: toContadoTipoDocumento(
+      raw.cliente_tipo_documento ? String(raw.cliente_tipo_documento) : null,
+    ),
+    clienteDireccion: String(raw.cliente_direccion ?? "").trim(),
+    clienteCorreo: String(raw.cliente_correo ?? "").trim(),
+    clienteFotoUrl: raw.cliente_foto_url ? String(raw.cliente_foto_url) : null,
+    origen: "contado",
+  };
+}
+
+function matchFromHoja(
+  userId: number,
+  hoja: Record<string, unknown> | null | undefined,
+  selfieUrl: string | null,
+): ContadoClienteMatch | null {
+  if (!hoja) return null;
+  const clienteNombre = String(hoja.nombre_completo ?? "").trim();
+  const clienteCedula = String(hoja.numero_identificacion ?? "").trim();
+  if (!clienteNombre && !clienteCedula) return null;
+  const calle = String(hoja.direccion ?? "").trim();
+  const barrio = String(hoja.barrio ?? "").trim();
+  return {
+    id: `credito:${userId}`,
+    clienteNombre,
+    clienteCedula,
+    clienteCelular: String(hoja.celular ?? "").trim(),
+    clienteTipoDocumento: toContadoTipoDocumento(
+      hoja.tipo_identificacion ? String(hoja.tipo_identificacion) : null,
+    ),
+    clienteDireccion: [calle, barrio].filter(Boolean).join(", "),
+    clienteCorreo: String(hoja.correo ?? "").trim(),
+    clienteFotoUrl: selfieUrl,
+    origen: "credito",
+  };
+}
+
+export async function searchContadoClientes(
+  query: string,
+): Promise<ContadoClienteMatch[]> {
+  await requireAdminSession();
+  const trimmed = query.trim();
+  if (trimmed.length < 2) return [];
+
+  const safe = trimmed.replace(/[%_\\,"()]/g, "").slice(0, 60);
+  if (safe.length < 2) return [];
+
+  const pattern = `%${safe}%`;
+  const supabase = createAdminClient();
+  const byKey = new Map<string, ContadoClienteMatch>();
+
+  function addMatch(match: ContadoClienteMatch | null) {
+    if (!match) return;
+    const key = contadoClienteKey(match.clienteCedula, match.clienteNombre);
+    if (!key) return;
+    byKey.set(key, fillMatch(byKey.get(key), match));
+  }
+
+  const [
+    { data: ventas },
+    { data: byNombre },
+    { data: byCedula },
+    { data: byCelular },
+    { data: byCorreo },
+    { data: byDireccion },
+    { data: byUser },
+  ] = await Promise.all([
+    supabase
+      .from("ventas_moto")
+      .select(CONTADO_CLIENTE_SELECT)
+      .or(
+        [
+          `cliente_nombre.ilike."${pattern}"`,
+          `cliente_cedula.ilike."${pattern}"`,
+          `cliente_celular.ilike."${pattern}"`,
+          `cliente_direccion.ilike."${pattern}"`,
+          `cliente_correo.ilike."${pattern}"`,
+        ].join(","),
+      )
+      .order("created_at", { ascending: false })
+      .limit(30),
+    supabase
+      .from("digital_contracts")
+      .select("user_id, hoja_vida_data, created_at")
+      .filter("hoja_vida_data->>nombre_completo", "ilike", pattern)
+      .limit(15),
+    supabase
+      .from("digital_contracts")
+      .select("user_id, hoja_vida_data, created_at")
+      .filter("hoja_vida_data->>numero_identificacion", "ilike", pattern)
+      .limit(15),
+    supabase
+      .from("digital_contracts")
+      .select("user_id, hoja_vida_data, created_at")
+      .filter("hoja_vida_data->>celular", "ilike", pattern)
+      .limit(15),
+    supabase
+      .from("digital_contracts")
+      .select("user_id, hoja_vida_data, created_at")
+      .filter("hoja_vida_data->>correo", "ilike", pattern)
+      .limit(15),
+    supabase
+      .from("digital_contracts")
+      .select("user_id, hoja_vida_data, created_at")
+      .filter("hoja_vida_data->>direccion", "ilike", pattern)
+      .limit(15),
+    supabase.from("users").select("id").ilike("user", pattern).limit(15),
+  ]);
+
+  for (const row of ventas ?? []) {
+    addMatch(matchFromContado(row as Record<string, unknown>));
+  }
+
+  const userIds = new Set<number>();
+  const latestHoja = new Map<number, Record<string, unknown>>();
+  const latestAt = new Map<number, number>();
+
+  for (const row of [
+    ...(byNombre ?? []),
+    ...(byCedula ?? []),
+    ...(byCelular ?? []),
+    ...(byCorreo ?? []),
+    ...(byDireccion ?? []),
+  ]) {
+    const userId = Number(row.user_id);
+    if (!Number.isFinite(userId)) continue;
+    userIds.add(userId);
+    const at = row.created_at ? new Date(String(row.created_at)).getTime() : 0;
+    if ((latestAt.get(userId) ?? -1) < at) {
+      latestAt.set(userId, at);
+      latestHoja.set(
+        userId,
+        (row.hoja_vida_data as Record<string, unknown> | null) ?? {},
+      );
+    }
+  }
+  for (const row of byUser ?? []) {
+    userIds.add(Number(row.id));
+  }
+
+  if (userIds.size > 0) {
+    const { data: users } = await supabase
+      .from("users")
+      .select(
+        "id, users_documents(selfie_url), digital_contracts(hoja_vida_data, created_at)",
+      )
+      .in("id", [...userIds]);
+
+    for (const user of users ?? []) {
+      const userId = Number(user.id);
+      const docs = user.users_documents as
+        | { selfie_url?: string | null }
+        | { selfie_url?: string | null }[]
+        | null;
+      const doc = Array.isArray(docs) ? docs[0] : docs;
+      const selfieUrl = doc?.selfie_url ? String(doc.selfie_url) : null;
+
+      const contracts = Array.isArray(user.digital_contracts)
+        ? user.digital_contracts
+        : user.digital_contracts
+          ? [user.digital_contracts]
+          : [];
+      const latest = [...contracts].sort(
+        (a, b) =>
+          new Date(String(b.created_at)).getTime() -
+          new Date(String(a.created_at)).getTime(),
+      )[0];
+      const hoja =
+        (latest?.hoja_vida_data as Record<string, unknown> | undefined) ??
+        latestHoja.get(userId);
+
+      addMatch(matchFromHoja(userId, hoja, selfieUrl));
+    }
+  }
+
+  return [...byKey.values()].slice(0, 8);
 }

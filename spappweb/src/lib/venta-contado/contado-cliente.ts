@@ -16,6 +16,34 @@ export function contadoDocumentoLabel(tipo: ContadoTipoDocumento): string {
   return tipo === "nit" ? "NIT" : "Número de documento";
 }
 
+export interface ContadoClienteMatch {
+  id: string;
+  clienteNombre: string;
+  clienteCedula: string;
+  clienteCelular: string;
+  clienteTipoDocumento: ContadoTipoDocumento;
+  clienteDireccion: string;
+  clienteCorreo: string;
+  clienteFotoUrl: string | null;
+  origen: "contado" | "credito";
+}
+
+export function toContadoTipoDocumento(
+  raw: string | null | undefined,
+): ContadoTipoDocumento {
+  const v = raw?.trim().toLowerCase();
+  if (v && CONTADO_TIPO_DOC.includes(v as ContadoTipoDocumento)) {
+    return v as ContadoTipoDocumento;
+  }
+  return "cc";
+}
+
+export function contadoClienteKey(cedula: string, nombre: string): string {
+  const doc = cedula.replace(/\D/g, "") || cedula.trim().toLowerCase();
+  const name = nombre.trim().toLowerCase();
+  return doc || name;
+}
+
 export function contadoClienteFotoFolder(cedula: string): string {
   const slug =
     cedula
