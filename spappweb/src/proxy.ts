@@ -105,6 +105,7 @@ export const config = {
   matcher: [
     "/",
     "/login",
+    "/inbox",
     "/inbox/:path*",
     "/clientes",
     "/clientes/:path*",
