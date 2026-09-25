@@ -6,14 +6,11 @@ const allowedDevOrigins = (process.env.ALLOWED_DEV_ORIGINS ?? "")
   .map((origin) => origin.trim())
   .filter(Boolean);
 
-const projectRoot = path.resolve(__dirname);
-
 const nextConfig: NextConfig = {
-  // El git root está en el padre (SPsolucionesBGA). Turbopack a veces
-  // infiere esa raíz y el árbol de rutas queda vacío (todas las páginas 404).
-  outputFileTracingRoot: projectRoot,
+  // El git root está en el padre (SPsolucionesBGA). Sin esto, Turbopack
+  // a veces arma mal el árbol de rutas y todas las páginas responden 404.
   turbopack: {
-    root: projectRoot,
+    root: path.join(__dirname),
   },
   ...(allowedDevOrigins.length > 0 ? { allowedDevOrigins } : {}),
   reactCompiler: true,

@@ -8,6 +8,7 @@ import {
 import { formatDateOnly } from "@/lib/utils/format";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 export const metadata = {
   title: "Clientes Jhon",
