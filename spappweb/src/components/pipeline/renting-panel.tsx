@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
-import { Copy, FileText, Loader2 } from "lucide-react";
+import { Copy, FileText, Loader2, Printer } from "lucide-react";
 import { toast } from "sonner";
 import { markMotoRecogida, markMotoRecogidaByUserId, resolveMoroso } from "@/lib/actions/admin-actions";
 import {
@@ -38,6 +38,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { PaymentComprobanteDialog } from "@/components/pipeline/payment-comprobante-dialog";
+import {
+  printCreditoPagoReceipt,
+  type CreditoPagoReceiptData,
+} from "@/lib/printing/credito-pago-receipt";
 
 function historialContextoLabel(pago: {
   contexto_pago: keyof typeof CONTEXTO_PAGO_LABELS | null;
@@ -159,6 +163,49 @@ export function RentingPanel({ pipeline, userId }: RentingPanelProps) {
   function openConfirmDialog(tarifa: TarifaPagadaRow) {
     setSelectedTarifa(tarifa);
     setDialogOpen(true);
+  }
+
+  function printTarifaReceipt(tarifa: TarifaPagadaRow) {
+    if (!compra) return;
+    const pagosTarifa = pipeline.pagos
+      .filter((p) => p.tarifa_objetivo_id === tarifa.id)
+      .sort(
+        (a, b) =>
+          new Date(a.confirmado_at ?? a.created_at).getTime() -
+          new Date(b.confirmado_at ?? b.created_at).getTime(),
+      );
+    const last = pagosTarifa[pagosTarifa.length - 1];
+    const monto =
+      pagosTarifa.reduce((sum, p) => sum + p.monto, 0) ||
+      tarifa.monto_pagado ||
+      tarifa.monto_esperado;
+    const recibo: CreditoPagoReceiptData = {
+      pagoId: last?.id ?? tarifa.id,
+      clienteNombre: pipeline.displayName,
+      clienteCedula: pipeline.user.user,
+      motoModelo: compra.modelo,
+      motoColor: compra.color,
+      placa: compra.placa,
+      concepto: "tarifa",
+      monto,
+      items:
+        pagosTarifa.length > 1
+          ? pagosTarifa.map((p) => ({
+              concepto: "tarifa" as const,
+              monto: p.monto,
+            }))
+          : undefined,
+      medioPago: last?.medio_pago_admin ?? "efectivo",
+      referencia: last?.referencia ?? null,
+      confirmadoAt:
+        last?.confirmado_at ??
+        last?.created_at ??
+        tarifa.pagada_at ??
+        new Date().toISOString(),
+    };
+    printCreditoPagoReceipt(recibo).catch(() => {
+      toast.error("No se pudo abrir la impresión del recibo.");
+    });
   }
 
   function regularizarMoroso() {
@@ -489,6 +536,19 @@ export function RentingPanel({ pipeline, userId }: RentingPanelProps) {
                                   : "—"}
                               </span>
                             )}
+                            {tarifaTieneAbono(tarifa) ||
+                            tarifa.estado === "pagada" ? (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon-sm"
+                                title="Imprimir recibo"
+                                aria-label={`Imprimir recibo de la tarifa ${tarifa.numero_periodo}`}
+                                onClick={() => printTarifaReceipt(tarifa)}
+                              >
+                                <Printer className="h-4 w-4" />
+                              </Button>
+                            ) : null}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -540,15 +600,28 @@ export function RentingPanel({ pipeline, userId }: RentingPanelProps) {
                       )}
                     </dl>
                     {!creditoSaldado && tarifa.estado !== "pagada" ? (
-                      <Button
-                        size="sm"
-                        className="mt-3 w-full"
-                        disabled={pending}
-                        data-export-hide
-                        onClick={() => openConfirmDialog(tarifa)}
-                      >
-                        Confirmar pago
-                      </Button>
+                      <div className="mt-3 flex flex-col gap-2" data-export-hide>
+                        <Button
+                          size="sm"
+                          className="w-full"
+                          disabled={pending}
+                          onClick={() => openConfirmDialog(tarifa)}
+                        >
+                          Confirmar pago
+                        </Button>
+                        {tarifaTieneAbono(tarifa) ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="w-full"
+                            onClick={() => printTarifaReceipt(tarifa)}
+                          >
+                            <Printer className="h-4 w-4" />
+                            Imprimir recibo
+                          </Button>
+                        ) : null}
+                      </div>
                     ) : (
                       <div
                         className="mt-3 flex items-center justify-between gap-2"
@@ -561,6 +634,18 @@ export function RentingPanel({ pipeline, userId }: RentingPanelProps) {
                         ) : (
                           <span />
                         )}
+                        {tarifaTieneAbono(tarifa) ||
+                        tarifa.estado === "pagada" ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => printTarifaReceipt(tarifa)}
+                          >
+                            <Printer className="h-4 w-4" />
+                            Imprimir
+                          </Button>
+                        ) : null}
                         {comprobanteByTarifaId[tarifa.id] ? (
                           <Button
                             type="button"
