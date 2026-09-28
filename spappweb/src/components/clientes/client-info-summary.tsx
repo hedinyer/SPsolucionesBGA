@@ -6,7 +6,7 @@ import {
   FRECUENCIA_LABELS,
 } from "@/lib/pipeline/types";
 import { referralLabel } from "@/lib/referrals";
-import { formatCop, formatCuotas } from "@/lib/utils/format";
+import { formatCop, formatCuotas, formatDate } from "@/lib/utils/format";
 import { GpsMotoPanel } from "@/components/pipeline/gps-moto-panel";
 import { LazyDetails } from "@/components/clientes/lazy-details";
 import { Card, CardContent } from "@/components/ui/card";
@@ -220,10 +220,7 @@ export function ClientInfoSummary({
                   </span>
                   <span className="text-muted-foreground">
                     {" · "}
-                    {new Date(e.at).toLocaleString("es-CO", {
-                      dateStyle: "short",
-                      timeStyle: "short",
-                    })}
+                    {formatDate(e.at)}
                     {e.motivo ? ` · ${e.motivo}` : ""}
                     {e.by ? ` · por ${e.by}` : ""}
                   </span>

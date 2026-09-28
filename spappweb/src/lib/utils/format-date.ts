@@ -1,5 +1,11 @@
 const TZ_BOGOTA = "America/Bogota";
 const DATE_ONLY = /^(\d{4})-(\d{2})-(\d{2})(?:T00:00:00(?:\.\d+)?(?:Z|[+-]00:00)?)?$/;
+/** Node ICU usa NBSP/NNBSP en "p. m."; el browser usa espacio normal. */
+const LOCALE_SPACE = /[\u00a0\u202f]/g;
+
+function formatLocale(value: string): string {
+  return value.replace(LOCALE_SPACE, " ");
+}
 
 /** Fecha de calendario YYYY-MM-DD (sin corrimiento UTC→Bogotá). */
 export function parseDateOnlyYmd(
@@ -27,20 +33,24 @@ export function parseDateOnlyYmd(
 }
 
 function formatEsCoDate(y: number, m: number, d: number): string {
-  return new Intl.DateTimeFormat("es-CO", {
-    dateStyle: "medium",
-    timeZone: TZ_BOGOTA,
-  }).format(new Date(Date.UTC(y, m - 1, d, 12, 0, 0)));
+  return formatLocale(
+    new Intl.DateTimeFormat("es-CO", {
+      dateStyle: "medium",
+      timeZone: TZ_BOGOTA,
+    }).format(new Date(Date.UTC(y, m - 1, d, 12, 0, 0))),
+  );
 }
 
 export function formatDate(date: string | Date | null | undefined): string {
   if (!date) return "—";
   const d = typeof date === "string" ? new Date(date) : date;
-  return new Intl.DateTimeFormat("es-CO", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: TZ_BOGOTA,
-  }).format(d);
+  return formatLocale(
+    new Intl.DateTimeFormat("es-CO", {
+      dateStyle: "medium",
+      timeStyle: "short",
+      timeZone: TZ_BOGOTA,
+    }).format(d),
+  );
 }
 
 export function formatDateOnly(date: string | Date | null | undefined): string {

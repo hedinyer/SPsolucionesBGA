@@ -5,6 +5,7 @@
 export const INVENTARIO_EDITOR_CODIGOS = {
   "0929": "Olga Pinilla",
   "0655": "Yenifer",
+  "1295": "Yennifer",
 } as const satisfies Record<string, string>;
 
 export type InventarioEditorCodigo = keyof typeof INVENTARIO_EDITOR_CODIGOS;
