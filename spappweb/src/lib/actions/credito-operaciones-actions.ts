@@ -295,3 +295,108 @@ export async function saldarCredito(
   revalidateClient(userId);
   return { pagoId: String(pagoId), confirmadoAt };
 }
+
+const registrarMultaSchema = z.object({
+  userId: z.number().int().positive(),
+  compraId: z.string().uuid(),
+  monto: z.number().int().positive(),
+  motivo: z.string().trim().min(1).max(500),
+});
+
+export async function registrarMulta(
+  input: z.infer<typeof registrarMultaSchema>,
+): Promise<{ tarifaId: string }> {
+  const parsed = registrarMultaSchema.parse(input);
+  const { supabase, admin } = await assertAdmin();
+
+  const { data: compra, error: compraError } = await supabase
+    .from("user_moto_compra")
+    .select("id, user_id, estado")
+    .eq("id", parsed.compraId)
+    .eq("user_id", parsed.userId)
+    .maybeSingle();
+
+  if (compraError) throw new Error(compraError.message);
+  if (!compra) throw new Error("Compra no encontrada.");
+  if (compra.estado !== "entregada") {
+    throw new Error("Solo se pueden agregar multas a créditos entregados.");
+  }
+
+  const { data: maxRow, error: maxError } = await supabase
+    .from("tarifas_pagadas")
+    .select("numero_periodo")
+    .eq("user_moto_compra_id", parsed.compraId)
+    .order("numero_periodo", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (maxError) throw new Error(maxError.message);
+
+  const nextPeriodo = (maxRow?.numero_periodo ?? 0) + 1;
+  const hoyBogota = new Date().toLocaleDateString("en-CA", {
+    timeZone: "America/Bogota",
+  });
+
+  const { data: tarifa, error } = await supabase
+    .from("tarifas_pagadas")
+    .insert({
+      user_moto_compra_id: parsed.compraId,
+      user_id: parsed.userId,
+      numero_periodo: nextPeriodo,
+      fecha_vencimiento: hoyBogota,
+      monto_esperado: parsed.monto,
+      monto_pagado: null,
+      estado: "vencida",
+      tipo: "multa",
+      motivo: parsed.motivo.trim(),
+      notas: null,
+      confirmada_por: admin,
+    })
+    .select("id")
+    .single();
+
+  if (error) throw new Error(error.message);
+  if (!tarifa?.id) throw new Error("No se pudo registrar la multa.");
+
+  revalidateClient(parsed.userId);
+  return { tarifaId: tarifa.id };
+}
+
+const anularMultaSchema = z.object({
+  userId: z.number().int().positive(),
+  tarifaId: z.string().uuid(),
+});
+
+export async function anularMulta(
+  input: z.infer<typeof anularMultaSchema>,
+): Promise<{ ok: true }> {
+  const parsed = anularMultaSchema.parse(input);
+  const { supabase } = await assertAdmin();
+
+  const { data: tarifa, error: fetchError } = await supabase
+    .from("tarifas_pagadas")
+    .select("id, user_id, tipo, estado")
+    .eq("id", parsed.tarifaId)
+    .eq("user_id", parsed.userId)
+    .maybeSingle();
+
+  if (fetchError) throw new Error(fetchError.message);
+  if (!tarifa) throw new Error("Multa no encontrada.");
+  if (tarifa.tipo !== "multa") {
+    throw new Error("Solo se pueden anular filas de tipo multa.");
+  }
+  if (tarifa.estado === "pagada") {
+    throw new Error("No se puede anular una multa ya pagada.");
+  }
+
+  const { error } = await supabase
+    .from("tarifas_pagadas")
+    .delete()
+    .eq("id", parsed.tarifaId)
+    .eq("tipo", "multa");
+
+  if (error) throw new Error(error.message);
+
+  revalidateClient(parsed.userId);
+  return { ok: true };
+}

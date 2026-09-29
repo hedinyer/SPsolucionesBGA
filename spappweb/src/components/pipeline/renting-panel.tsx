@@ -6,6 +6,10 @@ import { Copy, FileText, Loader2, Printer } from "lucide-react";
 import { toast } from "sonner";
 import { markMotoRecogida, markMotoRecogidaByUserId, resolveMoroso } from "@/lib/actions/admin-actions";
 import {
+  anularMulta,
+  registrarMulta,
+} from "@/lib/actions/credito-operaciones-actions";
+import {
   CONTEXTO_PAGO_LABELS,
   FRECUENCIA_LABELS,
   TARIFA_ESTADO_LABELS,
@@ -26,9 +30,13 @@ import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/componen
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Table,
   TableBody,
@@ -98,6 +106,9 @@ export function RentingPanel({ pipeline, userId }: RentingPanelProps) {
     null,
   );
   const [comprobanteUrl, setComprobanteUrl] = useState<string | null>(null);
+  const [multaOpen, setMultaOpen] = useState(false);
+  const [multaMonto, setMultaMonto] = useState("");
+  const [multaMotivo, setMultaMotivo] = useState("");
   const { compra, rentingResumen, tarifas, moroso, recoger, pagosHistorial, atraso, comprobanteByTarifaId } =
     pipeline;
 
@@ -112,15 +123,25 @@ export function RentingPanel({ pipeline, userId }: RentingPanelProps) {
     [pagosHistorial],
   );
 
-  /** Ventana: 10 pagadas hacia atrás + 10 pendientes/vencidas hacia adelante.
+  /** Ventana: 10 pagadas + 10 cuotas abiertas + multas abiertas.
    *  Las archivadas por refinanciación no aparecen en el talonario activo. */
   const visibleTarifas = useMemo(() => {
     const activas = tarifas.filter((t) => t.estado !== "refinanciada");
     const unpaid = activas.filter((t) => t.estado !== "pagada");
+    const unpaidMultas = unpaid.filter((t) => t.tipo === "multa");
+    const unpaidCuotas = unpaid.filter((t) => t.tipo !== "multa");
     const recentPaid = activas
       .filter((t) => t.estado === "pagada")
       .slice(-10);
-    return [...recentPaid, ...unpaid.slice(0, 10)].sort(
+    const byId = new Map<string, TarifaPagadaRow>();
+    for (const t of [
+      ...recentPaid,
+      ...unpaidCuotas.slice(0, 10),
+      ...unpaidMultas,
+    ]) {
+      byId.set(t.id, t);
+    }
+    return [...byId.values()].sort(
       (a, b) => a.numero_periodo - b.numero_periodo,
     );
   }, [tarifas]);
@@ -163,6 +184,47 @@ export function RentingPanel({ pipeline, userId }: RentingPanelProps) {
   function openConfirmDialog(tarifa: TarifaPagadaRow) {
     setSelectedTarifa(tarifa);
     setDialogOpen(true);
+  }
+
+  function submitMulta() {
+    if (!compra) return;
+    const monto = Number(multaMonto.replace(/\D/g, ""));
+    const motivo = multaMotivo.trim();
+    if (!Number.isFinite(monto) || monto <= 0) {
+      toast.error("Ingresa un monto válido.");
+      return;
+    }
+    if (!motivo) {
+      toast.error("Indica el motivo de la multa.");
+      return;
+    }
+    startTransition(async () => {
+      try {
+        await registrarMulta({
+          userId,
+          compraId: compra.id,
+          monto,
+          motivo,
+        });
+        toast.success("Multa registrada.");
+        setMultaOpen(false);
+        setMultaMonto("");
+        setMultaMotivo("");
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "No se pudo registrar.");
+      }
+    });
+  }
+
+  function quitarMulta(tarifa: TarifaPagadaRow) {
+    startTransition(async () => {
+      try {
+        await anularMulta({ userId, tarifaId: tarifa.id });
+        toast.success("Multa anulada.");
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "No se pudo anular.");
+      }
+    });
   }
 
   function printTarifaReceipt(tarifa: TarifaPagadaRow) {
@@ -292,7 +354,19 @@ export function RentingPanel({ pipeline, userId }: RentingPanelProps) {
               </Badge>
             )}
           </CardTitle>
-          <CardAction data-export-hide className="col-start-1 row-start-auto w-full sm:col-start-2 sm:w-auto">
+          <CardAction data-export-hide className="col-start-1 row-start-auto flex w-full flex-col gap-2 sm:col-start-2 sm:w-auto sm:flex-row">
+            {!creditoSaldado && compra.estado === "entregada" ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full sm:w-auto"
+                disabled={pending}
+                onClick={() => setMultaOpen(true)}
+              >
+                Agregar multa
+              </Button>
+            ) : null}
             <Button
               type="button"
               variant="outline"
@@ -481,7 +555,22 @@ export function RentingPanel({ pipeline, userId }: RentingPanelProps) {
                             : undefined
                         }
                       >
-                        <TableCell>{tarifa.numero_periodo}</TableCell>
+                        <TableCell>
+                          <div className="flex flex-col gap-1">
+                            <span className="flex flex-wrap items-center gap-1">
+                              {tarifa.tipo === "multa" ? (
+                                <Badge variant="outline">Multa</Badge>
+                              ) : (
+                                `#${tarifa.numero_periodo}`
+                              )}
+                            </span>
+                            {tarifa.tipo === "multa" && tarifa.motivo ? (
+                              <span className="text-xs text-muted-foreground">
+                                {tarifa.motivo}
+                              </span>
+                            ) : null}
+                          </div>
+                        </TableCell>
                         <TableCell>
                           {formatDateOnly(tarifa.fecha_vencimiento)}
                         </TableCell>
@@ -522,13 +611,25 @@ export function RentingPanel({ pipeline, userId }: RentingPanelProps) {
                               </Button>
                             ) : null}
                             {!creditoSaldado && tarifa.estado !== "pagada" ? (
-                              <Button
-                                size="sm"
-                                disabled={pending}
-                                onClick={() => openConfirmDialog(tarifa)}
-                              >
-                                Confirmar pago
-                              </Button>
+                              <>
+                                <Button
+                                  size="sm"
+                                  disabled={pending}
+                                  onClick={() => openConfirmDialog(tarifa)}
+                                >
+                                  Confirmar pago
+                                </Button>
+                                {tarifa.tipo === "multa" ? (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    disabled={pending}
+                                    onClick={() => quitarMulta(tarifa)}
+                                  >
+                                    Anular
+                                  </Button>
+                                ) : null}
+                              </>
                             ) : (
                               <span className="text-xs text-muted-foreground">
                                 {tarifa.pagada_at
@@ -568,9 +669,18 @@ export function RentingPanel({ pipeline, userId }: RentingPanelProps) {
                     }`}
                   >
                     <div className="flex items-start justify-between gap-2">
-                      <p className="font-medium">
-                        Periodo #{tarifa.numero_periodo}
-                      </p>
+                      <div className="min-w-0">
+                        <p className="font-medium">
+                          {tarifa.tipo === "multa"
+                            ? "Multa"
+                            : `Periodo #${tarifa.numero_periodo}`}
+                        </p>
+                        {tarifa.tipo === "multa" && tarifa.motivo ? (
+                          <p className="mt-0.5 text-xs text-muted-foreground">
+                            {tarifa.motivo}
+                          </p>
+                        ) : null}
+                      </div>
                       <Badge
                         variant={
                           tarifaEstadoLabel(tarifa) === "Parcial"
@@ -609,6 +719,17 @@ export function RentingPanel({ pipeline, userId }: RentingPanelProps) {
                         >
                           Confirmar pago
                         </Button>
+                        {tarifa.tipo === "multa" ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="w-full"
+                            disabled={pending}
+                            onClick={() => quitarMulta(tarifa)}
+                          >
+                            Anular multa
+                          </Button>
+                        ) : null}
                         {tarifaTieneAbono(tarifa) ? (
                           <Button
                             type="button"
@@ -759,6 +880,58 @@ export function RentingPanel({ pipeline, userId }: RentingPanelProps) {
           placa={compra.placa}
         />
       )}
+
+      <Dialog
+        open={multaOpen}
+        onOpenChange={(open) => {
+          setMultaOpen(open);
+          if (!open) {
+            setMultaMonto("");
+            setMultaMotivo("");
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Agregar multa</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="multa-monto">Monto (COP)</Label>
+              <Input
+                id="multa-monto"
+                inputMode="numeric"
+                value={multaMonto}
+                onChange={(e) => setMultaMonto(e.target.value)}
+                placeholder="Ej. 50000"
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="multa-motivo">Motivo</Label>
+              <Textarea
+                id="multa-motivo"
+                value={multaMotivo}
+                onChange={(e) => setMultaMotivo(e.target.value)}
+                placeholder="Ej. Daño en carrocería / atraso en entrega de docs"
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={pending}
+              onClick={() => setMultaOpen(false)}
+            >
+              Cancelar
+            </Button>
+            <Button type="button" disabled={pending} onClick={submitMulta}>
+              Registrar multa
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={Boolean(comprobanteUrl)}

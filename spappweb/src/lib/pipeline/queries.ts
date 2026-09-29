@@ -303,7 +303,7 @@ export async function getClientPipeline(
   const { data: tarifas } = await supabase
     .from("tarifas_pagadas")
     .select(
-      "id, user_moto_compra_id, user_id, numero_periodo, fecha_vencimiento, monto_esperado, monto_pagado, estado, pagada_at, confirmada_por, notas",
+      "id, user_moto_compra_id, user_id, numero_periodo, fecha_vencimiento, monto_esperado, monto_pagado, estado, pagada_at, confirmada_por, notas, tipo, motivo",
     )
     .eq("user_id", userId)
     .order("numero_periodo");
@@ -547,14 +547,17 @@ function buildRentingResumen(
       } else if (tarifa.estado === "vencida") {
         cuotasVencidas++;
         totalAdeudado += tarifa.monto_esperado - pagadoParcial;
-        const venc = parseDateOnlyYmd(tarifa.fecha_vencimiento);
-        if (venc && hoy) {
-          const atraso = Math.floor(
-            (Date.UTC(hoy.y, hoy.m - 1, hoy.d) -
-              Date.UTC(venc.y, venc.m - 1, venc.d)) /
-              (1000 * 60 * 60 * 24),
-          );
-          if (diasAtraso === null || atraso > diasAtraso) diasAtraso = atraso;
+        // ponytail: multas suman deuda pero no días de mora
+        if (tarifa.tipo !== "multa") {
+          const venc = parseDateOnlyYmd(tarifa.fecha_vencimiento);
+          if (venc && hoy) {
+            const atraso = Math.floor(
+              (Date.UTC(hoy.y, hoy.m - 1, hoy.d) -
+                Date.UTC(venc.y, venc.m - 1, venc.d)) /
+                (1000 * 60 * 60 * 24),
+            );
+            if (diasAtraso === null || atraso > diasAtraso) diasAtraso = atraso;
+          }
         }
       }
     }

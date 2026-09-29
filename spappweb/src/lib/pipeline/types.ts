@@ -257,6 +257,8 @@ export interface UserTrackingRow {
   ubicacion_1?: TrackingLocation | null;
 }
 
+export type TarifaTipo = "cuota" | "multa";
+
 export interface TarifaPagadaRow {
   id: string;
   user_moto_compra_id: string;
@@ -269,6 +271,8 @@ export interface TarifaPagadaRow {
   pagada_at: string | null;
   confirmada_por: string | null;
   notas: string | null;
+  tipo?: TarifaTipo | null;
+  motivo?: string | null;
 }
 
 /** Talonario diario de un producto a crédito (aparte de tarifas de moto). */
