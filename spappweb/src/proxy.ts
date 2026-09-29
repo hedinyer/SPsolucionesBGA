@@ -28,6 +28,7 @@ const adminProtectedPrefixes = [
   "/historial-ventas",
   "/historial-pagos",
   "/solicitudes",
+  "/taller",
 ];
 
 const visitadorProtectedPrefixes = [
@@ -131,6 +132,8 @@ export const config = {
     "/historial-pagos",
     "/historial-pagos/:path*",
     "/solicitudes/:path*",
+    "/taller",
+    "/taller/:path*",
     "/visitador/login",
     "/visitador/mis-visitas",
     "/visitador/mis-visitas/:path*",

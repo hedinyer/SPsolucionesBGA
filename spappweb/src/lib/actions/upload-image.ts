@@ -15,6 +15,7 @@ const ALLOWED_BUCKETS: AdminImageBucket[] = [
   STORAGE_BUCKETS.inventarioImagenes,
   STORAGE_BUCKETS.pagosComprobantes,
   STORAGE_BUCKETS.garajeImagenes,
+  STORAGE_BUCKETS.tallerFotos,
 ];
 const MAX_BYTES = 5 * 1024 * 1024;
 const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;

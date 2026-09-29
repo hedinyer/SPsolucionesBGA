@@ -13,8 +13,10 @@ import {
   ShoppingCart,
   Store,
   Warehouse,
+  UserCheck,
   UserSearch,
   Users,
+  Wrench,
   type LucideIcon,
 } from "lucide-react";
 
@@ -81,6 +83,17 @@ export const adminNavGroups: AdminNavGroup[] = [
       { href: "/inventario", label: "Inventario", icon: Package },
       { href: "/productos-credito", label: "Extras a cuotas", icon: CreditCard },
       { href: "/historial-ventas", label: "Historial", icon: History },
+    ],
+  },
+  {
+    id: "taller",
+    label: "Taller",
+    href: "/taller",
+    icon: Wrench,
+    children: [
+      { href: "/taller", label: "Tablero", icon: Wrench },
+      { href: "/taller/sebastian", label: "Sebastian", icon: UserCheck },
+      { href: "/taller/mecanicos", label: "Mecánicos", icon: Users },
     ],
   },
   {

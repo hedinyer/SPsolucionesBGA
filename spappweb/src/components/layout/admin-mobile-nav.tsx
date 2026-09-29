@@ -106,7 +106,7 @@ export function AdminMobileNav({
           aria-label="Cerrar menú"
         />
         <aside className="pointer-events-auto absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col bg-sidebar text-sidebar-foreground shadow-xl safe-area-top">
-          <div className="flex items-center justify-between border-b border-sidebar-border px-5 py-4">
+          <div className="flex shrink-0 items-center justify-between border-b border-sidebar-border px-5 py-4">
             <div>
               <p className="text-xs font-medium tracking-widest text-muted-foreground uppercase">
                 SP Admin
@@ -121,7 +121,7 @@ export function AdminMobileNav({
               <X className="pointer-events-none size-5" />
             </label>
           </div>
-          <ScrollArea className="flex-1">
+          <ScrollArea className="min-h-0 flex-1">
             <nav className="flex flex-col gap-4 p-3">
               {navGroups.map((group) => {
                 const Icon = group.icon;
@@ -177,8 +177,8 @@ export function AdminMobileNav({
               })}
             </nav>
           </ScrollArea>
-          <Separator />
-          <div className="flex flex-col gap-3 p-3 safe-area-bottom">
+          <Separator className="shrink-0" />
+          <div className="flex shrink-0 flex-col gap-3 p-3 safe-area-bottom">
             {referralScope ? (
               <ScopedReferralLink referralScope={referralScope} />
             ) : null}
